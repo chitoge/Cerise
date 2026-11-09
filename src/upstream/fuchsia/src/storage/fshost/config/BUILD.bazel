@@ -1,0 +1,15 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Distinct from fshost_config_rust (the structured-config-generated crate) - this
+# is the plain "fshost/config" assembly-config crate (BlockDeviceConfig etc, used
+# by matcher/config_matcher.rs's `/boot/config/fshost` JSON deserialization path).
+rust_library(
+    name = "config",
+    srcs = ["src/lib.rs"],
+    crate_name = "fshost_assembly_config",
+    edition = "2024",
+    tags = ["manual"],
+    deps = ["@crates//:serde"],
+)

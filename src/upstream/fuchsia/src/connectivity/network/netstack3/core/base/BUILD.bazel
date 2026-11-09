@@ -1,0 +1,155 @@
+# Authored locally for Cerise. netstack3-base: the foundational
+# netstack3-core crate (no_std). Base feature variant only (benchmarks/
+# instrumented/loom variants omitted — test/host). Replaces rustc_library_with_features.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-base",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    # netstack3 uses unstable APIs without #![feature] attrs; enable per-target
+    # (Fuchsia enables these via the toolchain). nightly required.
+    rustc_flags = ["-Zcrate-attr=feature(maybe_uninit_write_slice)"],
+    proc_macro_deps = [
+        "@crates//:derivative",
+        "@crates//:strum_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/diagnostics-traits",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:arc-swap",
+        "@crates//:arrayvec",
+        "@crates//:bitflags",
+        "@crates//:either",
+        "@crates//:log",
+        "@crates//:rand",
+        "@crates//:smallvec",
+        "@crates//:static_assertions",
+        "@crates//:strum",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)
+
+# src/lib.rs's `pub mod testutil` (fake
+# contexts/device IDs etc. that ip/tcp/udp/device/filter/icmp_echo/datagram's
+# OWN test code needs, via `netstack3_base::testutil::*`) is
+# `#[cfg(any(test, feature = "testutils"))]`-gated. It's active for free in
+# netstack3-base's OWN rust_test below (which compiles with --cfg test), but
+# a *dependent* crate's rust_test only recompiles that dependent crate's own
+# srcs - the netstack3-base dependency edge stays a plain (non-test,
+# non-`testutils`) compile. This variant (same srcs, `testutils` Cargo
+# feature turned on instead of --cfg test) is what those dependents' test
+# targets depend on in its place - same pattern as
+# //src/upstream/fuchsia/src/lib/fuchsia-url's `fuchsia-url_testutils` (see
+# that BUILD.bazel's comment), generalized to a `#[cfg(feature = ...)]` gate
+# instead of `#[cfg(test)]`. Never a production dependency of anything - not
+# even transitively - since only rust_test targets reference this.
+# The `criterion` dep here is testutil/benchmarks.rs's unconditional
+# `pub use criterion::Bencher as RealBencher;` (see MODULE.bazel's
+# crate.spec(package = "criterion") comment - it's a real, unconditional
+# upstream test_dep, not benchmark-only). `netstack3-sync` is swapped for
+# `netstack3-sync_testutils` (see that target's comment): SocketCookie
+# (base/src/socket/cookie.rs) derives PartialEq/Eq/Ord under the same
+# `any(test, feature = "testutils")` cfg_attr as netstack3-sync's own
+# ResourceToken it wraps, and needs those impls to actually exist on
+# ResourceToken too.
+rust_library(
+    name = "netstack3-base_testutils",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    crate_features = ["testutils"],
+    crate_name = "netstack3_base",
+    edition = "2024",
+    rustc_flags = ["-Zcrate-attr=feature(maybe_uninit_write_slice)"],
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:derivative",
+        "@crates//:strum_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-declare",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/diagnostics-traits",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync_testutils",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/teststd",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:arc-swap",
+        "@crates//:arrayvec",
+        "@crates//:assert_matches",
+        "@crates//:bitflags",
+        "@crates//:criterion",
+        "@crates//:either",
+        "@crates//:rand_xorshift",
+        "@crates//:log",
+        "@crates//:rand",
+        "@crates//:smallvec",
+        "@crates//:static_assertions",
+        "@crates//:strum",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)
+
+# netstack3-base's OWN #[cfg(test)] mods (scattered across the crate - e.g.
+# data_structures/rcu.rs, testutil/misc.rs) do
+# `use ip_test_macro::ip_test;` / `use test_case::test_case;` /
+# `use proptest::prelude::*;` / `use proptest_support::...;` /
+# `use net_declare::...;` / `use rand_xorshift::XorShiftRng;` (src/rng.rs) /
+# `teststd::...`. srcs/crate_root are restated (instead of the `crate =
+# ":netstack3-base"` shorthand) so netstack3-sync can be swapped for
+# netstack3-sync_testutils - same ResourceToken derive issue as
+# netstack3-base_testutils above, but this time it's the crate *under test*
+# that needs it, since a rust_test only ever flips `--cfg test` on its own
+# compilation, never on a dependency's.
+rust_test(
+    name = "netstack3-base_test",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    rustc_flags = ["-Zcrate-attr=feature(maybe_uninit_write_slice)"],
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/ip-test-macro",
+        "@crates//:derivative",
+        "@crates//:strum_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-declare",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/diagnostics-traits",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync_testutils",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/teststd",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "//src/upstream/fuchsia/src/lib/proptest-support",
+        "@crates//:arc-swap",
+        "@crates//:arrayvec",
+        "@crates//:assert_matches",
+        "@crates//:bitflags",
+        "@crates//:criterion",
+        "@crates//:either",
+        "@crates//:log",
+        "@crates//:proptest",
+        "@crates//:rand",
+        "@crates//:rand_xorshift",
+        "@crates//:smallvec",
+        "@crates//:static_assertions",
+        "@crates//:strum",
+        "@crates//:test-case",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)

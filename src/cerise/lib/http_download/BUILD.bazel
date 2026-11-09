@@ -1,0 +1,24 @@
+# Bounded HTTP/1 download client shared by the package fetchers.  The client is
+# asynchronous on Fuchsia (so connect/read/write can all have deadlines) and has
+# a std::net host implementation used by the protocol-level unit tests.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "http_download",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_http_download",
+    edition = "2021",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ],
+)
+
+rust_test(
+    name = "http_download_test",
+    crate = ":http_download",
+    edition = "2021",
+)

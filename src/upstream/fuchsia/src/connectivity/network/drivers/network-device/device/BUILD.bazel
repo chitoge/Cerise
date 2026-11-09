@@ -1,0 +1,98 @@
+# Authored locally for Cerise — network-device/device.
+#
+# shared-lock import ONLY shared_lock (public/locks.h), consumed by virtio-net's
+# netdevice.h. the driver build adds the DRIVER variant of the full device_interface
+# multiplexer (matches upstream driver_source_split("device") in device/BUILD.gn,
+# "_driver" sub-target): device_interface (packet queueing), device_port, sessions,
+# rx/tx queues, diagnostics, port_watcher, status_watcher. The non-driver variant
+# (test_util, network_device-test.cc, network_device-microbenchmarks.cc,
+# data_structs-test.cc, status_watcher-test.cc) is NOT vendored — test-only.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "shared_lock",
+    hdrs = ["public/locks.h"],
+    # Headers use "src/connectivity/network/drivers/network-device/device/public/locks.h"
+    # as the include path (relative to fuchsia root); consumers must add -Isrc/upstream/fuchsia.
+    strip_include_prefix = "",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+    ],
+)
+
+# device_driver — the DRIVER variant of network-device's device_interface multiplexer
+# (matches upstream driver_source_split("device") "_driver" sub-target in device/BUILD.gn).
+# data_structs.h and event_hook.h are non-test headers transitively required by
+# device_interface.h/rx_queue.h/session.h/tx_queue.h (not listed in upstream's
+# driver_source_split "sources" because that list only enumerates the split's own
+# files, but the headers live in this dir and are #include-d directly).
+cc_library(
+    name = "device_driver",
+    srcs = [
+        "device_interface.cc",
+        "device_port.cc",
+        "diagnostics_service.cc",
+        "port_watcher.cc",
+        "rx_queue.cc",
+        "session.cc",
+        "status_watcher.cc",
+        "tx_queue.cc",
+    ],
+    hdrs = [
+        "data_structs.h",
+        "definitions.h",
+        "device_interface.h",
+        "device_port.h",
+        "diagnostics_service.h",
+        "event_hook.h",
+        "log.h",
+        "port_watcher.h",
+        "public/network_device.h",
+        "rx_queue.h",
+        "session.h",
+        "status_watcher.h",
+        "tx_queue.h",
+    ],
+    copts = [
+        # NETDEV_DRIVER selects the FDF_LOG branch in log.h (matches driver_source_split
+        # template: defines = ["_ALL_SOURCE", "NETDEV_DRIVER"] for the "_driver" variant).
+        "-DNETDEV_DRIVER",
+        "-D_ALL_SOURCE",
+        # rx_queue.cc/tx_queue.cc/session.cc/device_interface.cc use TRACE_DURATION from
+        # zircon/system/ulib/trace:headers. Trace impl is deliberately deferred/stubbed
+        # (see that target's BUILD.bazel) — -DNTRACE compiles the macros to no-ops, same
+        # as every other consumer of trace:headers (driver_runtime, trace-engine). Without
+        # this, TRACE_DURATION expands to a real call to trace_acquire_context_for_category_cached,
+        # which has no implementation linked in -> dlopen relocation failure at runtime.
+        "-DNTRACE",
+        # device_interface.cc/session.cc include buffer_descriptor.h and
+        # diagnostics_service.cc includes backtrace-request.h via repo-root-relative
+        # paths ("src/connectivity/lib/..." / "src/lib/debug/...").
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",  # HEAD API level (DriverBase2 / FDF_LOG)
+    ],
+    tags = ["manual"],
+    deps = [
+        ":shared_lock",
+        # device_port.h includes mac/public/network_mac.h.
+        "//src/upstream/fuchsia/src/connectivity/network/drivers/network-device/mac:mac_driver",
+        "//src/upstream/fuchsia/src/connectivity/lib/network-device/buffer_descriptor:buffer_descriptor",
+        "//src/upstream/fuchsia/src/lib/debug:backtrace-request",
+        "//src/upstream/fuchsia/src/lib/vmo_store:vmo_store",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl:fzl",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/trace:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)

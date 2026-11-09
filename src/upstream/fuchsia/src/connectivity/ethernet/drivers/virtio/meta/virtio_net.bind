@@ -1,0 +1,31 @@
+// Cerise virtio-net composition: COMPOSITE bind rules for virtio-net PCI device.
+//
+// DIVERGES from upstream meta/virtio_netdevice.bind in two ways:
+//   1. "acpi" parent is REQUIRED (not optional) and includes BIND_ACPI_BUS_TYPE==PCI.
+//      bus-pci always publishes an acpi parent for QEMU PCI devices (acpi=1);
+//      making it required + checking bus-type matches pci_probe.bind exactly.
+//   2. Accept BOTH modern (0x1041) and transitional (0x1000) virtio-net DIDs,
+//      so the bind works regardless of QEMU's disable-legacy setting.
+//
+// WHY COMPOSITE: bus-pci publishes each PCI device as a composite node spec
+// (pci parent + acpi parent). driver-index prioritizes spec matches; normal
+// (non-composite) drivers never bind. Model: pci_probe.bind (PCI composition).
+composite virtio_net;
+
+using fuchsia.acpi;
+using fuchsia.hardware.pci;
+using fuchsia.pci;
+
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
+  accept fuchsia.BIND_PCI_DID {
+    fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_NETWORK,   // 0x1041 modern (disable-legacy=on)
+    fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_T_NETWORK, // 0x1000 transitional (default QEMU)
+  }
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.PCI;
+}

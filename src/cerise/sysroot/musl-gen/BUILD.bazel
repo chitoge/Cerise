@@ -1,0 +1,13 @@
+# Cerise. Empty stand-ins for the sanitizer stub
+# headers that Fuchsia's build generates for the musl dynamic linker
+# (hwasan-stubs.h / sancov-stubs.h / sanitizer-stubs.h). For a non-instrumented
+# build these are empty; dynlink.c includes them unconditionally.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "musl_gen_headers",
+    hdrs = glob(["*.h"]),
+    includes = ["."],
+)

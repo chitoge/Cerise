@@ -1,0 +1,140 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+genrule(
+    name = "vdso_valid_sysret_header",
+    srcs = ["//abi:zx_syscall_headers_generated"],
+    outs = ["vdso-valid-sysret.h"],
+    cmd = "wrappers=; for f in $(locations //abi:zx_syscall_headers_generated); do case \"$$f\" in */kernel-wrappers.inc) wrappers=$$f ;; esac; done; { echo 'struct VDso::ValidSyscallPC {'; sed -n 's/.*&VDso::ValidSyscallPC::\\([A-Za-z0-9_]*\\).*/  static bool \\1(uintptr_t) { return true; };/p' \"$$wrappers\" | sort -u; echo '};'; } > $@",
+)
+
+cc_library(
+    name = "vdso_valid_sysret",
+    hdrs = [":vdso_valid_sysret_header"],
+    strip_include_prefix = "/zircon/kernel/lib/syscalls",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "syscalls",
+    defines = [
+        "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=0",
+        "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=0",
+        "FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST",
+    ],
+    srcs = [
+        "driver_priv.h",
+        "system_priv.h",
+        "channel.cc",
+        "clock.cc",
+        "counter.cc",
+        "debug.cc",
+        "driver.cc",
+        "driver_pci.cc",
+        "driver_x86.cc",
+        "exceptions.cc",
+        "fifo.cc",
+        "futex.cc",
+        "handle_ops.cc",
+        "iob.cc",
+        "membarrier.cc",
+        "object.cc",
+        "object_info.cc",
+        "object_property.cc",
+        "object_wait.cc",
+        "pager.cc",
+        "port.cc",
+        "profile.cc",
+        "resource.cc",
+        "restricted.cc",
+        "sampler.cc",
+        "socket.cc",
+        "stream.cc",
+        "system.cc",
+        "syscalls.cc",
+    ] + select({
+        "@platforms//cpu:x86_64": ["system_x86.cc"],
+        "@platforms//cpu:aarch64": ["system_arm64.cc"],
+        "//conditions:default": ["system_arm64.cc"],
+    }) + [
+        "task.cc",
+        "test.cc",
+        "timer.cc",
+        "vmar.cc",
+        "vmo.cc",
+        "zircon.cc",
+    ] + select({
+        # hypervisor.cc references GuestDispatcher/VcpuDispatcher from object/.
+        # When hypervisor is disabled, use stubs that return ZX_ERR_NOT_SUPPORTED.
+        "//config:hypervisor_enabled": ["hypervisor.cc"],
+        "//conditions:default": ["hypervisor_stubs.cc"],
+    }),
+    alwayslink = True,
+    deps = [
+        ":vdso_valid_sysret",
+        "//abi:zx_syscall_headers",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/lib/kpci:kpci",
+        "//zircon/system/ulib/smbios:smbios",
+        "//zircon/system/ulib/explicit-memory:explicit-memory",
+        "//zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//src/zircon/lib/zircon:status_headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "impl_sources",
+    srcs = [
+        "channel.cc",
+        "clock.cc",
+        "counter.cc",
+        "debug.cc",
+        "driver.cc",
+        "driver_pci.cc",
+        "driver_x86.cc",
+        "exceptions.cc",
+        "fifo.cc",
+        "futex.cc",
+        "handle_ops.cc",
+        "hypervisor.cc",
+        "iob.cc",
+        "membarrier.cc",
+        "object.cc",
+        "object_info.cc",
+        "object_property.cc",
+        "object_wait.cc",
+        "pager.cc",
+        "port.cc",
+        "profile.cc",
+        "resource.cc",
+        "restricted.cc",
+        "sampler.cc",
+        "socket.cc",
+        "stream.cc",
+        "system.cc",
+        "system_x86.cc",
+        "task.cc",
+        "test.cc",
+        "timer.cc",
+        "vmar.cc",
+        "vmo.cc",
+        "zircon.cc",
+    ],
+)
+
+filegroup(
+    name = "dispatch_source",
+    srcs = ["syscalls.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

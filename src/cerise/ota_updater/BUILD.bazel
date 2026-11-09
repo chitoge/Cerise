@@ -1,0 +1,247 @@
+# Cerise A/B image stager. It acknowledges the running slot and exposes an on-demand
+# prepare/write protocol. The signed image is fetched before host quiesce; the inactive
+# slot is flushed and readback-verified before activation metadata is committed last.
+# Reboot/shutdown remains owned by the lifecycle coordinator.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "data/ota-config-host.json",
+    "data/ota-config-host-v1.json",
+    "data/ota-config-host-v2.json",
+    "data/ota-config-host-v3.json",
+    "data/ota-config-host-v4.json",
+    "data/ota-config-host-v5.json",
+    "data/ota-config-host-v6.json",
+    "data/ota-config-host-v7.json",
+    "data/ota-config-host-v8.json",
+    "data/ota-config-host-v9.json",
+    "data/ota-config-host-v10.json",
+    "data/ota-config-host-v11.json",
+    "data/ota-config-host-v12.json",
+    "data/ota-config-host-v13.json",
+    "data/ota-config-host-v14.json",
+    "data/ota-config-host-v15.json",
+    "data/ota-config-host-v16.json",
+    "meta/ota_updater.cml",
+    "data/ota-config-v1.json",
+    "data/ota-config-v2.json",
+])
+
+# ------------------------------------------------------------------------------------
+# The two SECURITY decisions on the OTA path, split out as pure libraries so they can be
+# unit-tested on the HOST against inputs a live boot could never be made to produce.
+# Same split fxfs_provisioner uses for layout.rs/ownership.rs and the fileserver for
+# claim.rs. The updater binary depends on these crates (it does not re-`mod` the source),
+# so there is exactly one compilation of the logic and no possibility of drift between
+# what the tests check and what ships.
+# ------------------------------------------------------------------------------------
+
+# WHERE the ~45 MiB slot write lands. Driven entirely by a GPT this component did not
+# write, so it is untrusted-input parsing on a destructive path.
+rust_library(
+    name = "esp_locate",
+    srcs = ["src/esp.rs"],
+    crate_name = "esp_locate",
+    crate_root = "src/esp.rs",
+    edition = "2021",
+    deps = [
+        # The GPT header/geometry validator, SHARED with fxfs_provisioner (which writes
+        # partition tables) and the fileserver (which must not destroy them). A second
+        # GPT validator in this tree would drift from the first, and the components that
+        # must never disagree about "is this a valid table" are exactly these three.
+        "//src/cerise/fxfs_provisioner:boot_layout",
+    ],
+)
+
+# Host unit tests: a clean table parses; a table the REAL boot_layout::build_gpt
+# produced parses to the plan's own ESP range (so the fixtures cannot be a shape only
+# this file agrees with); bad header CRC, absurd header_size, bad entry-array CRC,
+# entry_count*entry_size overflow, entry_lba*block_size wrap, inverted partition range,
+# a whole-address-space range, a partition off the end of the device, two ESP entries,
+# and a valid table with NO ESP are each refused.
+#
+# WHERE THERE IS AN OLD-CODE CONTROL AND WHERE THERE IS NOT. The header-CRC,
+# entry-array-CRC, entry-count-overflow, entry-LBA-wrap, inverted-range and no-ESP cases
+# each ALSO run a release-semantics model of the parse this replaced (`legacy_find_esp`)
+# and assert the OLD code got that fixture wrong -- a guard whose absence changed
+# nothing would not be a guard. The short-entry-array, whole-address-space,
+# off-device and multiple-ESP cases are NEW guards with no such control: the old parse
+# was not defeated by them (it sized its own read, and it never consulted the device
+# geometry at all). The test bodies say which is which; this comment must not be read as
+# claiming an old-code defeat for all of them.
+rust_test(
+    name = "esp_locate_test",
+    crate = ":esp_locate",
+    edition = "2021",
+)
+
+# WHETHER the fetched bytes may be written: the signed OS-image manifest.
+rust_library(
+    name = "ota_image_manifest",
+    srcs = ["src/image_manifest.rs"],
+    crate_name = "ota_image_manifest",
+    crate_root = "src/image_manifest.rs",
+    edition = "2021",
+    deps = [
+        # The same ed25519 primitive the signed package index uses (pkg_index /
+        # pkg_resolver / pkg_fetcher / pkg_signer), under a DIFFERENT domain tag so an
+        # index-entry signature can never be replayed as an OS-image signature.
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+rust_library(
+    name = "ota_stage_policy",
+    srcs = ["src/stager.rs"],
+    crate_name = "ota_stage_policy",
+    crate_root = "src/stager.rs",
+    edition = "2021",
+    deps = [
+        ":esp_locate",
+        "@crates//:sha2",
+    ],
+)
+
+# Host-tested byte-level validation for the status line used by the updater's
+# intentionally small, no-redirect HTTP client.
+rust_library(
+    name = "ota_http_status",
+    srcs = ["src/http_status.rs"],
+    crate_name = "ota_http_status",
+    crate_root = "src/http_status.rs",
+    edition = "2021",
+    deps = ["//src/cerise/lib/http_download:http_download"],
+)
+
+rust_test(
+    name = "ota_http_status_test",
+    crate = ":ota_http_status",
+    edition = "2021",
+)
+
+rust_test(
+    name = "ota_stage_policy_test",
+    crate = ":ota_stage_policy",
+    edition = "2021",
+)
+
+# Host unit tests: a genuine image is accepted; a substituted image is refused BOTH when
+# its length differs and when it is padded to the signed length; an attacker's image
+# with its own internally-consistent recomputed manifest is refused (the case the old
+# sha256-only design could not express at all); a tampered signature, a wrong key, a
+# missing key, a validly-signed OLDER image, a malformed digest and an unsigned legacy
+# manifest are each refused; every signed field is shown to be covered by moving it; and
+# current-boot attestation requires the signed version, digest, and size to match exactly.
+rust_test(
+    name = "ota_image_manifest_test",
+    crate = ":ota_image_manifest",
+    edition = "2021",
+)
+
+# HOST/build-time signer. Sibling of //src/cerise/tools/pkg_signer, same shape on
+# purpose. --tamper emits the negative-test payload the tamper gate serves; see the
+# file header for why that flag is the point of the change.
+rust_binary(
+    name = "ota_signer",
+    srcs = ["src/bin/ota_signer.rs"],
+    crate_root = "src/bin/ota_signer.rs",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        ":ota_image_manifest",
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "@crates//:anyhow",
+        "@crates//:serde_json",
+    ],
+)
+
+sh_test(
+    name = "ota_signer_verify_test",
+    size = "small",
+    srcs = ["ota_signer_verify_test.sh"],
+    data = [
+        ":ota_signer",
+        "ota_signer_verify_test.py",
+    ],
+    tags = [
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+)
+
+# The ed25519 PUBLIC key staged into the updater's own package at
+# /pkg/keys/ota_image_pub.ed25519, derived at build time from the seed under
+# //build/keys. The private seed stays on the build side; the device only verifies.
+# Same arrangement as //src/cerise/pkg_hello_update:pkg_index_pubkey_resolver.
+genrule(
+    name = "ota_image_pubkey",
+    srcs = ["//build/keys:signing_seed"],
+    outs = ["ota_image_pub.ed25519"],
+    cmd = "$(location :ota_signer) pubkey --seed $(location //build/keys:signing_seed) --out $@",
+    tags = ["manual"],
+    tools = [":ota_signer"],
+)
+
+rust_binary(
+    name = "ota_updater_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "ota_updater",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        # The two pure security decisions (see above): where the write lands, and
+        # whether the fetched bytes may be written at all.
+        ":esp_locate",
+        ":ota_http_status",
+        ":ota_image_manifest",
+        ":ota_stage_policy",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "//src/cerise/fidl/cerise.update:fidl_cerise_update",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "@crates//:anyhow",
+        "@crates//:fatfs",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        # sha2 is no longer a direct dep: the digest now lives inside the signed-manifest
+        # decision (:ota_image_manifest), which is where it is unit-tested.
+        # Real fdio (not the link-time stub): fuchsia_fs namespace opens + std::net TCP to the host.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "ota_updater_bin_stripped.fuchsia",
+    src = ":ota_updater_bin",
+)
+
+cerise_component(
+    name = "ota_updater",
+    binary = ":ota_updater_bin_stripped.fuchsia",
+    manifest = "meta/ota_updater.cml",
+)

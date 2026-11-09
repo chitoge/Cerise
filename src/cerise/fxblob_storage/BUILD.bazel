@@ -1,0 +1,27 @@
+# Cerise packages: fxblob_storage — the shared package_directory::NonMetaStorage
+# backed by fuchsia.fxfs/BlobReader (fxblob). Promoted out of pkg_probe so pkg_probe AND the
+# fuchsia-pkg:// resolver (pkg_resolver) share one blob source. Implements the CONTENT-blob `open`
+# path (BlobReader -> vmo_blob::VmoBlob -> StreamIoConnection) that deferred, and exposes
+# init_vmex for the resolver to grant EXECUTE rights to served blobs. See src/lib.rs.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fxblob_storage",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxblob_storage",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "//src/upstream/fuchsia/src/storage/lib/vmo-blob:vmo-blob",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/package-directory:package-directory",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "@crates//:anyhow",
+    ],
+)

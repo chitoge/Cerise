@@ -1,0 +1,19 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = ["include/lib/thread-stack/abi.h"],
+    includes = ["include"],
+    deps = [
+        "//zircon/kernel/lib/page:headers",
+        "//zircon/kernel/phys/include:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

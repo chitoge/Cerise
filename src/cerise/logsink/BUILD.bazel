@@ -1,0 +1,56 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact")
+
+package(default_visibility = ["//visibility:public"])
+
+# cerise-logsink: bridges fuchsia.logger.LogSink (IOBuffer/API-30) to DLOG.
+# Serves as the log sink for driver_index and driver_manager_rust under component_manager.
+rust_library(
+    name = "logsink_core",
+    srcs = [
+        "src/admission.rs",
+        "src/lib.rs",
+        "src/ring.rs",
+    ],
+    crate_name = "cerise_logsink_core",
+    edition = "2024",
+)
+
+# Host coverage for malformed/overflowing ring envelopes, wrap-copy bounds,
+# client admission permits, and the one-outstanding-hanging-get contract.
+rust_test(
+    name = "logsink_core_test",
+    crate = ":logsink_core",
+    edition = "2024",
+)
+
+rust_binary(
+    name = "cerise_logsink",
+    srcs = ["src/main.rs"],
+    crate_name = "cerise_logsink",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":logsink_core",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/encoding/rust:diagnostics_log_encoding",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:futures",
+    ],
+)
+
+fuchsia_artifact(
+    name = "cerise_logsink.fuchsia",
+    src = ":cerise_logsink",
+)

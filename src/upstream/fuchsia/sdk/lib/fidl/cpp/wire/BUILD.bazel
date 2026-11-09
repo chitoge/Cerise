@@ -1,0 +1,26 @@
+# Bazel integration for this imported target. The LLCPP "wire" FIDL
+# binding runtime that fidlgen_cpp wire bindings link against. Upstream BUILD used
+# SDK macros; plain cc_library here. Compiles on the sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "wire",
+    srcs = glob(["*.cc"], exclude = ["*_test*.cc"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_c_headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_epitaph",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:shared_headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

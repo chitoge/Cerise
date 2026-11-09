@@ -1,0 +1,48 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.diagnostics.types",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.diagnostics.types_cpp",
+    library = ":fuchsia.diagnostics.types",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.diagnostics.types_rs",
+    library = ":fuchsia.diagnostics.types",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_diagnostics_types",
+    srcs = [":fuchsia.diagnostics.types_rs"],
+    crate_name = "fidl_fuchsia_diagnostics_types",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

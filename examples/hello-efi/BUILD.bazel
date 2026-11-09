@@ -1,0 +1,33 @@
+package(default_visibility = ["//visibility:public"])
+
+# Minimal UEFI x86_64 EFI application (PE/COFF .efi binary).
+# Uses prebuilt clang with --target=x86_64-unknown-uefi (produces COFF objects)
+# and lld-link to produce a PE/COFF EFI application.
+genrule(
+    name = "hello_efi_bin",
+    srcs = ["main.c"],
+    outs = ["hello_efi.efi"],
+    cmd = " && ".join([
+        "set -e",
+        "clang=$(location //toolchain:prebuilt_clang)",
+        "lldlink=$(location //toolchain:prebuilt_lld_link)",
+        # Compile: UEFI triple + EFI ABI flags.
+        "$$clang --target=x86_64-unknown-uefi" +
+        "  -ffreestanding -fshort-wchar -nostdlib -nostdinc" +
+        "  -fno-stack-protector -fno-exceptions" +
+        "  -O2 -g" +
+        "  -c $(location main.c) -o $(RULEDIR)/main.o",
+        # Link: PE/COFF EFI application via lld-link.
+        "$$lldlink" +
+        "  /subsystem:efi_application" +
+        "  /entry:EfiMain" +
+        "  /nodefaultlib" +
+        "  /debug:dwarf" +
+        "  /out:$(location hello_efi.efi)" +
+        "  $(RULEDIR)/main.o",
+    ]),
+    tools = [
+        "//toolchain:prebuilt_clang",
+        "//toolchain:prebuilt_lld_link",
+    ],
+)

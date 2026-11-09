@@ -1,0 +1,5 @@
+# Integration target for the Fxfs Unicode tables. See ../../../src/storage/fxfs/unicode/
+# BUILD.bazel for full provenance notes: upstream fetches this file via CIPD at
+# //prebuilt/third_party/ucd/UCD.zip (not present in the fuchsia.git source tree);
+# vendored here instead from unicode.org's own public archive (version 16.0.0).
+exports_files(["UCD.zip"])

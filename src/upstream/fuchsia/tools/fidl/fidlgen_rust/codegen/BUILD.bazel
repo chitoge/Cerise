@@ -1,0 +1,28 @@
+# Authored locally for Cerise. fidlgen_rust codegen: the Go
+# package that transforms FIDL IR into Rust source via text/template.
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "codegen",
+    srcs = [
+        "codegen.go",
+        "ir.go",
+    ],
+    embedsrcs = [
+        "alias.tmpl",
+        "bits.tmpl",
+        "const.tmpl",
+        "driver_protocol.tmpl",
+        "enum.tmpl",
+        "protocol.tmpl",
+        "service.tmpl",
+        "sourcefile.tmpl",
+        "struct.tmpl",
+        "table.tmpl",
+        "union.tmpl",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_rust/codegen",
+    deps = ["//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen"],
+)

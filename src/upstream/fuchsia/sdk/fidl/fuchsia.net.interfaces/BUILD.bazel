@@ -1,0 +1,145 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# bumped to HEAD -- interfaces_ext (real
+# upstream source, this exact pin) references PortClass::Blackhole,
+# Properties.port_identity_koid, Address.assignment_state, all @available(added=HEAD)
+# additions absent at level 30. No already-boot-verified consumer depends on the
+# plain level-30 fuchsia.net.interfaces binding (only other still-being-vendored networking
+# FIDL libraries reference it) -- unlike fuchsia.net/fuchsia.io, bumping this whole
+# library directly (not a parallel _head target) carries low regression risk.
+fidl_library(
+    name = "fuchsia.net.interfaces",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.net.interfaces_cpp",
+    library = ":fuchsia.net.interfaces",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust
+# in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.net.interfaces_rs",
+    library = ":fuchsia.net.interfaces",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_interfaces",
+    srcs = [":fuchsia.net.interfaces_rs"],
+    crate_name = "fidl_fuchsia_net_interfaces",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# netstack3's
+# own bindings/*.rs code (not going through interfaces_ext) directly imports both
+# fidl_fuchsia_net_interfaces and fidl_fuchsia_net_head - the plain target above
+# (which interfaces_ext depends on and is proven working, do NOT retarget it)
+# transitively pulls in plain fidl_fuchsia_net, causing the same "two instances"
+# conflict. A separate parallel Rust codegen instance recompiled against
+# fidl_fuchsia_net_head, for netstack3's own direct use only.
+rust_library(
+    name = "fidl_fuchsia_net_interfaces_head",
+    srcs = [":fuchsia.net.interfaces_rs"],
+    crate_name = "fidl_fuchsia_net_interfaces",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale. Wraps
+# the HEAD instance, not plain: `interfaces_ext`/`matchers_ext`/`filter_ext`
+# (the only real consumers of this flex target -- a closed subgraph entirely
+# within netstack3's own dependency tree, nothing outside it uses `flex_*`
+# directly) all need to interoperate with netstack3's OWN direct HEAD-instance
+# imports (e.g. interfaces_watcher.rs's `SortableInterfaceAddress` impl) without
+# a "two different versions of crate" mismatch. fuchsia.posix.socket (the real,
+# wide, boot-critical consumer of PLAIN fuchsia.net.interfaces) depends on
+# `:fidl_fuchsia_net_interfaces` directly, not through this flex target, so it's
+# unaffected by this choice.
+genrule(
+    name = "flex_fuchsia_net_interfaces_rs_gen",
+    outs = ["flex_fuchsia_net_interfaces.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_interfaces::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_interfaces",
+    srcs = [":flex_fuchsia_net_interfaces_rs_gen"],
+    crate_name = "flex_fuchsia_net_interfaces",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_interfaces_head"],
+)
+
+# "_rust_common" pure re-export -- same
+# rationale as fuchsia.net's fidl_fuchsia_net_common (no HEAD-gated content
+# needed from this library via the _common path; see that target's comment
+# for the full "_common" background).
+genrule(
+    name = "fidl_fuchsia_net_interfaces_common_rs_gen",
+    outs = ["fidl_fuchsia_net_interfaces_common.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_interfaces::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_interfaces_common",
+    srcs = [":fidl_fuchsia_net_interfaces_common_rs_gen"],
+    crate_name = "fidl_fuchsia_net_interfaces_common",
+    edition = "2024",
+    tags = ["manual"],
+    # Wraps the HEAD instance, not plain -- matchers_ext (this target's only
+    # real consumer) also depends on interfaces_ext, which is HEAD-backed; both
+    # must resolve to the same compiled PortClass/etc. or "two different
+    # versions of crate" errors result.
+    deps = [":fidl_fuchsia_net_interfaces_head"],
+)

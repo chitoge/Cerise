@@ -1,0 +1,44 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+
+static_library("cbuf") {
+  public_deps = [ ":headers" ]
+
+  complete_static_lib = true
+
+  sources = [ "cbuf.cc" ]
+  deps = [
+    "//zircon/kernel/lib/ktl",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+library_headers("headers") {
+  headers = [ "lib/cbuf.h" ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+source_set("kernel-tests") {
+  testonly = true
+  sources = [ "cbuf_tests.cc" ]
+  deps = [
+    ".",
+    "//zircon/kernel/lib/unittest",
+  ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

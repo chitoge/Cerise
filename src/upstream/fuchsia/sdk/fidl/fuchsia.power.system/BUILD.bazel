@@ -1,0 +1,50 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(
+    name = "fuchsia.power.system",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fuchsia.power.broker", "//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+fidl_cpp(
+    name = "fuchsia.power.system_cpp",
+    library = ":fuchsia.power.system",
+    tags = ["manual"],
+    deps = [
+        # fuchsia.power.system imports fuchsia.power.broker; generated C++ includes
+        # <fidl/fuchsia.power.broker/cpp/common_types.h> which comes from broker_cpp.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# added for fuchsia.power.battery's rust binding, which
+# fxfs/platform's src/fuchsia/power.rs depends on transitively.
+fidl_rust(
+    name = "fuchsia.power.system_rs",
+    library = ":fuchsia.power.system",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_power_system",
+    srcs = [":fuchsia.power.system_rs"],
+    crate_name = "fidl_fuchsia_power_system",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fidl_fuchsia_power_broker",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,84 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.network",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # RxAcceleration, TxAcceleration and other types referenced by
+    # fuchsia.hardware.network.driver are @available(added=HEAD).
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.network_cpp",
+    library = ":fuchsia.hardware.network",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust
+# in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.hardware.network_rs",
+    library = ":fuchsia.hardware.network",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_hardware_network",
+    srcs = [":fuchsia.hardware.network_rs"],
+    crate_name = "fidl_fuchsia_hardware_network",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fidl_fuchsia_device_fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" is a pure re-export of the
+# already-compiled plain binding under a "flex_"-prefixed crate name -- see the
+# extensive comment on fuchsia.net's own `flex_fuchsia_net` target for the full
+# rationale (real upstream never added a `_rust_flex` FIDL codegen wrapper; a `pub use`
+# re-export creates no new types, so this stays consistent with plain-crate
+# cross-references elsewhere in this dependency graph).
+genrule(
+    name = "flex_fuchsia_hardware_network_rs_gen",
+    outs = ["flex_fuchsia_hardware_network.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_hardware_network::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_hardware_network",
+    srcs = [":flex_fuchsia_hardware_network_rs_gen"],
+    crate_name = "flex_fuchsia_hardware_network",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_hardware_network"],
+)

@@ -1,0 +1,15 @@
+// FIDL bindgen probe: a trivial leaf FIDL library to validate the bindgen tools
+// (fidlc -> JSON IR -> fidlgen_cpp -> C++) end-to-end.
+library cerise.probe;
+
+type Color = strict enum : uint32 {
+    RED = 1;
+    GREEN = 2;
+    BLUE = 3;
+};
+
+type Point = struct {
+    x int32;
+    y int32;
+    color Color;
+};

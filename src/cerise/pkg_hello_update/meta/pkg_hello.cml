@@ -1,0 +1,18 @@
+// Cerise packages: the shared component manifest for the updatable demo package
+// pkg_hello. BOTH v1 and v2 embed this identical meta/pkg_hello.cm in their meta.far — so the two
+// package hashes differ ONLY in the bin/pkg_hello content blob (recorded in meta/contents), which is
+// exactly what makes them distinct versions of the SAME named package. The resolver serves this .cm
+// for fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm; elf_runner launches bin/pkg_hello from disk
+// blobs. Binder is exposed so pkg_fetcher can Lazy-start each version and observe it run.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/pkg_hello",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.component.Binder", from: "framework" },
+    ],
+}

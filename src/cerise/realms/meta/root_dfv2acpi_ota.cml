@@ -1,0 +1,88 @@
+// root_dfv2acpi_ota — component_manager root for qemu-x64-ota / qemu-x64-ota-v2 (OS-self-
+// OTA). The lean driver base (elf_runner + cerise_logsink + driver_index +
+// driver_manager_rust, the _shutdown variant so statecontrol reboot reaches the kernel
+// powerctl) PLUS netstack3 (for the HTTP fetch) PLUS ota_updater.
+//
+// ota_updater is the SOLE disk writer: it consumes the block device raw (the ahci_probe
+// model) to read/write the ESP's GPT+FAT. There is deliberately NO fxfs_provisioner / fshost
+// / *_probe here — those Eager components would format or scribble the ESP. NEW realm; no
+// frozen decode_diff golden; excluded from route_check like the other spike roots. See
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi_shutdown.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "netstack3",
+            url: "fuchsia-boot:///netstack3#meta/netstack3.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "shutdown_shim",
+            url: "fuchsia-boot:///shutdown_shim#meta/shutdown_shim.cm",
+            startup: "eager",
+        },
+        {
+            name: "ota_updater",
+            url: "fuchsia-boot:///ota_updater#meta/ota_updater.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netstack3", "#ota_updater"],
+        },
+        { protocol: "fuchsia.kernel.MexecResource", from: "parent", to: "#driver_manager_rust" },
+        // Termination state (Reboot/Poweroff) selection — served by the shim. Load-bearing
+        // ordering edge: driver_manager becomes a dependent of the shim, so it is stopped
+        // (and issues the kernel powerctl) before the shim is torn down.
+        { protocol: "fuchsia.system.state.SystemStateTransition", from: "#shutdown_shim", to: "#driver_manager_rust" },
+
+        // The builtin shim runner + the SystemController it drives.
+        { runner: "builtin_shutdown_shim", from: "parent", to: "#shutdown_shim" },
+        { protocol: "fuchsia.sys2.SystemController", from: "parent", to: "#shutdown_shim" },
+
+        // netstack3 gets only LogSink (above); the updater drives NIC install itself.
+
+        // ota_updater wiring: readiness/NIC discovery + raw block + network sockets.
+        // Reboot is intentionally not routed to the raw-disk writer.
+        { directory: "dev", from: "#driver_manager_rust", to: "#ota_updater", rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: "#ota_updater" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#ota_updater" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#ota_updater" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#ota_updater" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#ota_updater" },
+    ],
+
+    // HostControl is not composed in this validation-only root yet. Expose the
+    // staging boundary so a parent coordinator can own quiesce and reboot.
+    expose: [
+        { protocol: "cerise.update.Stager", from: "#ota_updater" },
+    ],
+}

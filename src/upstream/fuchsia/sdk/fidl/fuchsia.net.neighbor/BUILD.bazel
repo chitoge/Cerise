@@ -1,0 +1,72 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# the whole library is @available(added=HEAD) in its
+# real source (overview.fidl) -- no level-30 version exists to preserve.
+# Bumping `available` directly is safe by construction (no other real
+# consumer -- verified, only this library's own BUILD.bazel references it).
+fidl_library(
+    name = "fuchsia.net.neighbor",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.neighbor_rs",
+    library = ":fuchsia.net.neighbor",
+    tags = ["manual"],
+)
+
+# retargeted onto fuchsia.net's HEAD-compiled
+# instance (:fidl_fuchsia_net_head, crate_name "fidl_fuchsia_net") rather than
+# the plain level-30 one. fuchsia.net.neighbor has zero other real consumers
+# (verified) so this is safe by construction, and it's what makes this
+# library's composed fuchsia.net types (Entry.neighbor/mac) match what
+# fidl_fuchsia_net_ext's conversions (built on fidl_fuchsia_net_common ==
+# fidl_fuchsia_net_head) expect -- see fuchsia.net/BUILD.bazel's
+# flex_fuchsia_net_for_neighbor comment for the full rationale.
+rust_library(
+    name = "fidl_fuchsia_net_neighbor",
+    srcs = [":fuchsia.net.neighbor_rs"],
+    crate_name = "fidl_fuchsia_net_neighbor",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale.
+genrule(
+    name = "flex_fuchsia_net_neighbor_rs_gen",
+    outs = ["flex_fuchsia_net_neighbor.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_neighbor::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_neighbor",
+    srcs = [":flex_fuchsia_net_neighbor_rs_gen"],
+    crate_name = "flex_fuchsia_net_neighbor",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_neighbor"],
+)

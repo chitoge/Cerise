@@ -1,0 +1,16 @@
+# Authored locally for Cerise — src/devices/block/lib/common.
+# common.h: CheckIoRange/CheckFlushValid (AHCI's sata.cc). Header-only.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "common",
+    hdrs = ["include/common.h"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    ],
+)

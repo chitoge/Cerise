@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lockup_detector",
+    srcs = [
+        "diagnostics.cc",
+        "lockup_detector.cc",
+    ],
+    hdrs = [
+        "include/lib/lockup_detector.h",
+        "include/lib/lockup_detector/diagnostics.h",
+        "include/lib/lockup_detector/inline_impl.h",
+        "include/lib/lockup_detector/state.h",
+    ],
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/lockup_detector.h",
+        "include/lib/lockup_detector/diagnostics.h",
+        "include/lib/lockup_detector/inline_impl.h",
+        "include/lib/lockup_detector/state.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "diagnostics.cc",
+        "lockup_detector.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

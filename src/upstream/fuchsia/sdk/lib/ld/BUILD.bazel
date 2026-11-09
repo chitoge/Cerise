@@ -1,0 +1,45 @@
+# Bazel integration for this imported target. Header surface of
+# the standalone dynamic linker library (lib/ld/*), used by the libc startup
+# (processargs etc.). The linker implementation is built as that work lands.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# the dynamic-linker logging + debugdata forwarding (ld::Log,
+# ld::Debugdata) libc.so's startup/thread support references. Linked into libc.so.
+cc_library(
+    name = "ld",
+    srcs = [
+        "fuchsia-debugdata.cc",
+        "log-zircon.cc",
+        # _ld_tlsdesc_runtime_undefined_weak(_addend): TLSDESC fallback handlers
+        # the ldso references (undefined-weak TLS).
+        "tlsdesc-runtime-undefined-weak.S",
+        # Defines _ld_abi (ld::mutable_abi, __asm__("_ld_abi")) + _r_debug — the
+        # exported linker ABI symbols the libc ld/ glue (log.cc, dladdr) reference.
+        # Empty/constinit on the musl path (musl uses its own dso chain).
+        "mutable-abi.cc",
+        "mutable-abi.h",
+    ],
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack", "-fno-exceptions", "-fno-rtti", "-DTLSDESC_RETAIN=R", "-Isrc/upstream/fuchsia/sdk/lib/ld"],
+    alwayslink = True,
+    deps = [
+        ":headers",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:headers",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/src/lib/elfldltl:headers",
+        "//src/upstream/fuchsia/zircon/kernel/lib/arch:x86_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)

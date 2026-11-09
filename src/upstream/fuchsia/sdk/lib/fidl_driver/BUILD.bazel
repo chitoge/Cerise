@@ -1,0 +1,22 @@
+# Cerise BUILD (authored locally). FIDL driver-transport C++ runtime (sdk/lib/fidl_driver):
+# the wire/natural messaging over fdf channels, used by driver-transport FIDL bindings
+# (e.g. fuchsia.driver.framework_cpp).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fidl_driver",
+    srcs = [
+        "natural_messaging.cc",
+        "transport.cc",
+        "unknown_interactions.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+    ],
+)

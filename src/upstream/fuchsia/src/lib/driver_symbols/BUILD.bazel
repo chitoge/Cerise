@@ -1,0 +1,28 @@
+# Cerise BUILD (authored locally). driver_symbols
+# (//src/lib/driver_symbols:driver_symbols): inspects a loaded driver .so for use
+# of restricted symbols. Used by the compat shim before dlopen-ing a legacy driver.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "driver_symbols",
+    srcs = ["symbols.cc"],
+    hdrs = [
+        "symbols.h",
+        "restricted_symbols.h",
+    ],
+    # symbols.cc includes "zircon/system/public/zircon/errors.h" (workspace-relative);
+    # "symbols.h"/"restricted_symbols.h" resolve from the source's own dir.
+    # Consumers include the public header as "src/lib/driver_symbols/symbols.h"
+    # via the workspace-root -I they already carry.
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

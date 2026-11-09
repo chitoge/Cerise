@@ -1,0 +1,40 @@
+// netstack3 leaf — the real Fuchsia network stack (bin/netstack3). Serves
+// Installer/socket.Provider/interfaces.State.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/netstack3",
+        lifecycle: { stop_event: "notify" },
+    },
+
+    // Structured-config schema (config-literal burn-down): flattened
+    // from real upstream's meta/config_schema.cml (4 component-owned fields) +
+    // meta/routed_configs.shard.cml (suspend_enabled). The ns3_config Rust
+    // crate is generated FROM THIS compiled manifest, and the delivered values
+    // (meta/netstack3.cvf) are configc-generated against the same .cm —
+    // checksum identity by construction. Values: //bundles:config_defaults.bzl.
+    config: {
+        num_threads: { type: "uint8" },
+        debug_logs: { type: "bool" },
+        opaque_iids: { type: "bool" },
+        suspend_enabled: { type: "bool" },
+        sampled_stats_enabled: { type: "bool" },
+    },
+    capabilities: [
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.net.routes.admin.RouteTableV4" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "self" },
+        { protocol: "fuchsia.net.routes.admin.RouteTableV4", from: "self" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "self" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "self" },
+        { protocol: "fuchsia.net.interfaces.State", from: "self" },
+    ],
+}

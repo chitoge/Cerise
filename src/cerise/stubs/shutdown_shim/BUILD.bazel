@@ -1,0 +1,37 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "shutdown_policy",
+    srcs = ["src/policy.rs"],
+    crate_name = "shutdown_policy",
+    edition = "2021",
+)
+
+rust_library(
+    name = "shutdown_shim",
+    srcs = ["src/lib.rs"],
+    crate_name = "shutdown_shim",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        ":shutdown_policy",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power.statecontrol:fidl_fuchsia_hardware_power_statecontrol",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.sys2:fidl_fuchsia_sys2",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.system.state:fidl_fuchsia_system_state",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:anyhow",
+        "@crates//:futures",
+    ],
+)
+
+rust_test(
+    name = "shutdown_policy_test",
+    size = "small",
+    crate = ":shutdown_policy",
+    edition = "2021",
+)

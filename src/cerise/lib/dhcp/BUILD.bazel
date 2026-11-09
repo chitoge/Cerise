@@ -1,0 +1,28 @@
+# cerise-dhcp: a minimal DHCPv4 (RFC 2131 DORA) client + SLAAC observation helper
+# built on the real netstack3 surface. SHAPE: a library, not a daemon —
+# DORA runs over a fuchsia.posix.socket.packet socket (works pre-address) inside
+# whichever component already brings the interface up (netstack3_probe, fileserver),
+# so both reuse one implementation with no new always-on component. See lib.rs.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_dhcp",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_dhcp",
+    edition = "2021",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fidl_fuchsia_posix",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fidl_fuchsia_posix_socket",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.packet:fidl_fuchsia_posix_socket_packet",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

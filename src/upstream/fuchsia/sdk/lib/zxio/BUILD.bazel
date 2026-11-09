@@ -1,0 +1,52 @@
+# Bazel integration for this imported target. zxio: the transport
+# layer below fdio (zx handles + fuchsia.io/posix.socket FIDL -> a uniform IO
+# vtable). Compiles against the generated FIDL C++ bindings + the binding runtime
+# on the sysroot. socket.cc (needs the netstack udp_serde helper) is deferred.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "zxio",
+    srcs = glob(
+        ["*.cc"],
+        exclude = ["*_test*.cc"],
+        allow_empty = True,
+    ),
+    hdrs = glob(["include/**/*.h", "*.h"], allow_empty = True),
+    copts = ["-Isrc/upstream/fuchsia"],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/safemath:safemath",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack/udp_serde:udp_serde",
+    ],
+)
+
+# Headers-only zxio (for udp_serde, which shares zxio's udp_socket_private.h but
+# must not depend on zxio's impl — zxio's socket.cc depends on udp_serde).
+cc_library(
+    name = "zxio_headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/system/ulib/zx:headers"],
+)

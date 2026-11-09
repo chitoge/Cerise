@@ -1,0 +1,14 @@
+# Bazel integration for this imported target. netstack3-hashmap:
+# a small hashmap wrapper used by netstack3-core (leaf, no deps).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "hashmap",
+    # GN sets the crate name to netstack3-hashmap; dependents import netstack3_hashmap.
+    crate_name = "netstack3_hashmap",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+)

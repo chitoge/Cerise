@@ -1,0 +1,27 @@
+# Authored locally for Cerise (C7 Step 4). fuchsia.resource bind library.
+# Used by platform-bus PlatformDevice to add bind properties (MMIO_COUNT, INTERRUPT_COUNT, etc.)
+# to child nodes so board drivers can match them.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "bind_library_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["fuchsia.resource.bind"])
+
+bind_library_cpp(
+    name = "fuchsia.resource_cpp_gen",
+    src = "fuchsia.resource.bind",
+)
+
+genrule(
+    name = "resource_cpp_hdr",
+    srcs = [":fuchsia.resource_cpp_gen"],
+    outs = ["bind/fuchsia/resource/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.resource_cpp",
+    hdrs = [":resource_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/src/devices/bind/fuchsia.resource",
+)

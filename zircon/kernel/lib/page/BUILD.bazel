@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    defines = select({
+        "@platforms//cpu:aarch64": ["LIB_ARCH_PAGING_CONFIGURATION=\\\"4k-48bit\\\""],
+        "//conditions:default": ["LIB_ARCH_PAGING_CONFIGURATION=\\\"4level\\\""],
+    }),
+    includes = ["include"],
+    deps = [
+        # lib/arch is toolchain ambient but its headers include hwreg which is not ambient
+        "//zircon/system/ulib/hwreg:hwreg",
+    
+        "//:kernel_cc_headers",
+],
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

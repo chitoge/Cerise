@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "stdout-to-debuglog",
+    srcs = ["src/lib.rs"],
+    crate_name = "stdout_to_debuglog",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fidl_fuchsia_boot",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:anyhow",
+    ],
+)

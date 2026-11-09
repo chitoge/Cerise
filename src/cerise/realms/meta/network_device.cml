@@ -1,0 +1,14 @@
+// network_device leaf-driver — DFv2-native netdev multiplexer (colocated with
+// virtio_net).
+{
+    program: {
+        runner: "driver",
+        binary: "driver/network-device.so",
+        bind: "meta/bind/network_device_bind.bindbc",
+        colocate: "true",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.network.driver.Service" },
+    ],
+}

@@ -1,0 +1,99 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.driver.framework",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fuchsia.component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fuchsia.component.runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fuchsia.data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fuchsia.power.broker",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.driver.framework_cpp",
+    library = ":fuchsia.driver.framework",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        # driver.framework has driver-transport methods -> generated bindings include
+        # <lib/fidl_driver/cpp/...>.
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        # The generated C++ includes the dep libraries' C++ bindings.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fuchsia.data_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url_cpp",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.driver.framework_rs",
+    library = ":fuchsia.driver.framework",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_driver_framework",
+    srcs = [":fuchsia.driver.framework_rs"],
+    crate_name = "fidl_fuchsia_driver_framework",
+    edition = "2021",
+    tags = ["manual"],
+    # The generated fdf-transport Driver bindings (emitted by -include-drivers) are
+    # gated behind `#[cfg(feature = "driver")]` and use the fdf + fidl_driver crates,
+    # which are fuchsia-only (fdf -> zx). Mirror the existing zx select: enable the
+    # `driver` feature and pull the fdf deps only on fuchsia; on host the Driver code
+    # is compiled out, matching upstream where driver transport is device-only.
+    crate_features = select({
+        "@platforms//os:fuchsia": ["driver"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fidl_fuchsia_device_fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fidl_fuchsia_power_broker",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fidl_fuchsia_url",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            # driver.framework has @transport("Driver") protocols -> with
+            # -include-drivers + the "driver" feature the generated Rust references
+            # the fdf + fidl_driver crates.
+            "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust:fdf",
+            "//src/upstream/fuchsia/src/lib/fidl/rust/fidl_driver:fidl_driver",
+        ],
+        "//conditions:default": [],
+    }),
+)

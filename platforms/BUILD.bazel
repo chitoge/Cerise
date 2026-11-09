@@ -1,0 +1,110 @@
+package(default_visibility = ["//visibility:public"])
+
+platform(
+    name = "zircon_x64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "x64-kernel",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+)
+
+platform(
+    name = "x64-phys",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+)
+
+platform(
+    name = "x86_32-phys",
+    constraint_values = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+)
+
+platform(
+    name = "x64-efi",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:uefi",
+        "//platforms/env:efi",
+    ],
+)
+
+platform(
+    name = "x64-user",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)
+
+# probe platform for the upstream x86_64-unknown-fuchsia
+# Rust std target. Used to validate that std compiles for the Fuchsia target in
+# our hermetic rules_rust setup, ahead of the libc/sysroot port. Resolves
+# the rules_rust auto-generated fuchsia toolchain via @rust_toolchains//:all.
+platform(
+    name = "x64-fuchsia",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:fuchsia",
+    ],
+)
+
+# arm64 platforms
+platform(
+    name = "arm64-kernel",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+)
+
+platform(
+    name = "arm64-phys",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+)
+
+platform(
+    name = "arm64-user",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)

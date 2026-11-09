@@ -1,0 +1,29 @@
+# Bazel integration for this imported target. Header surface of
+# elfldltl (the header-only ELF loading/diagnostics library), used by the libc
+# startup/ldso layer.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# the out-of-line elfldltl::Self<>::Phdrs()/Dynamic() (the running
+# module's own program headers / dynamic table), referenced by libc.so's thread
+# support. Linked into libc.so.
+cc_library(
+    name = "self",
+    srcs = ["self.cc"],
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack", "-fno-exceptions", "-fno-rtti"],
+    alwayslink = True,
+    deps = [
+        ":headers",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/kernel/lib/arch:x86_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

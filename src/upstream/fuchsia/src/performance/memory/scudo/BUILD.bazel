@@ -1,0 +1,13 @@
+# Authored locally for Cerise. scudo: Rust bindings for
+# scudo memory allocator mallopt() — used by component_manager. mallopt() is
+# in libc (which links scudo); no additional link dep needed.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "scudo",
+    srcs = ["lib.rs"],
+    crate_name = "scudo",
+    edition = "2024",
+)

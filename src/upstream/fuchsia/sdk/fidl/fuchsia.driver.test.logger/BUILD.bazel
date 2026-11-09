@@ -1,0 +1,4 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(name = "fuchsia.driver.test.logger", srcs = glob(["*.fidl"], allow_empty = True), available = "fuchsia:HEAD", tags = ["manual"], deps = ["//src/upstream/fuchsia/zircon/vdso:zx"])
+fidl_cpp(name = "fuchsia.driver.test.logger_cpp", library = ":fuchsia.driver.test.logger", tags = ["manual"], deps = ["//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural","//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire","//src/upstream/fuchsia/zircon/system/ulib/zx:headers"])

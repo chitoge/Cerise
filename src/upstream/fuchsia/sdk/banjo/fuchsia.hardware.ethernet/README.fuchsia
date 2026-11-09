@@ -1,0 +1,17 @@
+Name: fuchsia.hardware.ethernet (banjo)
+License: BSD-style (see file copyright headers)
+Upstream: https://fuchsia.googlesource.com/fuchsia
+Upstream path: sdk/banjo/fuchsia.hardware.ethernet
+Revision: 0f3c21bc
+Fetched via: gitiles +archive
+  https://fuchsia.googlesource.com/fuchsia/+archive/0f3c21bc/sdk/banjo/fuchsia.hardware.ethernet.tar.gz
+
+Vendored-at-baseline. ethernet.fidl is verbatim from upstream @ 0f3c21bc. BUILD.bazel is
+authored for Cerise (a direct clone of the sibling fuchsia.hardware.pciroot BUILD.bazel,
+names retargeted); the upstream BUILD.gn is kept alongside for reference and is NOT used.
+
+This is the legacy DFv1 EthernetImpl/EthernetIfc banjo protocol. The only consumer in this
+tree is the realtek-8111 driver
+(src/upstream/fuchsia/src/connectivity/ethernet/drivers/realtek-8111). The FIDL depends
+only on zx (the vdso), so the generated C++ banjo bindings
+(fuchsia.hardware.ethernet_banjo_cpp) build with the existing Cerise banjo toolchain.

@@ -1,0 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = ["file-lock.cc"],
+    hdrs = ["file-lock.h"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

@@ -1,0 +1,30 @@
+# Cerise packages: pkg_index — the pure, host-testable index logic shared by
+# pkg_resolver (read/layer/identity side) and pkg_fetcher (fetch-verify/upsert/serialize side).
+# Deliberately free of Fuchsia-target deps so the layering + identity + merkle-verify rules are
+# unit-tested on the HOST (rust_test below). See src/lib.rs.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "pkg_index",
+    srcs = ["src/lib.rs"],
+    crate_name = "pkg_index",
+    edition = "2021",
+    deps = [
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ],
+)
+
+# Host unit tests: dynamic-shadows-base layering, upsert-is-update, deterministic JSON,
+# malformed-merkle-is-loud, the verified-exec identity binding, and the fetch-path tamper check.
+rust_test(
+    name = "pkg_index_test",
+    crate = ":pkg_index",
+    edition = "2021",
+)

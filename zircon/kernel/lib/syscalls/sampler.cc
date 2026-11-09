@@ -1,0 +1,138 @@
+// Copyright 2024 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
+
+#include <lib/boot-options/boot-options.h>
+#include <lib/boot-options/types.h>
+#include <lib/syscalls/forward.h>
+
+#include <object/resource.h>
+#include <object/sampler_dispatcher.h>
+
+#include "lib/user_copy/user_ptr.h"
+
+#ifdef EXPERIMENTAL_THREAD_SAMPLER_ENABLED
+constexpr bool kSamplerEnabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
+#else
+// The build system should always define the macro.
+#error
+#endif
+
+// zx_status_t zx_sampler_create
+zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
+                               user_in_ptr<const zx_sampler_config_t> config,
+                               zx_handle_t* sampler_out) {
+  if constexpr (!kSamplerEnabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  *sampler_out = ZX_HANDLE_INVALID;
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  if (zx_status_t status =
+          validate_ranged_resource(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE, 1);
+      status != ZX_OK) {
+    return status;
+  }
+
+  auto up = ProcessDispatcher::GetCurrent();
+  if (zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_SAMPLER); status != ZX_OK) {
+    return status;
+  }
+
+  zx_sampler_config_t sample_config;
+  if (zx_status_t status = config.copy_from_user(&sample_config); status != ZX_OK) {
+    return status;
+  }
+
+  // We'll pick a arbitrary unreasonably large max size for the per cpu buffers.
+  //
+  // When we implement streamed reads, we can reduce this to something more
+  // reasonable.
+  if (sample_config.buffer_size > ZX_SAMPLER_MAX_BUFFER_SIZE) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // The act of taking a sample takes on the order of single digit microseconds. A period close to
+  // or shorter than that doesn't make sense.
+  if (sample_config.period < ZX_SAMPLER_MIN_PERIOD) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  zx::result<KernelHandle<SamplerDispatcher>> create_res = SamplerDispatcher::Create(sample_config);
+  if (create_res.is_error()) {
+    return create_res.status_value();
+  }
+  return up->MakeAndAddHandle(ktl::move(*create_res), SamplerDispatcher::default_rights(),
+                              sampler_out);
+}
+
+// zx_status_t zx_sampler_start
+zx_status_t sys_sampler_start(zx_handle_t sampler) {
+  if constexpr (!kSamplerEnabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
+  auto up = ProcessDispatcher::GetCurrent();
+  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+      status != ZX_OK) {
+    return status;
+  }
+
+  return thread_sampler->Start().status_value();
+}
+
+// zx_status_t zx_sampler_stop
+zx_status_t sys_sampler_stop(zx_handle_t sampler) {
+  if constexpr (!kSamplerEnabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
+  auto up = ProcessDispatcher::GetCurrent();
+  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+      status != ZX_OK) {
+    return status;
+  }
+
+  return thread_sampler->Stop().status_value();
+}
+
+// zx_status_t zx_sampler_read
+zx_status_t sys_sampler_read(zx_handle_t sampler, user_out_ptr<void> data, size_t len,
+                             user_out_ptr<size_t> actual) {
+  if constexpr (!kSamplerEnabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  if (!BootOptions::Get()->enable_debugging_syscalls) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
+  auto up = ProcessDispatcher::GetCurrent();
+  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+      status != ZX_OK) {
+    return status;
+  }
+
+  auto [status, bytes_copied] = thread_sampler->ReadUser(data, len);
+  // We may have a partial read: some bytes were copied, but we received an error later on.
+  // We provide the caller with how many bytes we copied, but also the error we ran into.
+  if (zx_status_t copy_status = actual.copy_to_user(bytes_copied); copy_status != ZX_OK) {
+    return copy_status;
+  }
+  return status;
+}

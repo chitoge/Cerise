@@ -1,0 +1,98 @@
+# Cerise packages foundation: pkg_hello — the demonstration package.
+#
+# cerise_component compiles meta/pkg_hello.cml -> meta/pkg_hello.cm; cerise_package then builds
+# a REAL meta.far (embedding that .cm) plus the ingest manifest pkg_probe reads on-target, with
+# the ELF binary + a shared lib as external content blobs. All merkles are computed by the
+# vendored fuchsia-pkg library at build time — no checked-in generated artifacts.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+load("//build:package.bzl", "cerise_package")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/pkg_hello.cml"])
+
+# The ELF component binary (dynamically linked Fuchsia binary via fuchsia_stripped).
+rust_binary(
+    name = "pkg_hello_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "pkg_hello",
+    edition = "2021",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ],
+)
+
+fuchsia_stripped(
+    name = "pkg_hello_bin_stripped.fuchsia",
+    src = ":pkg_hello_bin",
+)
+
+# The component's shared-library closure, as content blobs, already fuchsia-platform-transitioned
+# (matches how products stage runtime libs) so they build independent of the package rule's config.
+# pkg_hello's DT_NEEDED (readelf -d) is libc.so + libc++.so.1 (libzircon.so is the kernel vDSO, no
+# staging), interpreter ld.so.1; libc++.so.1 pulls libm.so at load (the -lm load trap). So
+# the launch-from-disk lib/ set is exactly: ld.so.1 (musl libc), libm.so (stub), libc++.so.1.
+fuchsia_artifact(
+    name = "libcxx_so_pkg_hello.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "ld_so_pkg_hello.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libm_so_pkg_hello.fuchsia",
+    src = "//src/cerise/sysroot/libm-stub:libm.so",
+)
+
+# Compile the .cml -> .cm (no structured config, so no .cvf). The ComponentInfo is unused by
+# the package path; we consume the single .cm File sub-target (:pkg_hello_manifest).
+cerise_component(
+    name = "pkg_hello_component",
+    manifest = "meta/pkg_hello.cml",
+    binary = ":pkg_hello_bin_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)
+
+# A distinct copy of the ingest manifest for pkg_resolver's static name->merkle index. The product
+# stages pkg_hello_manifest_json into pkg_probe's /pkg (as the ingest source) AND needs the same
+# bytes in pkg_resolver's /pkg (as the index); bootfs staging can't point two dests at one label,
+# so the resolver gets its own copy.
+genrule(
+    name = "pkg_hello_index_json",
+    srcs = [":pkg_hello_manifest_json"],
+    outs = ["pkg_hello_index.json"],
+    cmd = "cp $< $@",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The real package: meta/pkg_hello.cm embedded in meta.far; the binary + libc++ as content
+# blobs. Produces :pkg_hello.meta.far, :pkg_hello.manifest.json, and :pkg_hello.blob_<i>.
+cerise_package(
+    name = "pkg_hello",
+    far_files = {
+        ":pkg_hello_component_manifest": "meta/pkg_hello.cm",
+    },
+    blobs = {
+        ":pkg_hello_bin_stripped.fuchsia": "bin/pkg_hello",
+        ":ld_so_pkg_hello.fuchsia": "lib/ld.so.1",
+        ":libm_so_pkg_hello.fuchsia": "lib/libm.so",
+        ":libcxx_so_pkg_hello.fuchsia": "lib/libc++.so.1",
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

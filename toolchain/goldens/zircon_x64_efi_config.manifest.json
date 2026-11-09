@@ -1,0 +1,38 @@
+{
+	"asmopts": [],
+	"copts": [
+		"--target=x86_64-unknown-uefi",
+		"-m64",
+		"-fshort-wchar",
+		"-nostdlibinc"
+	],
+	"cpu": "x64",
+	"cxxopts": [
+		"-nostdinc++"
+	],
+	"defines": [
+		"ZIRCON_TOOLCHAIN",
+		"_EFI",
+		"__PE_COFF__"
+	],
+	"environment": "efi",
+	"feature_docs": {
+		"abi.x64.efi": "x64 UEFI ABI details that differ from the kernel environment.",
+		"cpu.x64.efi": "x64 EFI code-generation constraints.",
+		"env.efi": "UEFI environment definitions for EFI boot components.",
+		"stdlib.c_headers": "Hermetic C headers provided by the Zircon toolchain environment.",
+		"stdlib.cxx_headers": "Hermetic libc++ headers provided by the vendored LLVM overlay."
+	},
+	"features": [
+		"cpu.x64.efi",
+		"abi.x64.efi",
+		"env.efi",
+		"stdlib.c_headers",
+		"stdlib.cxx_headers"
+	],
+	"linkopts": [],
+	"name": "zircon.x64.efi",
+	"stdlib_include_dirs": [
+		"@llvm-project//libcxx:libcxx_headers_include_search_directory"
+	]
+}

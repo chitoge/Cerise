@@ -1,0 +1,21 @@
+# Authored locally for Cerise — src/devices/lib/dma-buffer.
+# I/O buffer management for DMA (contiguous + paged buffers, pinned VMOs).
+# Needed by the virtio transport lib (backends/pci.cc allocates DMA descriptors).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "dma-buffer",
+    srcs = ["dma-buffer.cc"],
+    hdrs = [
+        "include/lib/dma-buffer/buffer.h",
+        "include/lib/dma-buffer/phys-iter.h",
+    ],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

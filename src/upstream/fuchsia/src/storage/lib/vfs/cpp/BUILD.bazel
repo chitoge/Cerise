@@ -1,0 +1,27 @@
+# Cerise BUILD (authored locally). The C++ VFS library (src/storage/lib/vfs/cpp):
+# Vnode/Vfs/PseudoDir/Service/SynchronousVfs etc. Used by zircon svc::Outgoing.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc", "connection/*.cc"]),
+    hdrs = glob(["*.h", "connection/*.h"]),
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/file-lock:cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

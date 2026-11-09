@@ -1,0 +1,51 @@
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.memory.attribution",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.memory.attribution_rs",
+    library = ":fuchsia.memory.attribution",
+    tags = ["manual"],
+)
+
+# stub for the measure_tape code-generation target.
+# Provides Measurable trait + impl for AttributionUpdate with placeholder sizes.
+rust_library(
+    name = "measure_tape_for_attribution",
+    srcs = ["measure_tape_for_attribution.rs"],
+    crate_name = "measure_tape_for_attribution",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        ":fidl_fuchsia_memory_attribution",
+    ],
+)
+
+rust_library(
+    name = "fidl_fuchsia_memory_attribution",
+    srcs = [":fuchsia.memory.attribution_rs"],
+    crate_name = "fidl_fuchsia_memory_attribution",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

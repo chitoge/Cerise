@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "driver_manager_firmware_crash",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "driver_manager_firmware_crash",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.firmware.crash:fidl_fuchsia_firmware_crash",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

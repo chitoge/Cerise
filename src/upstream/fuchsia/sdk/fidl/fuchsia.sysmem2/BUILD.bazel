@@ -1,0 +1,28 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.sysmem2",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.images2:fuchsia.images2",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.math:fuchsia.math",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.sysmem2_cpp",
+    library = ":fuchsia.sysmem2",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.math:fuchsia.math_cpp",
+    ],
+)

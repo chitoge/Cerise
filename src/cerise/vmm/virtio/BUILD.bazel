@@ -1,0 +1,15 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Virtio split-queue ring types (VMM / host side).
+rust_library(
+    name = "virtio",
+    srcs = ["lib.rs"],
+    edition = "2021",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)

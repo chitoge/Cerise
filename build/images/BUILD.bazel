@@ -1,0 +1,13 @@
+load(":zbi.bzl", "zbi_image")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+zbi_image(
+    name = "boot_zbi",
+    input_zbis = [
+        "//build/phys:physload",
+        "//build/kernel:kernel_storage_zbi",
+    ],
+)

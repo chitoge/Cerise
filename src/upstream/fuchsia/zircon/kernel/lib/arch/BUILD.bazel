@@ -1,0 +1,40 @@
+# Bazel integration for this imported target. Header surface of
+# lib/arch (arch primitives, e.g. lib/arch/asm.h), used by the libc startup/ldso
+# layer (and kernel). Header-only here.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(
+        [
+            "include/**/*.h",
+            "include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# The x86 arch headers (e.g. <lib/arch/asm.h>'s .prologue.fp), which #include_next
+# the generic include/. includes lists x86/include BEFORE include so include_next
+# resolves the generic. Used by the libc crt/startup assembly.
+cc_library(
+    name = "x86_headers",
+    hdrs = glob(
+        [
+            "x86/include/**/*.h",
+            "x86/include/**/*.inc",
+            "include/**/*.h",
+            "include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = [
+        "x86/include",
+        "include",
+    ],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)

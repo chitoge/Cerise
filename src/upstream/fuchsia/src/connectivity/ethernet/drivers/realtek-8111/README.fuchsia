@@ -1,0 +1,39 @@
+Name: realtek-8111 (Realtek RTL8111/8168/8411 ethernet driver)
+License: BSD-style (see per-file Fuchsia copyright headers)
+Upstream: https://fuchsia.googlesource.com/fuchsia
+Upstream path: src/connectivity/ethernet/drivers/realtek-8111
+Revision: 0f3c21bc
+Fetched via: gitiles +archive
+  https://fuchsia.googlesource.com/fuchsia/+archive/0f3c21bc/src/connectivity/ethernet/drivers/realtek-8111.tar.gz
+
+Vendored-at-baseline into Cerise. Files taken verbatim from upstream @ 0f3c21bc:
+  rtl8111.cc, rtl8111.h, meta/realtek-8111-info.json, meta/bind-tests.json
+
+Files adapted for Cerise (see in-file comments for the exact divergences):
+  meta/realtek_rtl8111.bind  - composite bind adapted to the node spec bus-pci
+                               publishes in this tree (mirrors e1000.bind; drops the
+                               upstream BIND_PCI_INTERFACE==1 constraint; requires the
+                               acpi parent with ACPI_BUS_TYPE==PCI).
+  meta/realtek-8111.cml      - shard-include style matching Cerise's compiled_manifest
+                               (identical to upstream in substance; DFv1/compat shape).
+  BUILD.bazel                - authored for Cerise (Bazel). Upstream BUILD.gn kept for
+                               reference below is NOT used.
+  realtek-8111.ld            - version script (exports only the two ZIRCON_DRIVER
+                               registration symbols), authored for Cerise, modeled on
+                               platform-bus-x86.ld.
+
+DRIVER SHAPE: DFv1 / legacy. It uses the banjo EthernetImpl/EthernetIfc protocol
+(fuchsia.hardware.ethernet, vendored alongside at
+src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.ethernet), ddktl (ddk::Device),
+io-buffer, and registers via ZIRCON_DRIVER. It rides the compat shim (compat.so) —
+program.compat = "driver/realtek-8111.so" — exactly like platform-bus-x86 and bus-pci.
+It is NOT DFv2 (no fdf::DriverBase, no __fuchsia_driver_registration__).
+
+BUILD-ONLY: QEMU cannot emulate RTL8111, so this driver is build-verified only. It is
+intended to first run on a real Apollo Lake NUC whose NIC is a Realtek RTL8111HN
+(PCI 10ec:8168 family).
+
+Upstream note (from rtl8111.h): "This driver has only been tested on the 8111h rev2
+(0x54100000), but it should work (or mostly work) with any model of rtl8111, rtl8168,
+or rtl8411." And (from rtl8111.cc): "This driver has not been tested since rewriting in
+C++."

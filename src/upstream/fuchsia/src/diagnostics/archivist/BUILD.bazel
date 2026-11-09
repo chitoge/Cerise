@@ -1,0 +1,201 @@
+# Cerise: Archivist vendored import (Phase 2 logging foundation).
+#
+# The upstream BUILD.bazel here was a `fuchsia_prebuilt_package` wrapper that
+# loaded @rules_fuchsia (absent in the Cerise build graph). It is replaced with
+# these hand-authored targets, mapping the vendored BUILD.gn's
+# rustc_library("lib") + archivist_optimized_binary("bin") onto the Cerise dep
+# graph. Both archivist_lib and the archivist binary compile for
+# x86_64-unknown-fuchsia (Phase 2 cleared the three recorded blockers):
+#
+#   1. :logmessage_measure_tape -- the measure-tape FIDL tool is now vendored
+#      (//src/upstream/fuchsia/tools/fidl/measure-tape) and a measure_tape_rust
+#      codegen rule emits the module from fuchsia.logger/LogMessage IR. Real
+#      computed sizes, no hand-faked constants.
+#   2. :archivist-config -- generated via fuchsia_structured_config_rust_lib
+#      from meta/archivist.cml (cml_features=["dynamic_dictionaries"]).
+#   3. Small targets -- fdio/rust:fdio_zxio + inspect/runtime:unchecked_includes
+#      alias added; trace/rust/trace-provider was already a target.
+#
+# FIDL API-level notes (shared-library changes made this phase):
+#   - fuchsia.inspect is compiled at fuchsia:HEAD (InspectSink.Escrow/FetchEscrow
+#     + EscrowToken the inspect servers use). Additive over level 30.
+#   - fuchsia.logger is compiled at fuchsia:28 (LogSink.ConnectStructured, which
+#     the log container serves unconditionally though it is @available(removed=29);
+#     upstream main does the same). Strict superset of level 30 (nothing in
+#     fuchsia.logger is added at 29/30/31).
+#   - archivist_lib/bin compile at fuchsia:HEAD rustc flags (as diagnostics-reader
+#     does). selectors is aliased from :diagnostics_selectors; derivative is a
+#     proc-macro (proc_macro_deps).
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+load("//build:structured_config.bzl", "fuchsia_structured_config_rust_lib")
+load("//src/upstream/fuchsia/tools/fidl/measure-tape:measure_tape.bzl", "measure_tape_rust")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    [
+        "meta/archivist.bootstrap_shard.cml",
+        # Shards consumed by //src/cerise/archivist:archivist (the Cerise CMv2
+        # component) so its lowered ConfigSchema checksum matches :archivist-config.
+        "meta/archivist.cml",
+        "meta/common.shard.cml",
+        "meta/config.shard.cml",
+        "meta/config_capabilities.shard.cml",
+    ],
+)
+
+# BLOCKER 1 CLEARED: the measure-tape tool (vendored Go host tool) computes the
+# exact FIDL max-encoded size of fuchsia.logger/LogMessage and emits the Rust
+# module. This mirrors upstream's measure_tape("logmessage_measure_tape") GN
+# target (target_binding="rust", target_types=["fuchsia.logger/LogMessage"]).
+measure_tape_rust(
+    name = "logmessage_measure_tape_gen",
+    fidls = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger"],
+    target_types = ["fuchsia.logger/LogMessage"],
+)
+
+# The generated module wrapped as a crate (the gni's rust branch: rustc_library
+# with deps zx-types + fidl + the measured library's Rust binding).
+rust_library(
+    name = "logmessage_measure_tape",
+    srcs = [":logmessage_measure_tape_gen"],
+    crate_name = "logmessage_measure_tape",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)
+
+# BLOCKER 2 CLEARED: the structured-config Rust client library. Upstream lowers
+# the `config: {}` schema in archivist.cml (via the config.shard.cml include)
+# to an `archivist_config::Config` with take_from_startup_handle(). Same macro
+# fshost/hello_cml use. archivist.cml's `dictionary` capability/expose needs the
+# `dynamic_dictionaries` restricted feature (upstream's root-manifest sets it).
+fuchsia_structured_config_rust_lib(
+    name = "archivist-config",
+    manifest = "meta/archivist.cml",
+    crate_name = "archivist_config",
+    includes = [
+        "meta/common.shard.cml",
+        "meta/config.shard.cml",
+        "meta/config_capabilities.shard.cml",
+    ],
+    cml_features = ["dynamic_dictionaries"],
+    config_package_path = "meta/archivist.cvf",
+    visibility = ["//visibility:public"],
+)
+
+# archivist_lib: the Archivist library crate (log + Inspect aggregation, the
+# fuchsia.diagnostics.ArchiveAccessor pipeline). Compiled at fuchsia:HEAD to
+# match the HEAD fuchsia.diagnostics binding (as diagnostics-reader does). Dep
+# map mirrors the vendored BUILD.gn rustc_library("lib").
+rust_library(
+    name = "archivist_lib",
+    srcs = glob(["src/**/*.rs"], exclude = ["src/main.rs"]),
+    crate_name = "archivist_lib",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    aliases = {
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors": "selectors",
+    },
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        ":archivist-config",
+        ":logmessage_measure_tape",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fidl_fuchsia_boot",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.host:fidl_fuchsia_diagnostics_host",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.system:fidl_fuchsia_diagnostics_system",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect.deprecated:fidl_fuchsia_inspect_deprecated",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process.lifecycle:fidl_fuchsia_process_lifecycle",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/diagnostics/lib/inspect-fidl-load:inspect-fidl-load",
+        "//src/upstream/fuchsia/src/diagnostics/lib/ring-buffer:ring-buffer",
+        "//src/upstream/fuchsia/src/lib/diagnostics/data/rust:diagnostics_data",
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/contrib/rust:fuchsia-inspect-contrib",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/format/rust:inspect_format",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/runtime/rust:unchecked_includes",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/encoding/rust:diagnostics_log_encoding",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/message/rust:diagnostics_message",
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl_table_validation:fidl_table_validation",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/lib/fuchsia-url:fuchsia-url",
+        "//src/upstream/fuchsia/src/lib/sandbox:sandbox",
+        "//src/upstream/fuchsia/src/lib/trace/rust:trace",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:anyhow",
+        "@crates//:bstr",
+        "@crates//:ciborium",
+        "@crates//:flyweights",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:pin-project",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# archivist: the ELF binary (src/main.rs). Extra deps beyond the lib per the
+# vendored BUILD.gn archivist_optimized_binary("bin").
+rust_binary(
+    name = "archivist",
+    srcs = ["src/main.rs"],
+    crate_name = "archivist",
+    edition = "2024",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":archivist-config",
+        ":archivist_lib",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/diagnostics/lib/ring-buffer:ring-buffer",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/encoding/rust:diagnostics_log_encoding",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio_zxio",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/trace/rust/trace-provider:trace-provider",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:anyhow",
+        "@crates//:log",
+    ],
+)

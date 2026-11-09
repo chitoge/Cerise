@@ -1,0 +1,26 @@
+# Bazel integration for this imported target. Upstream is an
+# idk_cc_source_library (Fuchsia SDK macro, not available here); replaced with a
+# plain cc_library. utf-utils: SIMD UTF-8 validation used by the FIDL wire runtime
+# (decoding_and_validating.cc). Included as <lib/utf-utils/utf-utils.h> (upstream
+# include_base "//sdk"), so the header is exposed under that prefix. Self-contained.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "utf-utils",
+    srcs = [
+        "internal/scalar.cc",
+        "utf-utils.cc",
+    ],
+    hdrs = glob(
+        [
+            "*.h",
+            "internal/*.h",
+        ],
+        allow_empty = True,
+    ),
+    include_prefix = "lib/utf-utils",
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat"],
+)

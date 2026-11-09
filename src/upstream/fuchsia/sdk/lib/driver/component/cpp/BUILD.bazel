@@ -1,0 +1,26 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    # Compile at HEAD so DriverBase binds the 5-arg fdf::Logger::Create2 (the HEAD
+    # signature) and matches the HEAD-level DFv2 driver/SDK consumers. MUST stay in
+    # lockstep with the HEAD flip of //src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp.
+    # See API-level HEAD gating.
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/node/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/symbols:symbols",
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+        "//src/upstream/fuchsia/sdk/lib/inspect/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

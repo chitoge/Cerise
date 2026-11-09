@@ -1,0 +1,51 @@
+# Bazel integration for this imported target. netstack3-sync:
+# the netstack3-core sync primitives (base variant; loom/instrumented variants
+# are omitted). Replaces the rustc_library_with_features GN target.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-sync",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = ["@crates//:derivative"],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+    ],
+)
+
+# src/rc.rs's `ResourceToken` derives
+# PartialEq/Eq/PartialOrd/Ord only `#[cfg_attr(any(test, feature =
+# "testutils"))]`; netstack3-base's own SocketCookie (base/src/socket/cookie.rs)
+# wraps a ResourceToken with the same cfg_attr and needs those impls to
+# exist on ITS dependency edge to netstack3-sync too. Same
+# swap-in-a-testutils-variant pattern as netstack3-base_testutils (see that
+# target's comment) - consumed by netstack3-base's OWN rust_test (not just
+# its dependents), since a rust_test's `crate = `/explicit-srcs recompile
+# only ever covers ITS OWN crate, never cfg(test)-flips a dependency crate.
+rust_library(
+    name = "netstack3-sync_testutils",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    crate_features = ["testutils"],
+    crate_name = "netstack3_sync",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = ["@crates//:derivative"],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+    ],
+)
+
+# src/lib.rs's and src/rc.rs's #[cfg(test)] mods need nothing beyond the
+# library's own deps plus std::thread (this crate, unlike base/ip/tcp/etc.,
+# is not #![no_std] - no teststd needed).
+rust_test(
+    name = "netstack3-sync_test",
+    crate = ":netstack3-sync",
+    edition = "2024",
+)

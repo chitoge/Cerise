@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Dynamically-linked Fuchsia binary (PT_INTERP ld.so.1, DT_NEEDED [libzircon.so, libfdio.so, libc.so]).
+# Built for //platforms:x64-fuchsia via fuchsia_artifact in products/BUILD.bazel.
+# component_runner serves ld.so.1 from userboot's PostBootfsFiles VMO cache;
+# libfdio.so is served from the bootfs VMO (pages not decommitted by userboot).
+rust_binary(
+    name = "hello_component",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    rustc_flags = ["-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)"],
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    deps = ["//src/cerise/libc-malloc:cerise_malloc"],
+    tags = ["manual"],
+)

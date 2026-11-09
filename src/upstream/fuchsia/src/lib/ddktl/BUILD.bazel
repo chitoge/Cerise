@@ -1,0 +1,47 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# C++ DDK wrapper — ddktl/device.h, metadata_server.h, etc.
+# Headers-only: no compiled sources.
+# The full dependency set (FIDL, fdf C++, component/outgoing) is added as those
+# are vendored; partial DDK consumers that only use init-txn.h/unbind-txn.h
+# can depend on this target now.
+cc_library(
+    name = "ddktl",
+    hdrs = glob([
+        "include/ddktl/**/*.h",
+    ]),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        # ddktl/device-internal.h includes <lib/fdf/cpp/channel.h> (driver runtime C++).
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        # ddktl/device.h includes <lib/component/incoming/cpp/protocol.h>.
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        # ddktl/device.h includes <fidl/fuchsia.driver.framework/cpp/fidl.h>.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    ],
+)
+
+# Compiled ddktl source — upstream lists fidl.cc in the ddktl source_set, but the
+# Cerise :ddktl target is headers-only. fidl.cc provides ddk::IntoDeviceFIDLTransaction
+# / ddk::FromDeviceFIDLTransaction (declared in ddktl/fidl.h), used by the compat shim's
+# devfs FIDL bridging. Vendored unmodified from the pin; stable, non-api-gated
+# (fidl::Transaction*, device_fidl_txn_t). alwayslink so the symbols are whole-archived
+# into the consuming driver .so.
+cc_library(
+    name = "fidl",
+    srcs = ["fidl.cc"],
+    deps = [
+        ":ddktl",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+    alwayslink = True,
+)

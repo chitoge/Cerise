@@ -1,0 +1,30 @@
+// crash_handler — a root-job crash observer. Obtains the root job via the
+// narrowly-routed fuchsia.kernel.RootJob builtin, binds an exception channel to
+// it, and on each userspace crash logs the fault + emits symbolizer markup, then
+// releases the exception unhandled so the process still dies. Markers use the
+// direct-serial zx_debug_write syscall, so no LogSink is used. It launches the
+// (lazy) crasher via its framework Binder ONLY AFTER attaching, so the crash is
+// guaranteed to be observed (no eager-sibling race).
+//
+// This manifest is shared by two realms: root_crash_handler.cml (the post-mortem gate),
+// which has a #crasher sibling and offers it this Binder, and
+// root_laptop_vm_host.cml (the real product), which has no crasher at all. The
+// Binder `use` is therefore `optional`: main.rs's start_crasher() already treats
+// a failed Binder connect as non-fatal (it emits a diagnostic line and continues
+// straight to the exception-stream loop), so an unrouted optional capability is
+// silently and correctly a no-op crasher-launch in the production realm.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/crash_handler",
+    },
+    use: [
+        // The privileged builtin: the whole-system root job (narrowly routed +
+        // allowlisted to /crash_handler by the cm_config security policy).
+        { protocol: "fuchsia.kernel.RootJob" },
+        // The crasher's framework Binder (offered to us from #crasher in the
+        // gate realm only). Optional: the production realm has no crasher and
+        // does not route this at all; start_crasher() tolerates the absence.
+        { protocol: "fuchsia.component.Binder", availability: "optional" },
+    ],
+}

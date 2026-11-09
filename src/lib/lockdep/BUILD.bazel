@@ -1,0 +1,33 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lockdep/common.h",
+        "include/lockdep/global_reference.h",
+        "include/lockdep/guard.h",
+        "include/lockdep/guard_multiple.h",
+        "include/lockdep/lock_class.h",
+        "include/lockdep/lock_class_state.h",
+        "include/lockdep/lock_dependency_set.h",
+        "include/lockdep/lock_name_helper.h",
+        "include/lockdep/lock_policy.h",
+        "include/lockdep/lock_traits.h",
+        "include/lockdep/lockdep.h",
+        "include/lockdep/runtime_api.h",
+        "include/lockdep/thread_lock_state.h",
+    ],
+)
+
+cc_library(
+    name = "lockdep",
+    hdrs = [":headers"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

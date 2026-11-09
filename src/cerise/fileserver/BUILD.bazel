@@ -1,0 +1,270 @@
+# Cerise gRPC file server component — the flagship deliverable.
+# A CMv2 ELF component that brings up a netstack3 interface, listens via
+# fuchsia_async::net, and serves gRPC (h2c) per connection through hyper's HTTP/2
+# server driven by the cerise-hyper-rt adapter over the transport-free @grpc tonic
+# FileServerServer. service integration: canned Stat (transport proof); fxfs backing in storage-backed integration.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:package.bzl", "cerise_package")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fileserver",
+    srcs = [
+        "src/claim.rs",
+        "src/crypt.rs",
+        "src/fs.rs",
+        "src/lifecycle.rs",
+        "src/main.rs",
+        "src/path_safety.rs",
+        "src/read_range.rs",
+        "src/read_stream.rs",
+        "src/resumable_sha256.rs",
+        "src/status.rs",
+        "src/storage_policy.rs",
+    ],
+    crate_name = "fileserver",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    # TWO futures universes live in this binary and they are NOT interchangeable.
+    # `futures` is @grpc's, which hyper/tonic are built against; the FIDL bindings and
+    # fuchsia-async are built against @crates//:futures, so a FIDL RequestStream does
+    # not implement @grpc's Stream trait at all (it fails as "trait bounds were not
+    # satisfied", not as a missing import, which is a confusing way to learn this).
+    # The FIDL-side one is therefore aliased rather than shadowing the gRPC one.
+    aliases = {
+        "@crates//:futures": "fx_futures",
+    },
+    proc_macro_deps = ["@crates//:async-trait"],
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        # gRPC stack (isolated @grpc universe; tokio[io-util] only, no mio on fuchsia).
+        "//src/cerise/fileserver/proto:fileserver_rust_proto",
+        "//src/cerise/lib/hyper_rt:cerise_hyper_rt",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "@grpc//:futures",
+        "@grpc//:hyper",
+        "@grpc//:hyper-util",
+        "@grpc//:tonic",
+        # Fuchsia runtime plus the shared interface-bootstrap adapter.
+        "//src/cerise/fidl/cerise.network:fidl_cerise_network",
+        # The storage-status report this component publishes (src/status.rs). The file
+        # server owns the disk-claim decision, so it is the one that gets to say what
+        # the storage state is; the status console consumes this and holds no block
+        # capability of its own.
+        "//src/cerise/fidl/cerise.storage:fidl_cerise_storage",
+        "//src/cerise/lib/guest_store_locate:guest_store_locate",
+        "//src/cryogen/format:cryogen_format",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        # Structured operational logging via LogSink. fileserver runs its own
+        # LocalExecutor on a dedicated stack thread (see main()), so it can't use
+        # #[fuchsia::main] — it calls diagnostics_log::initialize() directly.
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/rust:diagnostics_log",
+        "@crates//:anyhow",
+        # Aliased to `fx_futures` above — the FIDL/fuchsia-async futures, used to drive
+        # the cerise.storage.Status request stream and its ServiceFs.
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+        # storage-backed integration: fxfs backing — the fxfs core library + crypt + block/storage stack
+        # (same deps fxfs_probe uses for the reliable in-process direct-mount).
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/src/storage/fxfs:fxfs",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "//src/upstream/fuchsia/src/storage/lib/storage_device:storage_device",
+        # Real fdio (statically linked) — fuchsia_fs namespace opens + fuchsia_async::net.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        # GPT header validation for the disk-claim decision (src/claim.rs). SHARED with
+        # fxfs_provisioner rather than copied: the component that writes partition tables
+        # and the component that must not destroy them cannot be allowed to disagree
+        # about what a valid one is. Pure — no zx/FIDL/async — so it also links into the
+        # host-side :claim_check_test below.
+        "//src/cerise/fxfs_provisioner:boot_layout",
+        "@crates//:async-lock",
+    ],
+)
+
+fuchsia_stripped(
+    name = "fileserver_stripped.fuchsia",
+    src = ":fileserver",
+    tags = ["manual"],
+)
+
+# Host unit tests for pure service logic (path sanitization). Boot-independent.
+rust_test(
+    name = "path_safety_test",
+    srcs = ["src/path_safety.rs"],
+    crate_name = "path_safety",
+    edition = "2021",
+)
+
+# Host proof of the block-aligned source adapter used by the storage-backed
+# Mount::read implementation. The byte-addressed service contract remains
+# exact for unaligned, EOF-clamped, and failed source reads.
+rust_test(
+    name = "read_range_test",
+    srcs = ["src/read_range.rs"],
+    crate_name = "read_range",
+    edition = "2021",
+    deps = ["@crates//:futures"],
+)
+
+# Host proof of the production read-stream state machine. Published content
+# addresses open once per bounded RPC, ordinary paths retain per-chunk
+# resolution, and cancellation drops the opened handle and backend lifetime.
+rust_test(
+    name = "read_stream_test",
+    srcs = ["src/read_stream.rs"],
+    crate_name = "read_stream",
+    edition = "2021",
+    deps = ["@crates//:futures"],
+)
+
+# Pure host-side proof of the host-transition mutation barrier: admission closes
+# atomically, already-admitted mutations drain before the boundary, successful
+# freeze/thaw is idempotent, stale thaw is rejected, and a cancelled or failed
+# sync attempt stays closed and can be retried at the same generation.
+rust_test(
+    name = "lifecycle_gate_test",
+    srcs = ["src/lifecycle.rs"],
+    crate_name = "lifecycle_gate",
+    edition = "2021",
+    deps = ["@crates//:futures"],
+)
+
+# Pure host-side proof of exact-source mutation admission, durable ledger
+# validation, one-way drain, bounded compaction, and server-owned task lifetime.
+rust_test(
+    name = "mutation_source_test",
+    srcs = ["src/mutation_source.rs"],
+    crate_name = "mutation_source",
+    edition = "2021",
+    deps = [
+        "@crates//:futures",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+# The production importer persists this exact SHA-256 state across restarts.
+# Cross-check it against RustCrypto at every block/padding boundary and after
+# JSON checkpoint round trips.
+rust_test(
+    name = "resumable_sha256_test",
+    srcs = ["src/resumable_sha256.rs"],
+    crate_name = "resumable_sha256",
+    edition = "2021",
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+rust_test(
+    name = "storage_policy_test",
+    srcs = ["src/storage_policy.rs"],
+    crate_name = "storage_policy",
+    edition = "2021",
+)
+
+# The pure DISK-CLAIM policy (src/claim.rs), compiled standalone for the HOST so the
+# refuse-to-format rules are unit-testable without the zx/FIDL/async/fxfs deps of the
+# fileserver binary — the same host-testability split fxfs_provisioner's ownership.rs
+# uses. The fileserver binary includes the identical source via `mod claim;`.
+rust_library(
+    name = "claim_check",
+    srcs = ["src/claim.rs"],
+    crate_name = "claim_check",
+    crate_root = "src/claim.rs",
+    edition = "2021",
+    deps = ["//src/cerise/fxfs_provisioner:boot_layout"],
+)
+
+# Host unit tests for the claim policy: a genuinely blank device is claimable (this is
+# what keeps the blank-NVMe QEMU gates green); an existing Fxfs container is OPENED, not
+# formatted, including when only superblock B survives; a valid GPT in EITHER copy
+# refuses — in particular the observed CF-SZ5 state (zeroed primary, Fxfs magic at LBA 0,
+# intact backup) must refuse rather than read as blank or as ours; a present-but-invalid
+# table and any failed read refuse as missing evidence; named foreign signatures (FVM,
+# boot sector, ext) refuse by name; and unrecognised non-zero content refuses under the
+# catch-all.
+rust_test(
+    name = "claim_check_test",
+    crate = ":claim_check",
+    edition = "2021",
+)
+
+# ---------------------------------------------------------------------------------------------
+# (post-storage app tier): the fileserver as a REAL fuchsia-pkg PACKAGE. Its 8.5 MB binary +
+# libs live as content blobs delivered over the network on first boot (NOT in bootfs), so the
+# qemu-x64-console-pkg product's ZBI shrinks by the fileserver's unique bytes. The meta.far + blobs
+# are the gate's host-served download payload; only the ~200-byte ingest manifest (the resolver's
+# trusted-in-image BASE index) ships in bootfs. See //src/cerise/apptier_fetcher + //products.
+# ---------------------------------------------------------------------------------------------
+
+# The shared-library closure as content blobs (same DT_NEEDED set the bootfs fileserver staged:
+# ld.so.1 (musl libc), libm.so (stub, pulled by libc++'s -lm), libc++.so.1), fuchsia-transitioned.
+fuchsia_artifact(
+    name = "libcxx_so_fileserver_pkg_blob.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "ld_so_fileserver_pkg_blob.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libm_so_fileserver_pkg_blob.fuchsia",
+    src = "//src/cerise/sysroot/libm-stub:libm.so",
+)
+
+# The real package: name "fileserver". meta/fileserver.cm (reused from the realms cerise_component)
+# embedded in the meta.far; the binary + lib closure as content blobs. Produces
+# :fileserver_pkg_meta_far, :fileserver_pkg_manifest_json, :fileserver_pkg_blob_<i>.
+cerise_package(
+    name = "fileserver_pkg",
+    package_name = "fileserver",
+    far_files = {
+        # The pkg variant EXPOSES the framework Binder so apptier_fetcher can Lazy-start it.
+        "//src/cerise/realms:fileserver_pkg_manifest": "meta/fileserver.cm",
+    },
+    blobs = {
+        ":fileserver_stripped.fuchsia": "bin/fileserver",
+        ":ld_so_fileserver_pkg_blob.fuchsia": "lib/ld.so.1",
+        ":libm_so_fileserver_pkg_blob.fuchsia": "lib/libm.so",
+        ":libcxx_so_fileserver_pkg_blob.fuchsia": "lib/libc++.so.1",
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# A distinct copy of the ingest manifest for pkg_resolver's trusted-in-image BASE index
+# (/pkg/index/manifest.json). Same bytes; bootfs staging can't point two dests at one label.
+genrule(
+    name = "fileserver_pkg_index_json",
+    srcs = [":fileserver_pkg_manifest_json"],
+    outs = ["fileserver_pkg_index.json"],
+    cmd = "cp $< $@",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

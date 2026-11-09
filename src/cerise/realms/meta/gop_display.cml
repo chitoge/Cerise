@@ -1,0 +1,26 @@
+// gop_display leaf-driver — Cerise GOP framebuffer DFv2 display driver (first-light
+// path for real hardware; also binds the OVMF-GOP stdvga on the QEMU firstlight gate).
+// Learns the framebuffer from the boot-shim's ZBI_TYPE_FRAMEBUFFER item via
+// fuchsia.boot.Items and maps that exact physical range via fuchsia.kernel.MmioResource
+// (both already offered into the boot-drivers collection by driver_manager; the
+// cm_config security allowlist already covers boot-drivers collection members).
+// Serves the SAME cerise.display.Service as display.cml so status_console and the
+// driver_manager aggregation route work unchanged.
+{
+    program: {
+        runner: "driver",
+        binary: "driver/gop_display.so",
+        bind: "meta/bind/gop_display_bind.bindbc",
+    },
+    capabilities: [
+        { service: "cerise.display.Service" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.boot.Items" },
+        { protocol: "fuchsia.kernel.MmioResource" },
+    ],
+    expose: [
+        { service: "cerise.display.Service", from: "self" },
+    ],
+}

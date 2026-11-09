@@ -1,0 +1,93 @@
+# Authored locally for Cerise. netstack3-ip (netstack3-core sub-crate),
+# x86_64-unknown-fuchsia. Base feature variant; test/loom/instrumented variants omitted.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-ip",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/macros:netstack3-macros",
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-declare",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/diagnostics-traits",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:arrayvec",
+        "@crates//:assert_matches",
+        "@crates//:either",
+        "@crates//:hmac",
+        "@crates//:log",
+        "@crates//:lru-cache",
+        "@crates//:rand",
+        "@crates//:ref-cast",
+        "@crates//:sha2",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)
+
+# netstack3-ip's own #[cfg(test)] mods do
+# `use ip_test_macro::ip_test;` / `use test_case::test_case;` /
+# `use net_declare::...;` (already a library dep) / `use itertools::Itertools;`
+# / `use static_assertions::const_assert;` / `use test_util::assert_lt;`
+# (a vendored-here test-infra crate, same category as ip-test-macro - see
+# //src/upstream/fuchsia/src/lib/test_util's BUILD.bazel) /
+# `proptest::proptest!(...)`. srcs/crate_root are restated
+# (instead of the `crate = ` shorthand) so netstack3-base and
+# netstack3-filter can be swapped for their `_testutils` variants (both
+# needed transitively by ip's own testutil module and its #[cfg(test)]
+# code) - no netstack3-ip_testutils variant of itself is needed here since
+# ip's own --cfg test activates its own testutil directly.
+rust_test(
+    name = "netstack3-ip_test",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/ip-test-macro",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/macros:netstack3-macros",
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-declare",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/diagnostics-traits",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base_testutils",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/filter:netstack3-filter_testutils",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:arrayvec",
+        "@crates//:assert_matches",
+        "@crates//:either",
+        "@crates//:hmac",
+        "@crates//:itertools",
+        "//src/upstream/fuchsia/src/lib/test_util",
+        "@crates//:log",
+        "@crates//:lru-cache",
+        "@crates//:proptest",
+        "@crates//:rand",
+        "@crates//:ref-cast",
+        "@crates//:sha2",
+        "@crates//:static_assertions",
+        "@crates//:test-case",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)

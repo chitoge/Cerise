@@ -1,0 +1,175 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.net",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.net_cpp",
+    library = ":fuchsia.net",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.net:fuchsia.net_rust in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.net_rs",
+    library = ":fuchsia.net",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net",
+    srcs = [":fuchsia.net_rs"],
+    crate_name = "fidl_fuchsia_net",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# real upstream target name for the Rust binding
+# fidl_fuchsia_net_ext needs is "fuchsia.net_rust_common" (BUILD.gn dep
+# "//sdk/fidl/fuchsia.net:fuchsia.net_rust_common"). Its real source (Mark/
+# MarkDomain/Marks, net.fidl) is @available(added=HEAD) -- absent at this
+# library's shared level-30 IR. We CANNOT bump the shared `fuchsia.net`/
+# `fuchsia.net_cpp` targets' `available` to HEAD to get it: fuchsia.net_cpp is a
+# real, already-proven-working dependency of sdk/lib/zxio, sdk/lib/fdio, the real
+# virtio-net driver, and the real network-device driver (all boot-verified this
+# session) -- exactly the same class of regression risk Phase 3's fio_head saga
+# warned about. So, following that exact established precedent (a SEPARATE
+# parallel target compiled from the same FIDL sources at HEAD, original left
+# byte-for-byte untouched): a HEAD-level Rust-only binding of fuchsia.net, then a
+# thin non-fdomain-path re-export over THAT (matching flex_fuchsia_io's pattern)
+# rather than over the plain level-30 `fidl_fuchsia_net`.
+fidl_library(
+    name = "fuchsia.net_head",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net_head_rs",
+    library = ":fuchsia.net_head",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_head",
+    srcs = [":fuchsia.net_head_rs"],
+    crate_name = "fidl_fuchsia_net",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+genrule(
+    name = "fidl_fuchsia_net_common_rs_gen",
+    outs = ["fidl_fuchsia_net_common.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_common",
+    srcs = [":fidl_fuchsia_net_common_rs_gen"],
+    crate_name = "fidl_fuchsia_net_common",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_head"],
+)
+
+# real upstream target name these need is
+# "fuchsia.net_rust_flex" (BUILD.gn dep "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex"),
+# imported in their real source as `use flex_fuchsia_net_interfaces as fnet_interfaces;`
+# style aliases (crate_name prefixed "flex_", matching fdomain/client's flex_fidl shim's
+# crate name "flex_client"). Confirmed real upstream (bde03a1f, "[ffx] Port net-cli to
+# FDomain") never actually added a `_rust_flex`-producing FIDL codegen wrapper anywhere
+# in the tree (checked as far as upstream HEAD, 5 weeks past this project's pin -- still
+# missing there too, a standing upstream gap, not a transitional window to wait out).
+# Real semantic behavior: on the non-fdomain path, flex_client (fdomain/client:flex_fidl)
+# re-exports plain ::fidl::* wholesale with no distinct types -- Dialect resolves to the
+# exact same DefaultFuchsiaResourceDialect our plain fidl_rust() codegen already targets.
+# So for Cerise (no remote-FDomain use case, only flex_fidl's on-target instantiation),
+# "_rust_flex" for a FIDL library is a pure re-export of that library's EXISTING plain
+# `_rust` binding under a "flex_"-prefixed crate name -- NOT a distinct recompilation
+# (unlike the vfs_head/pseudo_fs_head/fuchsia.net_head precedent, which genuinely differ
+# in generated shape). A `pub use` re-export creates no new types, so this stays
+# internally consistent with fuchsia.net.interfaces/etc.'s plain-crate cross-references.
+# Aliases the PLAIN level-30 :fidl_fuchsia_net (not :fidl_fuchsia_net_head) so its types
+# match what fuchsia.net.interfaces/.admin/.resources's already-compiled plain bindings
+# reference internally -- aliasing the _head variant instead would reintroduce a
+# cross-crate-instance mismatch of exactly the kind this whole pattern exists to avoid.
+genrule(
+    name = "flex_fuchsia_net_rs_gen",
+    outs = ["flex_fuchsia_net.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net",
+    srcs = [":flex_fuchsia_net_rs_gen"],
+    crate_name = "flex_fuchsia_net",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net"],
+)
+
+# same crate_name
+# ("flex_fuchsia_net") as the target above, but backed by the HEAD-compiled
+# instance instead of plain level-30. Needed because fidl_fuchsia_net_neighbor
+# (see fuchsia.net.neighbor/BUILD.bazel) was retargeted onto :fidl_fuchsia_net_head
+# so its composed fuchsia.net types match what fidl_fuchsia_net_ext (built on
+# fidl_fuchsia_net_common == fidl_fuchsia_net_head) expects in its `From` impls --
+# without this, neighbor_ext's own `fnet::MacAddress`/`fnet::IpAddress` (via the
+# plain :flex_fuchsia_net target above) would be a different compiled type than
+# fnet_neighbor::Entry's actual field type, and a third different type again from
+# fidl_fuchsia_net_ext's conversions. Zero risk to the plain :flex_fuchsia_net
+# target above (byte-for-byte untouched, still used by interfaces_ext and
+# anything else that needs the plain instance) -- this is a SEPARATE target,
+# selected only by neighbor_ext's BUILD.bazel dep list, following the exact
+# same "same crate_name, different backing instance, pick per-consumer" pattern
+# established for vfs_head/pseudo_fs_head/vfs_platform.
+rust_library(
+    name = "flex_fuchsia_net_for_neighbor",
+    srcs = [":flex_fuchsia_net_rs_gen"],
+    crate_name = "flex_fuchsia_net",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_head"],
+)

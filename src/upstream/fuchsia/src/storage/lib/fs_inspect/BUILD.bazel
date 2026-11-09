@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fs_inspect",
+    srcs = ["src/lib.rs"],
+    crate_name = "fs_inspect",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:async-trait",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:futures",
+    ],
+)

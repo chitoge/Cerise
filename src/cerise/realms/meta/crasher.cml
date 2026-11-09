@@ -1,0 +1,16 @@
+// crasher (post-mortem gate fixture) — a component that null-derefs so the root-job
+// crash_handler observes a real userspace crash. Lazy: started only when
+// crash_handler binds its framework Binder (after crash_handler has attached to
+// the root-job exception channel). Markers go straight to the kernel debuglog
+// (zx_debug_write); no capabilities are used.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/crasher",
+    },
+    // Expose the framework-provided Binder so the realm can offer it to
+    // crash_handler; connecting to it is what launches this lazy component.
+    expose: [
+        { protocol: "fuchsia.component.Binder", from: "framework" },
+    ],
+}

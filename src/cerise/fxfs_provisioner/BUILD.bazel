@@ -1,0 +1,115 @@
+# Cerise fxfs_provisioner — the one-time first-boot Fxfs genesis step for the
+# qemu-x64-storage product. Formats the virgin disk + creates the bare "blob" volume fshost's
+# mount path OPENS, closes the disk, then serves a "provisioned" readiness directory that
+# fshost_probe gates on before triggering fshost's Lazy auto-mount. No crypt: fshost creates
+# and encrypts its own data/unencrypted volumes via its keybag path. See src/main.rs for the
+# full design (choice (b) over the upstream FxfsProvisioner path, and why).
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fxfs_provisioner",
+    srcs = [
+        "src/layout.rs",
+        "src/main.rs",
+        "src/ownership.rs",
+    ],
+    crate_name = "fxfs_provisioner",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "//src/upstream/fuchsia/src/storage/lib/fs_management/rust:fs_management",
+        "//src/upstream/fuchsia/src/storage/lib/storage_device:storage_device",
+        "//src/upstream/fuchsia/src/storage/fxfs:fxfs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        # Real fdio (not the link-time libfdio.so stub) — fuchsia-fs/fuchsia-component FFI into
+        # libfdio.so at final link time; statically link the real implementation.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+# Staged STRIPPED into the boot ZBI (statically-linked FIDL codegen + the full Fxfs core
+# library make this binary large unstripped — same rationale as fxfs_probe/the driver probes).
+fuchsia_stripped(
+    name = "fxfs_provisioner_stripped.fuchsia",
+    src = ":fxfs_provisioner",
+)
+
+# The pure disk-ownership-decision module (the provisioning policy),
+# compiled standalone for the HOST so the corrupt-superblock retention rules are
+# unit-testable without the zx/fuchsia deps of the provisioner binary (the same
+# host-testability split as //src/cerise/pkg_index). The provisioner binary
+# includes the identical source via `mod ownership;`.
+rust_library(
+    name = "ownership_check",
+    srcs = ["src/ownership.rs"],
+    crate_name = "ownership_check",
+    crate_root = "src/ownership.rs",
+    edition = "2024",
+)
+
+# Host unit tests: virgin/garbage disks claimable; healthy Fxfs owned; CORRUPT
+# superblock A + intact B still OWNED (the policy-critical demotion case);
+# an UNREADABLE probe REFUSES instead of claiming (the destructive-asymmetry
+# bug); a disk already carrying a Cerise GPT layout is reused, not
+# re-partitioned; a legacy whole-device Fxfs disk is never re-partitioned.
+rust_test(
+    name = "ownership_check_test",
+    crate = ":ownership_check",
+    edition = "2024",
+)
+
+# The pure bootable-layout module (GPT construction + sizing + the narrow
+# recognition used for idempotence), compiled standalone for the HOST for the
+# same reason as ownership_check: partition-table construction must be
+# unit-testable without zx/FIDL/async. The provisioner binary includes the
+# identical source via `mod layout;`.
+rust_library(
+    name = "boot_layout",
+    srcs = ["src/layout.rs"],
+    crate_name = "boot_layout",
+    crate_root = "src/layout.rs",
+    edition = "2024",
+)
+
+# Host unit tests: the type GUIDs are re-derived from gpt.h's GPT_GUID rules;
+# CRC-32 matches the standard check vector; 1 MiB-aligned non-overlapping
+# partitions on both 512e and 4Kn disks; a too-small disk fails loudly WITH the
+# sizes; the header/backup-header/protective-MBR/entry-array bytes are
+# spec-shaped; and a table we build is recognised as ours (idempotence).
+rust_test(
+    name = "boot_layout_test",
+    crate = ":boot_layout",
+    edition = "2024",
+)
+
+# Host tool: writes the GPT this provisioner would write onto a sparse image
+# file, so the table can be checked with an INDEPENDENT tool rather than only
+# with our own parser (a table only we agree with is not a GPT):
+#
+#   bazel run //src/cerise/fxfs_provisioner:gpt_image_tool -- /tmp/d.img 64GiB
+#   sgdisk -p -v /tmp/d.img && parted -s /tmp/d.img print
+rust_binary(
+    name = "gpt_image_tool",
+    srcs = ["src/bin/gpt_image_tool.rs"],
+    crate_root = "src/bin/gpt_image_tool.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":boot_layout"],
+)

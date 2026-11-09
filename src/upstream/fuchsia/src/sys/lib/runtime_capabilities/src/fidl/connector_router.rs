@@ -1,0 +1,79 @@
+// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use crate::fidl::router;
+use crate::{Connector, ConversionError, Router, WeakInstanceToken};
+use fidl::AsHandleRef;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use futures::TryStreamExt;
+use std::sync::Arc;
+use vfs::directory::entry::DirectoryEntry;
+use vfs::execution_scope::ExecutionScope;
+
+impl crate::RemotableCapability for Router<Connector> {
+    fn try_into_directory_entry(
+        self,
+        scope: ExecutionScope,
+        token: WeakInstanceToken,
+    ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
+        Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
+    }
+}
+
+impl crate::fidl::IntoFsandboxCapability for Router<Connector> {
+    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
+        let (client_end, sender_stream) =
+            fidl::endpoints::create_request_stream::<fsandbox::ConnectorRouterMarker>();
+        self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
+        fsandbox::Capability::ConnectorRouter(client_end)
+    }
+}
+
+impl Router<Connector> {
+    async fn serve_router(
+        self,
+        mut stream: fsandbox::ConnectorRouterRequestStream,
+        token: WeakInstanceToken,
+    ) -> Result<(), fidl::Error> {
+        while let Ok(Some(request)) = stream.try_next().await {
+            match request {
+                fsandbox::ConnectorRouterRequest::Route { payload, responder } => {
+                    let resp = match router::route_from_fidl(&self, payload, token.clone()).await {
+                        Ok(Some(c)) => {
+                            Ok(fsandbox::ConnectorRouterRouteResponse::Connector(c.into()))
+                        }
+                        Ok(None) => Ok(fsandbox::ConnectorRouterRouteResponse::Unavailable(
+                            fsandbox::Unit {},
+                        )),
+                        Err(e) => Err(e),
+                    };
+                    responder.send(resp)?;
+                }
+                fsandbox::ConnectorRouterRequest::_UnknownMethod { ordinal, .. } => {
+                    log::warn!(
+                        ordinal:%;
+                        "Received unknown ConnectorRouter request"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
+    pub fn serve_and_register(
+        self,
+        stream: fsandbox::ConnectorRouterRequestStream,
+        koid: zx::Koid,
+        token: WeakInstanceToken,
+    ) {
+        let router = self.clone();
+
+        // Move this capability into the registry.
+        crate::fidl::registry::insert(self.into(), koid, async move {
+            router.serve_router(stream, token).await.expect("failed to serve Router");
+        });
+    }
+}

@@ -1,0 +1,40 @@
+# Bazel integration for this imported target. netstack3-bindings
+# dependency: real fidl_fuchsia_net_filter_ext (BUILD.gn target
+# "fidl_fuchsia_net_filter_ext", non-fdomain instantiation only -- Cerise has
+# no remote-FDomain use case, "_fdomain" sibling target intentionally not
+# vendored). Depends on the HEAD-backed flex_fuchsia_net instance (via
+# fuchsia.net's flex_fuchsia_net_for_neighbor target -- same crate_name,
+# different backing target) since it composes with fidl_fuchsia_net_interfaces_ext
+# / fidl_fuchsia_net_matchers_ext, both built on the HEAD/_common fuchsia.net
+# instance.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_filter_ext",
+    srcs = [
+        "src/lib.rs",
+        "src/sync.rs",
+    ],
+    crate_root = "src/lib.rs",
+    crate_name = "fidl_fuchsia_net_filter_ext",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ebpf:flex_fuchsia_ebpf",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:flex_fuchsia_net_for_neighbor",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.filter:flex_fuchsia_net_filter",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.root:flex_fuchsia_net_root",
+        "//src/upstream/fuchsia/src/lib/async-utils:async-utils",
+        "//src/upstream/fuchsia/src/lib/fdomain/client:flex_fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_interfaces_ext:fidl_fuchsia_net_interfaces_ext",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

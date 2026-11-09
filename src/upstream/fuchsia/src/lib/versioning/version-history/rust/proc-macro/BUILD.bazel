@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "version_history_macro",
+    srcs = ["src/lib.rs"],
+    crate_name = "version_history_macro",
+    edition = "2024",
+    deps = [
+        "//src/cerise/stubs/version_history_data:version_history_data",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust:version-history",
+    ],
+)

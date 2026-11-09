@@ -1,0 +1,23 @@
+# Authored locally for Cerise.
+# fxfs_trace: thin wrapper re-exporting storage_trace's macros under "fxfs" as the
+# trace category. Depends on the ALREADY-VENDORED noop-mode storage_trace target
+# (`src/storage/lib/trace`, vendored for VFS) - a real upstream code path, not a
+# Cerise shortcut: upstream's own BUILD.gn template compiles storage_trace's
+# noop.rs (dropping any dependency on the real trace-engine) whenever tracing is
+# disabled, so reusing the existing noop-mode target here is faithful, not stubbed.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fxfs_trace",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_trace",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/storage/fxfs/trace/macros:fxfs_trace_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/storage/lib/trace:storage_trace",
+    ],
+)

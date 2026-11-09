@@ -1,0 +1,29 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# The `.cryostore` on-disk format: header, index reader and streaming packer.
+#
+# Deliberately unconstrained by platform, and `no_std` (needs `alloc`), for the
+# same reason `//src/cryogen/store` is: the *reader* half runs inside a VMM on
+# the freestanding target that serves a guest, and the *writer* half runs in a
+# host tool that prepares the image. Both halves must agree byte for byte, so
+# they are one crate rather than two, and neither half does any I/O — the
+# packer hands its caller bytes to append and the reader is handed a buffer.
+rust_library(
+    name = "cryogen_format",
+    srcs = ["lib.rs"],
+    crate_name = "cryogen_format",
+    edition = "2021",
+    deps = ["//src/cryogen/hash:cryogen_hash"],
+)
+
+# Host unit tests: round trip with dedup, zero pages costing nothing, byte-exact
+# determinism of two packs of the same input, rejection of a tampered index and
+# of a truncated one, and the sentinel collapsing to one slot however many page
+# indices it is placed at.
+rust_test(
+    name = "cryogen_format_test",
+    crate = ":cryogen_format",
+    edition = "2021",
+)

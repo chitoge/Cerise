@@ -1,0 +1,53 @@
+// Cerise status console component. Acquires the framebuffer as a FIDL client of the
+// native display driver (cerise.display.Service, routed from the driver framework) and
+// reads live interface state via fuchsia.net.interfaces.State. The console holds NO
+// hardware capability (no MmioResource/IoportResource). Markers use the
+// direct-serial zx_debug_write syscall, so no LogSink is used. A real .cml compiled by cmc through
+// cerise_component.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/status_console",
+    },
+    use: [
+        { service: "cerise.display.Service" },
+        { protocol: "fuchsia.net.interfaces.State" },
+
+        // Memory + CPU for the panel. This is the DECODED-STATS protocol, not a kernel
+        // resource handle: `ZX_INFO_KMEM_STATS` and `ZX_INFO_CPU_STATS` are both gated on
+        // the SYSTEM resource at ZX_RSRC_SYSTEM_INFO_BASE, and the two ways to reach it are
+        // fuchsia.kernel.InfoResource (hands over that handle, and with it guest stats,
+        // power domains and every future INFO-gated query) or fuchsia.kernel.Stats
+        // (component_manager keeps the handle and returns only the numbers). The console
+        // takes the second and therefore holds no resource handle of any kind — consistent
+        // with it holding no hardware capability for the framebuffer either.
+        { protocol: "fuchsia.kernel.Stats" },
+
+        // Storage state, from the component that decides it. OPTIONAL on purpose: in the
+        // app-tier product (root_dfv2acpi_console_pkg.cml) the file server is a Lazy
+        // package-resolved child that another component is responsible for binding, so this
+        // capability is deliberately NOT offered there — a required `use` would make the
+        // console activate it. An unrouted optional capability is a legal, explicit routing
+        // decision, and the panel renders the Storage section as unavailable with the reason
+        // rather than inventing a disk.
+        {
+            protocol: "cerise.storage.Status",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Status",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Status.catalog",
+            path: "/svc/cerise.vm.Status.catalog",
+            availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

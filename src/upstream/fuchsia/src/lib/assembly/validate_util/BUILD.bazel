@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "validate_util",
+    srcs = ["src/lib.rs"],
+    crate_name = "assembly_validate_util",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "@crates//:thiserror",
+    ],
+)

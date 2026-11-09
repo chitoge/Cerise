@@ -1,0 +1,31 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-merkle",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fuchsia_merkle",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/third_party/boringssl/rust/bssl-crypto:bssl-crypto",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+    ],
+)
+
+# src/merkle_verifier.rs's and
+# src/merkle_root_builder.rs's #[cfg(test)] mods do
+# `use test_case::test_case;` (plus anyhow/assert_matches, already
+# transitively available). util.rs's and lib.rs's own test mods need
+# nothing beyond the library's own deps.
+rust_test(
+    name = "fuchsia-merkle_test",
+    crate = ":fuchsia-merkle",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:assert_matches",
+        "@crates//:test-case",
+    ],
+)

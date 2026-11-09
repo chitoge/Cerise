@@ -1,0 +1,21 @@
+# Vendored for Cerise fshost Phase 1. Real upstream sdk/lib/device-watcher/cpp.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = ["device-watcher.cc"],
+    hdrs = ["device-watcher.h"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-Isrc/upstream/fuchsia/sdk",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//sdk/lib/fit",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+    ],
+)

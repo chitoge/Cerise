@@ -1,0 +1,48 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "power-management",
+    srcs = [
+        "energy-model.cc",
+        "kernel-registry.cc",
+        "pdev-power-level-controller.cc",
+        "port-power-level-controller.cc",
+        "power-state.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/power-management/bandwidth-reservation-cache.h",
+        "include/lib/power-management/energy-model.h",
+        "include/lib/power-management/kernel-registry.h",
+        "include/lib/power-management/pdev-power-level-controller.h",
+        "include/lib/power-management/port-power-level-controller.h",
+        "include/lib/power-management/power-state.h",
+        "include/lib/power-management/power-level-controller.h",
+        "include/lib/power-management/types.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "energy-model.cc",
+        "kernel-registry.cc",
+        "pdev-power-level-controller.cc",
+        "port-power-level-controller.cc",
+        "power-state.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

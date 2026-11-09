@@ -1,0 +1,29 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.pty",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.pty_cpp",
+    library = ":fuchsia.hardware.pty",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

@@ -1,0 +1,25 @@
+# Cerise DFv2 in-process driver loader (DFv2 runtime bring-up, Component 5).
+# The C++ "missing half" of the real fdf Driver round-trip: dlopen the driver .so,
+# resolve __fuchsia_driver_registration__, call v1.initialize(server_handle) on the
+# current fdf dispatcher. Linked into the Rust driver_manager_rust_dfv2 binary and
+# called over an extern "C" FFI from src/.../driver_manager_rust/src/fdf_start.rs.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "dfv2_inproc_loader",
+    srcs = ["loader.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        # symbols.h pulls in the fdf C++ headers (HEAD-gated in places).
+        "-ffuchsia-api-level=4292870144",
+    ],
+    # Rust references cerise_load_and_init_driver, but keep the member whole so
+    # --gc-sections can't drop it before the Rust crate's link resolves it.
+    alwayslink = True,
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/symbols:symbols",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

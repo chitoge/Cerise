@@ -1,0 +1,49 @@
+# Cerise shutdown_trigger: a tiny ELF component that, once the system reaches
+# steady state, requests a graceful poweroff via fuchsia.hardware.power.statecontrol.Admin
+# and drives the real orderly-shutdown chain (shim -> SystemController -> driver_manager
+# -> zx_system_powerctl).
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/shutdown_trigger.cml"])
+
+rust_binary(
+    name = "shutdown_trigger_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "shutdown_trigger",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power.statecontrol:fidl_fuchsia_hardware_power_statecontrol",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:anyhow",
+    ],
+)
+
+fuchsia_stripped(
+    name = "shutdown_trigger_bin_stripped.fuchsia",
+    src = ":shutdown_trigger_bin",
+)
+
+cerise_component(
+    name = "shutdown_trigger",
+    binary = ":shutdown_trigger_bin_stripped.fuchsia",
+    manifest = "meta/shutdown_trigger.cml",
+)

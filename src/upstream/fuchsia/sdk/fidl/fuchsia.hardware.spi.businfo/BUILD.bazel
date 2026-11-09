@@ -1,0 +1,9 @@
+# Authored locally for Cerise. board/lib/acpi: spi.businfo_cpp.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(name = "fuchsia.hardware.spi.businfo", srcs = glob(["*.fidl"], allow_empty = True), tags = ["manual"], available = "fuchsia:HEAD", deps = [])
+fidl_cpp(name = "fuchsia.hardware.spi.businfo_cpp", library = ":fuchsia.hardware.spi.businfo", tags = ["manual"], deps = ["//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",])

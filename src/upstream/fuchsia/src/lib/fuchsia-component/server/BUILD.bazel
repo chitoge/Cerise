@@ -1,0 +1,35 @@
+# Authored locally for Cerise. fuchsia-component/server:
+# outgoing FIDL service registration and ServiceFs for component servers.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "server",
+    srcs = [
+        "src/lib.rs",
+        "src/service.rs",
+        "src/until_stalled.rs",
+    ],
+    crate_name = "fuchsia_component_server",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/detect-stall:detect-stall",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next:fidl_next",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/client:client",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:pin-project",
+        "@crates//:thiserror",
+    ],
+)

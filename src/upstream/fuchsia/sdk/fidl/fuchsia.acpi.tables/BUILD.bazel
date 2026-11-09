@@ -1,0 +1,25 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.acpi.tables",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.acpi.tables_cpp",
+    library = ":fuchsia.acpi.tables",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

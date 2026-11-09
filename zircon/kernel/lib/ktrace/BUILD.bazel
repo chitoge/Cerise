@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "ktrace",
+    srcs = ["ktrace.cc"],
+    deps = [
+        "//abi:zx_syscall_headers",
+        "//sdk/lib/fit:fit",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["ktrace.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

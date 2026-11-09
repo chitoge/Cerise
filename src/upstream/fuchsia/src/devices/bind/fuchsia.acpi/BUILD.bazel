@@ -1,0 +1,28 @@
+# Cerise BUILD for the fuchsia.acpi bind library (authored locally; upstream is GN).
+# C++ bindings (fuchsia.acpi_cpp) consumed by board/lib/acpi.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "bind_library_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+# Exported so driver_bind_rules (e.g. //src/cerise/drivers/pci_probe) can `using`
+# fuchsia.acpi for composite-driver ACPI fragment bind rules.
+exports_files(["fuchsia.acpi.bind"])
+
+bind_library_cpp(
+    name = "fuchsia.acpi_cpp_gen",
+    src = "fuchsia.acpi.bind",
+)
+
+genrule(
+    name = "fuchsia.acpi_cpp_hdr",
+    srcs = [":fuchsia.acpi_cpp_gen"],
+    outs = ["bind/fuchsia/acpi/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.acpi_cpp",
+    hdrs = [":fuchsia.acpi_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/src/devices/bind/fuchsia.acpi",
+)

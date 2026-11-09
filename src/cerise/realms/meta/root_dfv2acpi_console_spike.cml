@@ -1,0 +1,68 @@
+// root_dfv2acpi_console_spike — component_manager root for qemu-x64-console-spike
+// (the minimal driver-realm boot vehicle: base driver stack SHARD A + fb_spike as
+// an Eager child offered Mmio/Ioport). No storage/netstack children.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "netdev_probe",
+            url: "fuchsia-boot:///netdev_probe#meta/netdev_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "fb_spike",
+            url: "fuchsia-boot:///fb_spike#meta/fb_spike.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netdev_probe"],
+        },
+
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: ["#netdev_probe"],
+        },
+
+        {
+            directory: "dev",
+            from: "#driver_manager_rust",
+            to: "#netdev_probe",
+            rights: ["r*"],
+        },
+
+        // Framebuffer resources for fb_spike (drives QEMU stdvga directly).
+        { protocol: "fuchsia.kernel.MmioResource", from: "parent", to: "#fb_spike" },
+        { protocol: "fuchsia.kernel.IoportResource", from: "parent", to: "#fb_spike" },
+    ],
+}

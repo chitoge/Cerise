@@ -1,0 +1,20 @@
+// Cerise Archivist query proof component (deliverable 3).
+//
+// Logs a known structured record via fuchsia.logger.LogSink (offered from
+// #archivist) and then reads it back via fuchsia.diagnostics.ArchiveAccessor
+// (routed out of Archivist's diagnostics-accessors dictionary into this
+// component's namespace at /svc/fuchsia.diagnostics.ArchiveAccessor, the default
+// path the diagnostics_reader client connects to). On a real round-trip it emits
+// CERISE-ARCHIVIST-QUERY-OK.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/archivist_reader",
+        forward_stdout_to: "log",
+        forward_stderr_to: "log",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.diagnostics.ArchiveAccessor" },
+    ],
+}

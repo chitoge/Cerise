@@ -1,0 +1,17 @@
+# Authored locally for Cerise. sdk/lib/async-default: the
+# thread-local default dispatcher getter/setter (async_get/set_default_dispatcher).
+# Required by sdk/lib/async-loop/default.c + any code that uses the default dispatcher.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "async-default",
+    srcs = ["default.c"],
+    hdrs = ["include/lib/async/default.h"],
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

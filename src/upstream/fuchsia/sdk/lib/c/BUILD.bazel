@@ -1,0 +1,239 @@
+# Bazel integration for this imported target. sdk/lib/c is the
+# Fuchsia libc wrapper around musl (it also hosts ldso/dlfcn/pthread/startup and
+# the llvm-libc header assembly). This target exposes its public include/ surface
+# (e.g. <zircon/sanitizer.h>, the llvm-libc macros/types) needed to compile musl.
+# The compiled libc and dynamic-loader targets are added with the runtime closure.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# musl pulls both the public libc headers (include, e.g. <zircon/sanitizer.h>)
+# and sdk/lib/c internal headers relative to the package root (e.g.
+# "threads/zxr-tls.h") — musl BUILD.gn lists //sdk/lib/c on its include path. So
+# expose both the include/ surface and the package root.
+cc_library(
+    name = "headers",
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = [
+        ".",
+        "include",
+        # Pre-generated headers (committed in the upstream tree): <fenv.h>,
+        # <zircon/process.h>, etc.
+        "include/gen",
+        # <lib/processargs/processargs.h> (used by the musl dynamic linker).
+        "startup/musl-processargs/include",
+        # Fuchsia's libc headers that PREEMPT llvm-libc's (e.g.
+        # <src/threads/thrd_create_with_name.h>). As -I it precedes the sysroot's
+        # llvm-libc src/ (-isystem), so Fuchsia's versions win.
+        "include-preempt",
+    ],
+)
+
+# the processargs implementation (parses the process bootstrap message).
+# Used by the musl dynamic linker (ldso/dynlink.c). Part of the libc.so link.
+cc_library(
+    name = "processargs",
+    srcs = ["startup/musl-processargs/processargs.c"],
+    # Part of the pre-%fs ldso bootstrap: must not use safe-stack/stack-protector
+    # (they read the thread pointer %fs:0x18 / %fs:0x10 before TLS exists), and
+    # hidden so its refs are PC-relative for _dl_start's bootstrap.
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+# the Fuchsia libc implementation glue that the musl dynamic linker
+# references (ld logging, the zircon handle cache, thread allocation). Probes the
+# sdk/lib/c body cascade toward completing libc.so.
+cc_library(
+    name = "libc_impl",
+    # The Fuchsia libc glue (threads, dynamic-linker log/abi, zircon handle cache,
+    # startup) that musl (libc_common) + ldso reference. Globbed; tests excluded.
+    srcs = glob(
+        [
+            "ld/*.cc",
+            "threads/*.cc",
+            # pthread_create/join/detach/exit/attr_{get,set}* implemented here as
+            # thin llvm-libc wrappers over the threads/Thread infrastructure.
+            "pthread/*.cc",
+            "zircon/*.cc",
+            "zircon/*.c",
+            "startup/*.cc",
+            "startup/*.c",
+            # Assembly startup (e.g. startup-trampoline.S — the public extern "C"
+            # __libc_start_main that crt1's _start calls, tail-calling the C++ one).
+            "startup/*.S",
+            "stdlib/*.cc",
+            "stubs/*.cc",
+            # iostubs.c defines the libc fd-table/mmap hooks (_fd_get_context,
+            # _fd_open_max, _mmap_*) that musl's mmap.c / fd code reference.
+            "stubs/*.c",
+            # setjmp/longjmp: the Fuchsia asm implementations define
+            # the LIBC_ASM_LINKAGE names and (under LIBC_COPT_PUBLIC_PACKAGING,
+            # set below) the public aliases setjmp/_setjmp/longjmp/_longjmp plus
+            # weak sigsetjmp/siglongjmp — matching libc.ifs (no signals on
+            # Fuchsia, so sig* are plain aliases per the jmp_buf.h macro).
+            # manglers.cc defines gJmpBufManglers in the StartupRandom section
+            # that InitStartupRandom (startup/*.cc above) fills with random bits.
+            "setjmp/fuchsia/manglers.cc",
+            "setjmp/fuchsia/x86_64/*.S",
+            # sanitizers/: the weak no-op __sanitizer_* hooks (hooks.c) + the
+            # *-stubs the libc references (debug_break etc.). Without them the ldso
+            # _exit(127)s on "__sanitizer_*: symbol not found".
+            "sanitizers/hooks.c",
+            "sanitizers/hwasan-stubs.cc",
+            "sanitizers/ubsan-stubs.cc",
+            "sanitizers/safestack.cc",
+        ],
+        exclude = [
+            "**/*test*",
+            "**/*_test*",
+            "**/*-test*",
+            "pthread/pthread-getsetname-test.cc",
+            # The standalone-ld startup variants (sdk/lib/ld-based) are NOT used by
+            # the legacy (musl) libc.so — it uses the musl-*.cc counterparts
+            # (musl-ctors.cc, threads/musl-on-tls-segments.cc). Excluding the
+            # ld-* + ctors variants resolves the duplicate __fuchsia_libc::
+            # Startup*/OnTlsSegments/WritableSegments symbols.
+            "ld/ctors.cc",
+            "ld/ld-fini.cc",
+            "ld/ld-on-tls-segments.cc",
+            "ld/ld-tls.cc",
+            "ld/ld-writable-segments.cc",
+            "ld/initial-stack-size.cc",
+            "ld/sanitizer-module-loaded.cc",
+            # More musl-vs-standalone duplicates: keep musl's __assert_fail
+            # (src/exit/assert.c), the __EXPORT __sanitizer_log_write
+            # (sanitizer-log-write.cc).
+            "ld/log-panic.cc",
+            "ld/__sanitizer_log_write.cc",
+            # The musl libc.so uses startup:shared-only = stub-relocate.cc (no-op
+            # StartupRelocateCreate/ProtectRelro for the shared/dynamic case — the
+            # musl ldso did relocation). static-pie-relocate.cc is for static-only
+            # executables; using it here made StartCompilerAbi's StartupRelocate
+            # scan phdrs + write RELRO'd .data.rel.ro on the ldso-loaded program
+            # (gdb: null-phdr read / write-protect fault). Per upstream BUILD.gn.
+            "startup/static-pie-relocate.cc",
+            # crt1.S is the executable-side _start (its own :crt1 target), NOT in
+            # libc.so.
+            "startup/crt1.S",
+        ],
+        allow_empty = True,
+    ),
+    # SDK/public-packaging build mode: ld-abi.h etc. use the production path, not
+    # the in-tree //sdk/lib/ld:testing harness. LLVM_LIBC_FUNCTION_ATTR gives the
+    # llvm-libc public functions (abort, ...) default visibility — else the macro
+    # marks them HIDDEN and the version script can't export them (upstream BUILD.gn).
+    local_defines = [
+        "LIBC_COPT_PUBLIC_PACKAGING=1",
+        "LLVM_LIBC_FUNCTION_ATTR=[[gnu::visibility(\\\"default\\\")]]",
+    ],
+    # No -fvisibility=hidden: exports are controlled by the libc.ifs version script on
+    # the libc_so link (lld relaxes the now-local internals to PC-relative for the
+    # bootstrap). This lets the public glue (abort, dl_iterate_phdr, dladdr, ...) export.
+    copts = ["-fno-stack-protector", "-fno-sanitize=safe-stack", "-fno-exceptions", "-fno-rtti"],
+    alwayslink = True,
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        "//sdk/lib/fit:fit",
+        # musl public headers come via the toolchain's fuchsia_c_system_headers
+        # (-isystem, after libc++); NOT as -I here (which would shadow libc++).
+        "//src/upstream/fuchsia/sdk/lib/fdio:headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:headers",
+        "//src/upstream/fuchsia/sdk/lib/ld:headers",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/src/lib/elfldltl:headers",
+        "//src/upstream/fuchsia/third_party/llvm-libc:llvm_libc_common_header",
+        "//src/upstream/fuchsia/zircon/kernel/lib/arch:x86_headers",
+        "//src/upstream/fuchsia/src/lib/symbolizer-markup:symbolizer-markup",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_private_headers",
+    ],
+)
+
+# the C runtime startup (crt1 + processargs + start-main +
+# static-pie relocation). Toward a linkable libc; probes the startup/ldso
+# integration cascade. Tagged manual until green.
+cc_library(
+    name = "libc_startup",
+    srcs = glob(
+        [
+            "startup/*.cc",
+            "startup/*.S",
+            "startup/*.c",
+        ],
+        allow_empty = True,
+    ),
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        "//src/cerise/sysroot:libc_sysroot_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+        # startup/ldso layer header deps
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/src/lib/elfldltl:headers",
+        "//src/upstream/fuchsia/sdk/lib/ld:headers",
+        "//src/upstream/fuchsia/zircon/kernel/lib/arch:x86_headers",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_private_headers",
+    ],
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["**/*.h", "**/*.inc"], allow_empty = True),
+)
+
+filegroup(
+    name = "include_files",
+    srcs = glob(["include/**/*.h", "include/**/*.inc"], allow_empty = True),
+)
+
+# the C runtime startup object (_start -> __libc_start_main -> main) for
+# Fuchsia executables. Linked (freestanding, -nostdlib) with libc.so.
+cc_library(
+    name = "crt1",
+    srcs = ["startup/crt1.S"],
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        # x86_headers lists x86/include before the generic include so lib/arch's
+        # x86 asm.h #include_next resolves the generic (.function + .prologue.fp).
+        "//src/upstream/fuchsia/zircon/kernel/lib/arch:x86_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+# a linker version script generated from libc.ifs (the 1429-symbol public ABI).
+# Linking libc.so with this exports the public POSIX/C API (so Rust std + other shared
+# libs resolve against libc.so) while `local: *` keeps internals unexported; lld
+# relaxes the now-local internal refs to PC-relative (what the ldso bootstrap needs,
+# replacing the blunt -fvisibility=hidden). Mirrors upstream's libc.ifs-driven exports.
+exports_files(["libc.ifs"])
+
+genrule(
+    name = "libc_version_script",
+    srcs = ["libc.ifs"],
+    outs = ["libc.map"],
+    cmd = ("{ echo 'LIBC {'; echo '  global:'; " +
+           "grep -oE 'Name: *[A-Za-z_][A-Za-z0-9_]*' $(location libc.ifs) " +
+           "| sed 's/Name: *//; s/.*/    &;/'; " +
+           "echo '  local:'; echo '    *;'; echo '};'; } > $@"),
+    visibility = ["//visibility:public"],
+)

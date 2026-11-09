@@ -1,0 +1,95 @@
+# Cerise conformance_cxx: the C++ runtime-conformance probe, promoted
+# from //examples/cxx-throw-probe (which only LINKED) into a staged component.
+# Part of the //validation:runtime-conformance boot gate.
+#
+# The acid test is throw-across-a-shared-library-boundary: libconfthrow.so THROWS
+# and the main binary CATCHES, which forces the unwinder to enumerate the .so's
+# eh_frame via dl_iterate_phdr at runtime. So this builds a REAL second shared
+# object (libconfthrow.so) and links the main binary against it (DT_NEEDED).
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/conformance_cxx.cml"])
+
+# The THROW side: a real shared object. No version script (unlike display.so) so
+# ThrowFromSo and the exception typeinfo are exported with default visibility.
+# -fexceptions/-frtti and default async unwind tables so the DWARF CFI + eh_frame
+# the unwinder needs are emitted. soname == the staged basename (lib/libconfthrow.so).
+cc_binary(
+    name = "libconfthrow.so",
+    srcs = [
+        "src/throw_source.cc",
+        "src/throw_source.h",
+    ],
+    additional_linker_inputs = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    copts = [
+        "-fexceptions",
+        "-frtti",
+    ],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,libconfthrow.so",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-lc++",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "libconfthrow_stripped.fuchsia",
+    src = ":libconfthrow.so",
+)
+
+# The CATCH side: the main probe binary. Links directly against libconfthrow.so
+# (passed as a positional linker input) so lld records DT_NEEDED=libconfthrow.so
+# by its soname; ld.so.1 resolves it from the package lib/ at load.
+cc_binary(
+    name = "conformance_cxx_bin",
+    srcs = [
+        "src/conformance_cxx.cc",
+        "src/throw_source.h",
+    ],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+        ":libconfthrow.so",
+    ],
+    copts = [
+        "-fexceptions",
+        "-frtti",
+    ],
+    linkopts = [
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "$(location :libconfthrow.so)",
+        "-lc++",
+        # No -lm (math is in libc.so; a DT_NEEDED libm.so would be unstaged and
+        # fail the process at load — see conformance_c/BUILD.bazel).
+        "-lzircon",
+        "-lfdio",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "conformance_cxx_stripped.fuchsia",
+    src = ":conformance_cxx_bin",
+)
+
+cerise_component(
+    name = "conformance_cxx",
+    manifest = "meta/conformance_cxx.cml",
+    binary = ":conformance_cxx_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)

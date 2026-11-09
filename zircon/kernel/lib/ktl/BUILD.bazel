@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    ["stub-new.cc"],
+    visibility = ["//:__pkg__"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob([
+        "include/**/*",
+        "include-after/**/*",
+    ], allow_empty = True),
+)

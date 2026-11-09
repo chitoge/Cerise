@@ -1,0 +1,101 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# bumped to HEAD -- interfaces_ext (real
+# upstream source, this exact pin) references NetstackManagedRoutesDesignation and
+# other @available(added=HEAD) additions absent at level 30. No already-boot-verified
+# consumer depends on the plain level-30 binding (only other still-being-vendored networking
+# FIDL libraries reference it).
+fidl_library(
+    name = "fuchsia.net.interfaces.admin",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:fuchsia.net.resources",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.interfaces.admin_rs",
+    library = ":fuchsia.net.interfaces.admin",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_interfaces_admin",
+    srcs = [":fuchsia.net.interfaces.admin_rs"],
+    crate_name = "fidl_fuchsia_net_interfaces_admin",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:fidl_fuchsia_net_resources",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# same reasoning as
+# fuchsia.net.interfaces' parallel _head target above - a separate Rust codegen
+# instance for netstack3's own direct use, leaving the plain target (which
+# interfaces_ext depends on, proven working) untouched.
+rust_library(
+    name = "fidl_fuchsia_net_interfaces_admin_head",
+    srcs = [":fuchsia.net.interfaces.admin_rs"],
+    crate_name = "fidl_fuchsia_net_interfaces_admin",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:fidl_fuchsia_net_resources",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale.
+genrule(
+    name = "flex_fuchsia_net_interfaces_admin_rs_gen",
+    outs = ["flex_fuchsia_net_interfaces_admin.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_interfaces_admin::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_interfaces_admin",
+    srcs = [":flex_fuchsia_net_interfaces_admin_rs_gen"],
+    crate_name = "flex_fuchsia_net_interfaces_admin",
+    edition = "2024",
+    tags = ["manual"],
+    # Wraps the HEAD instance, not plain -- interfaces_ext (the only real
+    # consumer of this flex target, a closed subgraph within netstack3's own
+    # dependency tree) needs to interoperate with its OWN flex_fuchsia_net
+    # (also HEAD-backed) without a "two different versions of crate" mismatch.
+    deps = [":fidl_fuchsia_net_interfaces_admin_head"],
+)

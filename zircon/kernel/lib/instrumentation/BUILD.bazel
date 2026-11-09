@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "instrumentation",
+    srcs = [
+        "private.h",
+        "instrumentation_stubs.cc",
+        "kernel-mapped-vmo.cc",
+        "memory-profile.cc",
+        "sancov.cc",
+        "vmo.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    defines = [
+        "HAVE_SANCOV=0",
+        "HAVE_PROFILE=0",
+        "HAVE_MEMORY_PROFILE=0",
+    ],
+    alwayslink = True,
+    deps = [
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/vm:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "mapped_vmo_source",
+    srcs = ["kernel-mapped-vmo.cc"],
+)
+
+filegroup(
+    name = "data_sources",
+    srcs = [
+        "memory-profile.cc",
+        "profile.cc",
+        "sancov.cc",
+        "vmo.cc",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

@@ -1,0 +1,25 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "bind_library_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["fuchsia.intel.platform.bind"])
+
+bind_library_cpp(
+    name = "fuchsia.intel.platform_cpp_gen",
+    src = "fuchsia.intel.platform.bind",
+)
+
+genrule(
+    name = "fuchsia.intel.platform_cpp_hdr",
+    srcs = [":fuchsia.intel.platform_cpp_gen"],
+    outs = ["bind/fuchsia/intel/platform/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.intel.platform_cpp",
+    hdrs = [":fuchsia.intel.platform_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/src/devices/bind/fuchsia.intel.platform",
+)

@@ -1,0 +1,16 @@
+# Cerise BUILD (authored locally) — device-protocol-pci (PCI client helper).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "device-protocol-pci",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

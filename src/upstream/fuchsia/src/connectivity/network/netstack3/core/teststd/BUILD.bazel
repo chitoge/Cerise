@@ -1,0 +1,17 @@
+# teststd re-exports a couple of `std` items
+# (println!, thread::spawn) for use ONLY from netstack3-core's own
+# #[cfg(test)] mods - the core crates themselves are #![no_std] (see e.g.
+# base/src/lib.rs), so their test code reaches std through this crate rather
+# than `use std::...` directly. testonly in upstream's BUILD.gn; mirrored
+# here by only ever being referenced from rust_test targets, never a
+# production rust_library's deps.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "teststd",
+    srcs = ["src/lib.rs"],
+    crate_name = "teststd",
+    edition = "2024",
+)

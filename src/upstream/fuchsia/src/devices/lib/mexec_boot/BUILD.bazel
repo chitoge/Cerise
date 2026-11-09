@@ -1,0 +1,26 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# stub: mexec_boot C stub — returns ZX_ERR_NOT_SUPPORTED.
+# A full implementation pulls in fsl/zbitl/bringup-mexec; deferred here.
+cc_library(
+    name = "mexec_boot_cc",
+    srcs = ["mexec_stub.c"],
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "mexec_boot",
+    srcs = ["src/lib.rs"],
+    crate_name = "mexec_boot",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        ":mexec_boot_cc",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+    ],
+)

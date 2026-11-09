@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# PCI legacy I/O-port config access (port 0xCF8/0xCFC).
+# Only the x86 code path is actually reachable at runtime; non-x86 stubs
+# ensure the library links on any target architecture.
+cc_library(
+    name = "pci",
+    srcs = [
+        "pio.cc",
+        "root_host.cc",
+    ],
+    hdrs = glob(["include/lib/pci/*.h"], allow_empty = False),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/hwreg:hwreg",
+        # root_host.cc uses the C++ banjo (<fuchsia/hardware/pciroot/cpp/banjo.h>).
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+        # pciroot.h exposes an inspect::Node.
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        # root_host.h uses RegionAllocator (region-alloc/region-alloc.h).
+        "//src/upstream/fuchsia/zircon/system/ulib/region-alloc:region-alloc",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

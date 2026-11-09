@@ -1,0 +1,143 @@
+# Authored locally for Cerise — virtio-net DFv2 driver (virtio-net composition).
+#
+# IMPORTANT — DFv2 NATIVE (not DFv1+compat):
+#   At upstream pin 0f3c21bc the driver has been migrated to fdf::DriverBase2 +
+#   NetworkDeviceImpl (DFv2). It is packaged as a DFv2 native .so (exports
+#   __fuchsia_driver_registration__, not __zircon_driver_rec__/__zircon_driver_note__).
+#   The compat path (program.compat) is NOT used; program.binary = "driver/..." is used.
+#
+# BIND — composite bind (pci primary + acpi parent, adapted):
+#   bus-pci publishes composite specs (not normal nodes) for all PCI devices.
+#   The bind is adapted from upstream to: (1) require the acpi parent (not optional),
+#   (2) check ACPI_BUS_TYPE==PCI, (3) accept both modern DID 0x1041 and transitional
+#   DID 0x1000 — so the bind matches regardless of QEMU's disable-legacy setting.
+#
+# ALWAYSLINK POLICY:
+#   cc_binary(-shared) only whole-archives DIRECT alwayslink deps. All FIDL cc_library
+#   targets that contain out-of-line wire/natural symbols must be direct deps of the
+#   cc_binary OR of an alwayslink cc_library that IS a direct dep. Do NOT add
+#   devices/lib/driver:driver (stubs that shadow compat ABI — only relevant for DFv1).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# Bind bytecode target — composite ACPI+PCI bind.
+# output_name matches meta/virtio_net.bind (Cerise variant, diverges from upstream).
+driver_bind_rules(
+    name = "virtio-net-bind",
+    rules = "meta/virtio_net.bind",
+    output_name = "virtio_ethernet_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# FIDL + other alwayslink deps for the .so (all symbols embedded into the binary;
+# they are not provided by any DFv2 runtime .so the linker would expect UND).
+VIRTIO_NET_ALWAYSLINK_DEPS = [
+    # fuchsia.hardware.network.driver (NetworkDeviceImpl, NetworkPort, MacAddr protocols).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
+    # fuchsia.hardware.network (PortStatus, FrameType etc. wire types).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+    # fuchsia.hardware.pci (PciBackend uses fidl::ClientEnd<fuchsia_hardware_pci::Device>).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    # fuchsia.driver.framework (DriverStartArgs, NodeAddArgs, etc.).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    # fuchsia.driver.compat (compat_server requires compat FIDL dispatching).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    # fuchsia.logger (syslog / structured log chain).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    # fuchsia.diagnostics.types (via fuchsia.logger -> fuchsia.diagnostics chain).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+    # fuchsia.component.decl (fdf::Namespace + capabilities).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+    # fuchsia.io (vmo_store pin/map path in outgoing dir).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    # fuchsia.mem (wire::Range — referenced by fuchsia.hardware.pci resources).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+    # fuchsia.net (MacAddress etc. in network-mac.fidl).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+]
+
+# netdevice_lib — the implementation (compiled as a library so cc_binary can link it as
+# alwayslink). Matches upstream source_set("virtio_netdevice_lib").
+cc_library(
+    name = "netdevice_lib",
+    srcs = [
+        "netdevice.cc",
+        "virtio_net_driver.cc",
+        "virtio_net_driver_export.cc",
+    ],
+    hdrs = [
+        "netdevice.h",
+        "virtio_net_driver.h",
+    ],
+    copts = [
+        # Allow "src/connectivity/..." and "src/lib/vmo_store/..." relative includes
+        # (these files use the fuchsia-root-relative #include paths).
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",  # HEAD API level (DriverBase2)
+    ],
+    tags = ["manual"],
+    deps = VIRTIO_NET_ALWAYSLINK_DEPS + [
+        # virtio transport lib (device.cc, ring.cc, driver_utils.cc, backends/*.cc).
+        "//src/upstream/fuchsia/src/devices/bus/lib/virtio:virtio",
+        # compat_server (device_server.cc — creates the compat child node).
+        "//src/upstream/fuchsia/sdk/lib/driver/compat/cpp:cpp",
+        # DriverBase2 + FUCHSIA_DRIVER_EXPORT2.
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        # fdf::Logger::SetGlobalInstance etc.
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        # fdf::AddChildOptions, fdf::MakeOffer2.
+        "//src/upstream/fuchsia/sdk/lib/driver/node/cpp:cpp",
+        # fdf::OutgoingDirectory (driver_->outgoing()).
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        # libsync::Completion (netdevice.h).
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        # fbl::AutoLock, fbl::Algorithm etc.
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        # vmo_store (header-only, -Isrc/upstream/fuchsia required for path).
+        "//src/upstream/fuchsia/src/lib/vmo_store:vmo_store",
+        # network::SharedLock/SharedAutoLock from locks.h.
+        "//src/upstream/fuchsia/src/connectivity/network/drivers/network-device/device:shared_lock",
+    ],
+)
+
+# virtio_net.so — the final driver .so loaded by driver_host_dfv2 via dlopen.
+#
+# Linker recipe (mirrors pci_probe + bus-pci policy):
+#   - -shared: dynamic shared object
+#   - --allow-shlib-undefined: FDF/libc/libc++/vDSO symbols are UND (provided at runtime)
+#   - version script: export ONLY __fuchsia_driver_registration__ (keeps dynsym tiny)
+#   - -u __fuchsia_driver_registration__: GC root so linker doesn't strip it
+#   - alwayslink via :netdevice_lib (all FIDL wire/natural out-of-line symbols embedded)
+#
+# DO NOT add devices/lib/driver:driver (stubs that shadow DFv2 runtime).
+cc_binary(
+    name = "virtio_netdevice.so",
+    additional_linker_inputs = ["virtio_net.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,virtio_netdevice.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # GC-root: keep the registration symbol even without an internal reference.
+        "-Wl,-u,__fuchsia_driver_registration__",
+        # Version script: export ONLY __fuchsia_driver_registration__; hide the rest.
+        "-Wl,--version-script=$(location virtio_net.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":netdevice_lib",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

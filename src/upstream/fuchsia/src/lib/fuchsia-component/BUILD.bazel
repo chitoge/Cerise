@@ -1,0 +1,19 @@
+# Authored locally for Cerise. fuchsia-component: umbrella
+# crate that re-exports client, directory, runtime, and server sub-crates.
+# (config sub-crate not included: it pulls in diagnostics/inspect which is the full diagnostics closure)
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-component",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_component",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/client:client",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/directory:directory",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/runtime:runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/server:server",
+    ],
+)

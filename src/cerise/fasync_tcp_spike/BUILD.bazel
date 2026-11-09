@@ -1,0 +1,40 @@
+# Cerise gRPC gate initial prototype spike: proves fuchsia_async::net ASYNC TCP accept+echo
+# works on real netstack3 — the top runtime risk for the stack. One-variable diff off
+# netstack3_probe (same deps + interface bringup); the ONLY addition is
+# @crates//:futures for the async AsyncRead/AsyncWrite/Stream extension traits.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fasync_tcp_spike",
+    srcs = ["src/main.rs"],
+    crate_name = "fasync_tcp_spike",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        # Real fdio (statically linked) — needed for fuchsia_async::net's
+        # socket()/bind()/listen()/accept() over fuchsia.posix.socket.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "fasync_tcp_spike_stripped.fuchsia",
+    src = ":fasync_tcp_spike",
+    tags = ["manual"],
+)

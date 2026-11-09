@@ -1,0 +1,30 @@
+# Authored locally for Cerise.
+# Note: vfs/process_builder uses are gated by #[cfg(target_os = "fuchsia")].
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "namespace",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "namespace",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fidl_fuchsia_process",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/process_builder:process_builder",
+            "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        ],
+        "//conditions:default": [],
+    }),
+)

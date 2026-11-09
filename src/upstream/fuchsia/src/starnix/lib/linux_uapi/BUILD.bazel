@@ -1,0 +1,28 @@
+# Authored locally for Cerise. linux_uapi: real, pre-generated
+# Linux UAPI bindings (bindgen output, vendored as-is — x86_64 sources only,
+# matching this project's single target arch). Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "linux_uapi",
+    srcs = [
+        "src/arch32_stub.rs",
+        "src/lib.rs",
+        "src/macros.rs",
+        "src/manual.rs",
+        "src/types.rs",
+        "src/x86_64.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    # Real, unmodified bindgen output includes union types deriving zerocopy's
+    # IntoBytes — zerocopy requires this explicit opt-in cfg for that (a real,
+    # documented zerocopy safety gate, not a Cerise-specific issue).
+    rustc_flags = ["--cfg=zerocopy_derive_union_into_bytes"],
+    deps = [
+        "@crates//:static_assertions",
+        "@crates//:zerocopy",
+    ],
+)

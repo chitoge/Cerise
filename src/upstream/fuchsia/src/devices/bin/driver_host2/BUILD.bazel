@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# driver_host2: per-driver host process spawned by component_manager (direct child of root for P4d).
+# Uses main() via ELF runner crt1 startup. Links trivial_driver to emit CERISE-DRIVER-OK.
+# A full implementation should use the FDF protocol
+# (fuchsia.driver.host.DriverHost.Start, dlopen .so).
+cc_binary(
+    name = "driver_host2",
+    srcs = [
+        "driver_host.cc",
+    ],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-lzircon",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/cerise/trivial_driver:trivial_driver",
+    ],
+)

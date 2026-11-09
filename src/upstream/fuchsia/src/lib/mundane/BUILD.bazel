@@ -1,0 +1,43 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Unmodified upstream mundane (crypto wrapper over BoringSSL). Needed transitively by
+# fxfs's core lib -> fsverity-merkle -> mundane. Features match upstream's real
+# rustc_library("mundane") in src/lib/mundane/BUILD.gn.
+rust_library(
+    name = "mundane",
+    srcs = [
+        "src/boringssl/abort.rs",
+        "src/boringssl/mod.rs",
+        "src/boringssl/raw.rs",
+        "src/boringssl/wrapper.rs",
+        "src/bytes.rs",
+        "src/hash.rs",
+        "src/hmac.rs",
+        "src/insecure.rs",
+        "src/insecure_rc4.rs",
+        "src/kdf.rs",
+        "src/lib.rs",
+        "src/macros.rs",
+        "src/password.rs",
+        "src/public/ec/curve.rs",
+        "src/public/ec/mod.rs",
+        "src/public/ed25519.rs",
+        "src/public/mod.rs",
+        "src/public/rsa/bits.rs",
+        "src/public/rsa/mod.rs",
+        "src/util.rs",
+    ],
+    crate_features = [
+        "bytes",
+        "insecure",
+        "rsa-pkcs1v15",
+        "experimental-sha512-ec",
+        "kdf",
+    ],
+    edition = "2015",
+    deps = [
+        "//src/upstream/fuchsia/third_party/boringssl/src/rust/bssl-sys:bssl-sys",
+    ],
+)

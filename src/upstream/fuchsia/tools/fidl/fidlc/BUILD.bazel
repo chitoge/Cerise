@@ -1,0 +1,62 @@
+# Bazel integration for this imported target. fidlc: the FIDL
+# compiler (.fidl -> JSON IR). A HOST tool (built with the exec toolchain). The
+# first piece of the FIDL bindgen toolchain (fidlc -> fidlgen_cpp -> C++ wire
+# bindings) that zxio/fdio and the netstack3 FIDL deps need. Upstream is GN
+# (sdk_executable_host_tool); authored as a plain cc_binary here. fidlc uses
+# repo-root-relative includes ("tools/fidl/fidlc/src/..."), so -I the vendored
+# root (src/upstream not no_policy-scanned, so copts is allowed here).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_ROOT_INCLUDE = ["-Isrc/upstream/fuchsia"]
+
+# Replaces gen-json-schema.sh: wrap schema.json in a C++ string literal.
+genrule(
+    name = "json_schema_gen",
+    srcs = ["schema.json"],
+    outs = ["json_schema.cc"],
+    cmd = ("(echo '#include <string>'; " +
+           "echo '#include \"tools/fidl/fidlc/src/json_schema.h\"'; " +
+           "echo 'std::string JsonSchema::schema_ = R\"JSON('; " +
+           "cat $(location schema.json); " +
+           "echo ')JSON\";') > $@"),
+)
+
+cc_library(
+    name = "lib",
+    srcs = glob(["src/*.cc"], exclude = ["src/*_test.cc"], allow_empty = True) + [
+        "json_schema.cc",
+    ],
+    hdrs = glob(["src/*.h", "src/*.inc", "src/*.def"], allow_empty = True),
+    copts = _ROOT_INCLUDE,
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/sdk/lib/zircon-assert:zircon-assert",
+        "//src/upstream/fuchsia/src/lib/fxl",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/cmdline",
+        "@boringssl//:crypto",
+        "@re2",
+    ],
+)
+
+cc_binary(
+    name = "fidlc",
+    srcs = ["cmd/fidlc/main.cc"],
+    copts = _ROOT_INCLUDE,
+    tags = ["manual"],
+    deps = [":lib"],
+)
+
+# Upstream sdk_executable_host_tool("fidl-format"): the FIDL formatter. A HOST
+# tool built from the SAME :lib as fidlc (just a different cmd/ entrypoint).
+cc_binary(
+    name = "fidl-format",
+    srcs = ["cmd/fidl-format/main.cc"],
+    copts = _ROOT_INCLUDE,
+    tags = ["manual"],
+    deps = [":lib"],
+)

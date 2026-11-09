@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "dynfidl",
+    srcs = ["src/lib.rs"],
+    crate_name = "dynfidl",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust_constants:rust_constants",
+    ],
+)

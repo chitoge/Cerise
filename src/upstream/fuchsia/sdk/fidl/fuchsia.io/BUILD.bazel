@@ -1,0 +1,133 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_hlcpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.io",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:30",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.io_cpp",
+    library = ":fuchsia.io",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.io_rs",
+    library = ":fuchsia.io",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_io",
+    srcs = [":fuchsia.io_rs"],
+    crate_name = "fidl_fuchsia_io",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fidl_fuchsia_unknown",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# flex_fuchsia_io: non-fdomain flex shim. In the non-fdomain path this is a
+# thin pub-use re-export of fidl_fuchsia_io, matching the upstream genrule:
+#   echo 'pub use fidl_fuchsia_io::*;'
+genrule(
+    name = "flex_fuchsia_io_rs_gen",
+    outs = ["flex_fuchsia_io.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_io::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_io",
+    srcs = [":flex_fuchsia_io_rs_gen"],
+    crate_name = "flex_fuchsia_io",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_io"],
+)
+
+fidl_hlcpp(
+    name = "fuchsia.io_hlcpp",
+    library = ":fuchsia.io",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/hlcpp:hlcpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# a SEPARATE, parallel HEAD-level binding of the SAME
+# fuchsia.io FIDL sources, distinctly crate-named so it never collides with the
+# level-30 `fidl_fuchsia_io` above. This exists ONLY so fsverity-merkle can reach
+# file.fidl's HashAlgorithm/VerificationOptions (@available(added=HEAD), fs-verity
+# support) WITHOUT bumping the main `fuchsia.io` target's availability.
+#
+# Bumping the main target to HEAD was considered and rejected: directory.fidl's
+# `Directory.Open` (the method every already-working client uses -
+# netdev_probe, nvme_probe, ahci_probe, devfs internals) is `@available(added=27,
+# replaced=31)` - at HEAD the ACTIVE variant would be whatever replaces it at
+# level 31+, a different (unverified, possibly incompatible) method shape. That
+# would silently break every proven-working client component. This parallel
+# target is the safe alternative: same "version-sets" technique referenced in
+# this project's API-level-HEAD-gating quick-ref, applied narrowly.
+fidl_library(
+    name = "fuchsia.io_head",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.io_head_rs",
+    library = ":fuchsia.io_head",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_io_head",
+    srcs = [":fuchsia.io_head_rs"],
+    crate_name = "fidl_fuchsia_io_head",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fidl_fuchsia_unknown",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

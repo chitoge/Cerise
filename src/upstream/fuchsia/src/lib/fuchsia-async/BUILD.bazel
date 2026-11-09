@@ -1,0 +1,102 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+COMMON_SRCS = [
+    "src/condition.rs",
+    "src/handle/mod.rs",
+    "src/lib.rs",
+    "src/net/mod.rs",
+    "src/runtime/epoch.rs",
+    "src/runtime/instrument.rs",
+    "src/runtime/mod.rs",
+    "src/runtime/scope.rs",
+    "src/test_support.rs",
+]
+
+FUCHSIA_SRCS = [
+    "src/handle/zircon/channel.rs",
+    "src/handle/zircon/fifo.rs",
+    "src/handle/zircon/mod.rs",
+    "src/handle/zircon/on_interrupt.rs",
+    "src/handle/zircon/on_signals.rs",
+    "src/handle/zircon/rwhandle.rs",
+    "src/handle/zircon/socket.rs",
+    "src/net/fuchsia/mod.rs",
+    "src/net/fuchsia/tcp.rs",
+    "src/net/fuchsia/udp.rs",
+    "src/runtime/fuchsia/executor/atomic_future.rs",
+    "src/runtime/fuchsia/executor/atomic_future/hooks.rs",
+    "src/runtime/fuchsia/executor/atomic_future/spawnable_future.rs",
+    "src/runtime/fuchsia/executor/common.rs",
+    "src/runtime/fuchsia/executor/local.rs",
+    "src/runtime/fuchsia/executor/mod.rs",
+    "src/runtime/fuchsia/executor/packets.rs",
+    "src/runtime/fuchsia/executor/scope.rs",
+    "src/runtime/fuchsia/executor/send.rs",
+    "src/runtime/fuchsia/executor/time.rs",
+    "src/runtime/fuchsia/mod.rs",
+    "src/runtime/fuchsia/task.rs",
+    "src/runtime/fuchsia/timer.rs",
+]
+
+HOST_SRCS = [
+    "src/handle/emulated/channel.rs",
+    "src/handle/emulated/mod.rs",
+    "src/handle/emulated/socket.rs",
+    "src/net/portable/mod.rs",
+    "src/net/portable/udp.rs",
+    "src/runtime/portable.rs",
+    "src/runtime/portable/scope.rs",
+]
+
+rust_library(
+    name = "fuchsia-async",
+    srcs = COMMON_SRCS + select({
+        "@platforms//os:fuchsia": FUCHSIA_SRCS,
+        "//conditions:default": HOST_SRCS,
+    }),
+    crate_name = "fuchsia_async",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-async-macro:fuchsia-async-macro",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status-ext:zx-status-ext",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:futures",
+        "@crates//:pin-project-lite",
+        "@crates//:smallvec",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "@crates//:crossbeam",
+            "@crates//:libc",
+            "@crates//:rustc-hash",
+            "@crates//:socket2",
+            "@crates//:zerocopy",
+        ],
+        "//conditions:default": [
+            "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+            "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+            "@crates//:bitflags",
+            "@crates//:tokio",
+            "@crates//:futures-lite",
+        ],
+    }),
+)
+
+# tests excluded: src/handle/emulated/mod.rs's #[cfg(test)] mod test (part of
+# HOST_SRCS - the emulated-handle layer is load-bearing for the portable/host
+# backend, not test-only itself) calls futures_test::task::new_count_waker() in
+# 5 places (await_user_signal and friends). The `futures-test` crate is not in
+# @crates and adding it would expand this target's dependency closure. Since
+# crate = ":fuchsia-async" test wiring compiles every
+# HOST_SRCS file as one unit, this one file's test module blocks the whole
+# target - there is no way to drop just that dev-dependency without patching
+# test source. (src/handle/zircon/on_interrupt.rs and on_signals.rs also call
+# futures_test, but those are FUCHSIA_SRCS and not part of the host build at
+# all.) The library itself (:fuchsia-async, including this same HOST_SRCS
+# file's non-test code) compiles cleanly for host in every downstream target
+# below - only this crate's OWN bundled unit-test binary is blocked.

@@ -1,0 +1,28 @@
+// root_dfv2acpi_fileserver — component_manager root for qemu-x64-fileserver (the
+// integration keystone). netstack3 root with netstack3_probe replaced by fileserver
+// (Eager) + crypt_fxfs (Lazy); routes net + aggregate block.volume + Crypt to
+// fileserver.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fileserver", url: "fuchsia-boot:///fileserver#meta/fileserver.cm", startup: "eager", environment: "#elf-env" },
+        { name: "crypt_fxfs", url: "fuchsia-boot:///crypt_fxfs#meta/crypt_fxfs.cm", startup: "lazy", environment: "#elf-env" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "#cerise_logsink", to: ["#netstack3", "#fileserver", "#crypt_fxfs"] },
+        { runner: "elf", from: "#elf_runner", to: "#crypt_fxfs" },
+        { directory: "dev", from: "#driver_manager_rust", to: "#fileserver", rights: ["r*"] },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#fileserver" },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.Crypt", from: "#crypt_fxfs", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "#crypt_fxfs", to: "#fileserver" },
+    ],
+}

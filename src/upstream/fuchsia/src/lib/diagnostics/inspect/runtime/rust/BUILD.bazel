@@ -1,0 +1,41 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-inspect-runtime",
+    srcs = [
+        "src/lib.rs",
+        "src/service.rs",
+    ],
+    crate_name = "inspect_runtime",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/client:client",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:pin-project",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# Upstream exposes :unchecked_includes as a variant that omits the
+# inspect/client.shard.cml auto-include (Archivist serves InspectSink from
+# itself, so it must NOT pull the normal client shard). The shard distinction
+# is a packaging (.cml) concern, not a Rust-API one, so in Cerise it is the same
+# crate — aliased for label parity with the upstream archivist dep.
+alias(
+    name = "unchecked_includes",
+    actual = ":fuchsia-inspect-runtime",
+    visibility = ["//visibility:public"],
+)

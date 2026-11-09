@@ -1,0 +1,92 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "zbitl",
+    srcs = [
+        "checking.cc",
+        "cpu-topology.cc",
+        "debugdata.cc",
+        "efi.cc",
+        "item.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//:kernel_cc_headers",
+        "//zircon/third_party/ulib/cksum:cksum",
+    ],
+)
+
+cc_library(
+    name = "phys_zbitl",
+    srcs = [":physload_sources"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/third_party/ulib/cksum:cksum",
+        "//:kernel_cc_headers",
+    ],
+)
+
+cc_library(
+    name = "physboot_zbitl",
+    srcs = [":physboot_extra_sources"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/third_party/ulib/cksum:cksum",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "kernel_support_sources",
+    srcs = [
+        "checking.cc",
+        "cpu-topology.cc",
+        "debugdata.cc",
+        "efi.cc",
+        "item.cc",
+    ],
+)
+
+filegroup(
+    name = "physload_sources",
+    srcs = [
+        "checking.cc",
+        "item.cc",
+    ],
+)
+
+filegroup(
+    name = "physboot_extra_sources",
+    srcs = ["cpu-topology.cc"],
+)
+
+filegroup(
+    name = "userboot_payload_sources",
+    srcs = [
+        "checking.cc",
+        "item.cc",
+        "mapvmo.cc",
+        "vmo-read.cc",
+        "vmo.cc",
+        "zstd-streaming.cc",
+        "zstd.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

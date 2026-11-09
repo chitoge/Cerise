@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# a third-party crate (arrayvec, from the crate_universe closure)
+# compiles for the fuchsia target:
+#   CARGO_BAZEL_REPIN=1 bazel build //examples/crate-probe:crate_probe \
+#     --platforms=//platforms:x64-fuchsia
+rust_library(
+    name = "crate_probe",
+    srcs = ["src/lib.rs"],
+    edition = "2021",
+    deps = ["@crates//:arrayvec"],
+)

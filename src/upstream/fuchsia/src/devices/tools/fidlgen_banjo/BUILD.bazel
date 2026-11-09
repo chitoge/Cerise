@@ -1,0 +1,43 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidlgen_banjo_lib",
+    srcs = [
+        "src/backends/c.rs",
+        "src/backends/cpp.rs",
+        "src/backends/cpp_internal.rs",
+        "src/backends/cpp_mock.rs",
+        "src/backends/mod.rs",
+        "src/backends/rust.rs",
+        "src/backends/util.rs",
+        "src/lib.rs",
+    ],
+    compile_data = glob([
+        "src/backends/templates/**/*.h",
+        "src/backends/templates/**/*.rs",
+    ]),
+    crate_name = "fidlgen_banjo_lib",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/devices/lib/fidl-ir:fidl_ir_lib",
+        "@crates//:anyhow",
+        "@crates//:heck",
+    ],
+)
+
+rust_binary(
+    name = "fidlgen_banjo",
+    srcs = ["src/main.rs"],
+    crate_root = "src/main.rs",
+    edition = "2024",
+    deps = [
+        ":fidlgen_banjo_lib",
+        "//src/upstream/fuchsia/src/devices/lib/fidl-ir:fidl_ir_lib",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_json",
+    ],
+)

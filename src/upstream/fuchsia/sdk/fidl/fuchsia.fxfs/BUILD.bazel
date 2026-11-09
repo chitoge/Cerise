@@ -1,0 +1,58 @@
+# Generated FIDL library and language bindings for fuchsia.fxfs
+# (Crypt, CryptManagement, BlobCreator, and related protocols). The library is
+# @available(added=HEAD), so its bindings use the HEAD availability level.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.fxfs",
+    srcs = ["fxfs.fidl"],
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.fxfs_cpp",
+    library = ":fuchsia.fxfs",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.fxfs_rs",
+    library = ":fuchsia.fxfs",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_fxfs",
+    srcs = [":fuchsia.fxfs_rs"],
+    crate_name = "fidl_fuchsia_fxfs",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

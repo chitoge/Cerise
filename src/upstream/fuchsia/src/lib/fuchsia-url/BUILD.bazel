@@ -1,0 +1,49 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-url",
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/test.rs"],
+    ),
+    crate_name = "fuchsia_url",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "@crates//:percent-encoding",
+        "@crates//:serde",
+        "@crates//:thiserror",
+        "@crates//:url",
+    ],
+)
+
+# src/lib.rs's `pub mod test;` (random_*_url
+# fixture generators used by fuchsia-pkg's and system-image's own
+# #[cfg(test)] mods, e.g. `use fuchsia_url::test::*;`) is itself
+# `#[cfg(test)]`-gated, so it's only compiled in when THIS crate is built
+# with `--cfg test` - which a downstream crate's own `rust_test` (recompiling
+# only the downstream crate's srcs) does not do for its dependencies. This is
+# the same crate, rebuilt with that one extra flag, purely so its (harmless,
+# already source-gated to test-only use) fixture module is visible to
+# dependent crates' test binaries; never linked into anything non-test (not
+# a production dependency of anything - not even transitively - since only
+# rust_test targets reference this alias).
+rust_library(
+    name = "fuchsia-url_testutils",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fuchsia_url",
+    edition = "2024",
+    rustc_flags = ["--cfg=test"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "@crates//:assert_matches",
+        "@crates//:percent-encoding",
+        "@crates//:proptest",
+        "@crates//:serde",
+        "@crates//:thiserror",
+        "@crates//:url",
+    ],
+)

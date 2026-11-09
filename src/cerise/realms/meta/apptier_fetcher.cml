@@ -1,0 +1,21 @@
+// apptier_fetcher leaf (packages, post-storage app tier) — owns the NIC, downloads the
+// FILESERVER package over the network on first boot, installs its blobs into the fxfs blob volume,
+// and binds the fileserver's Binder so #pkg_resolver launches it from disk. It then parks forever,
+// holding the interface up for the fileserver to share. See //src/cerise/apptier_fetcher/src/main.rs.
+{
+    program: { runner: "elf", binary: "bin/apptier_fetcher" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        // fshost's exposed subtree: /fshost-fs/blob (BlobCreator + BlobReader) for install + presence.
+        { directory: "fshost-fs", rights: ["rw*"], path: "/fshost-fs" },
+        // Gate: read /provisioned/ready before opening /fshost-fs (Lazy-starts fshost).
+        { directory: "provisioned", rights: ["r*"], path: "/provisioned" },
+        // Network stack: discover the NIC via devfs, then netstack3's Installer + socket providers.
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        // The fileserver's framework Binder — bound to Lazy-start it once its package is installed.
+        { protocol: "fileserver.Binder", path: "/svc/fileserver.Binder" },
+    ],
+}

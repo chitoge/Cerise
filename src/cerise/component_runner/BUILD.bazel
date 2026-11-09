@@ -1,0 +1,30 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Component-runner gate: component runner — spawns hello_component as a real process via process_builder
+# and a bootfs-backed fuchsia.ldsvc.Loader.  Gate: CERISE-COMPONENT-OK.
+rust_binary(
+    name = "component_runner",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    rustc_flags = [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+        "-Clink-arg=-lzircon",
+    ],
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    deps = [
+        "//src/cerise/libc-malloc:cerise_malloc",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fidl_fuchsia_ldsvc",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/process_builder:process_builder",
+        "@crates//:futures",
+    ],
+    tags = ["manual"],
+)

@@ -1,0 +1,67 @@
+# sdk/lib/driver/runtime — public C API headers for fdf (Fuchsia Driver Framework).
+# These are the stable ABI surface that driver_runtime implements and drivers consume.
+# Compiled sources (arena.cc, channel_read.cc, protocol.cc, env.cc) are in the
+# driver_runtime_cpp / driver_runtime_env_cpp sub-targets; not needed for the P4b gate.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Public C API headers (non-cpp): arena, channel, dispatcher, handle, token, types.
+cc_library(
+    name = "driver_runtime",
+    hdrs = glob(["include/lib/fdf/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+# Aliases matching GN sub-targets; all delegate to driver_runtime since the headers
+# are unified in the single include/ tree.
+cc_library(
+    name = "driver_runtime_env",
+    tags = ["manual"],
+    deps = [":driver_runtime"],
+)
+
+cc_library(
+    name = "driver_runtime_internal",
+    tags = ["manual"],
+    deps = [":driver_runtime"],
+)
+
+cc_library(
+    name = "driver_runtime_testing",
+    tags = ["manual"],
+    deps = [":driver_runtime"],
+)
+
+# C++ wrapper library: arena.cc, channel_read.cc, protocol.cc + cpp/ headers.
+cc_library(
+    name = "driver_runtime_cpp",
+    srcs = ["arena.cc", "channel_read.cc", "protocol.cc"],
+    hdrs = glob(["include/lib/fdf/cpp/*.h"], allow_empty = True),
+    # Compile at HEAD: fdf::ProtocolReceive (protocol.cc) is
+    # `#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)`-gated, and DFv2 driver consumers compile
+    # at HEAD and reference it — without HEAD here the definition is compiled out and
+    # left UND everywhere. HEAD = 4292870144 (0xFFE00000, sdk/version_history.json).
+    copts = ["-ffuchsia-api-level=4292870144"],
+    includes = ["include"],
+    # alwayslink: a DFv2 driver host (the fat-host loader) must keep+export these
+    # stateless C++ wrappers (e.g. fdf::ProtocolReceive) so a dlopen'd driver .so's
+    # UND refs resolve against the host process (with -rdynamic). Without
+    # whole-archive they're GC'd before export. The stateful fdf_* C runtime stays
+    # shared via the host.
+    alwayslink = True,
+    tags = ["manual"],
+    deps = [
+        ":driver_runtime",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

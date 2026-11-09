@@ -1,0 +1,22 @@
+// display leaf-driver — Cerise native DFv2 display driver (QEMU stdvga, PCI 1234:1111).
+// Owns the framebuffer hardware (MMIO sourced from fuchsia.hardware.pci.Service, NOT
+// ambient MmioResource) and serves cerise.display.Service. Mirrors nvme.cml's
+// serve-an-aggregated-Service shape (capabilities + expose from self); the service is
+// aggregated up through driver_manager's boot-drivers collection to the console client.
+{
+    program: {
+        runner: "driver",
+        binary: "driver/display.so",
+        bind: "meta/bind/display_bind.bindbc",
+    },
+    capabilities: [
+        { service: "cerise.display.Service" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        { service: "cerise.display.Service", from: "self" },
+    ],
+}

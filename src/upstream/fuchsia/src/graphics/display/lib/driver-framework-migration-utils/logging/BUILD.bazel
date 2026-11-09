@@ -1,0 +1,36 @@
+# Authored locally for Cerise — driver-framework-migration-utils/logging.
+# Provides zxlogf.h (compatibility logging macros for DFv1/DFv2 drivers) and
+# logging-dfv2.cc (the DFv2 implementation using fdf::Logger).
+# Needed by src/devices/bus/lib/virtio:virtio-common (pci backends use zxlogf).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Header-only: the driver compat logging macros zxlogf.h / zxlog_level_enabled.
+# Provides the public surface; the implementation is in :logging-dfv2.
+cc_library(
+    name = "zxlogf",
+    hdrs = ["zxlogf.h", "logging.h"],
+    strip_include_prefix = "",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+# DFv2 implementation of the logging compatibility layer.
+# Drivers that use zxlogf must also dep on :logging-dfv2 (or :logging-dfv1 for DFv1).
+# This implementation forwards to fdf::Logger (sdk/lib/driver/logging/cpp).
+cc_library(
+    name = "logging-dfv2",
+    srcs = ["logging-dfv2.cc"],
+    hdrs = ["logging.h"],
+    strip_include_prefix = "",
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        ":zxlogf",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

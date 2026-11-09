@@ -1,0 +1,21 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# SHA-256 content hashing for the page store. Self-contained over `core` only:
+# the store's consumers build for a freestanding target with no libc and no C
+# toolchain, so a C-backed digest cannot be used here.
+rust_library(
+    name = "cryogen_hash",
+    srcs = ["lib.rs"],
+    crate_name = "cryogen_hash",
+    edition = "2021",
+)
+
+# Host unit tests: published FIPS 180-4 / NIST vectors (not self-consistency),
+# plus the all-zero page digest and streaming/one-shot equivalence.
+rust_test(
+    name = "cryogen_hash_test",
+    crate = ":cryogen_hash",
+    edition = "2021",
+)

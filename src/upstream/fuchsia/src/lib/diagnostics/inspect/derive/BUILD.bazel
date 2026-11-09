@@ -1,0 +1,22 @@
+# Authored locally for Cerise (Phase 1 logging: Archivist import).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-inspect-derive",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fuchsia_inspect_derive",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/derive/macro:fuchsia-inspect-derive-macro",
+        "@crates//:paste",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ],
+)

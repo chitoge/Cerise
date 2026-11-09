@@ -1,0 +1,25 @@
+// NEGATIVE-TEST FIXTURE (not a real Cerise component; never staged into any
+// product). A virtual machine monitor that is NOT the one the lint permits.
+//
+// The over-privilege lint grants exactly two (component, protocol) pairs to the
+// VMM — `cryogen_vmm` + fuchsia.kernel.HypervisorResource, and `cryogen_vmm` +
+// fuchsia.kernel.VmexResource — and it matches the component name with `==`
+// rather than `starts_with`, precisely so that a second, differently-named VMM
+// cannot inherit the grant by sharing a prefix. This fixture is that second VMM:
+// its meta-name is `cryogen_vmm_v2`, which a `starts_with` check would admit
+// silently and an `==` check must reject.
+//
+// It therefore proves two things at once, and both are load-bearing:
+//   * the lint is not vacuous for the two newly-permitted protocols (before this
+//     fixture existed, `route_check/tests/negative.rs` covered only
+//     fuchsia.kernel.MmioResource, so the two new allowlist entries would have
+//     shipped with no red control at all);
+//   * the exactness of the match is enforced rather than merely commented.
+{
+    program: { runner: "elf", binary: "bin/cryogen_vmm_v2" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.kernel.HypervisorResource" },
+        { protocol: "fuchsia.kernel.VmexResource" },
+    ],
+}

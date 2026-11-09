@@ -1,0 +1,50 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.system.state",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+# Authored locally for Cerise: C++ bindings for the compat shim driver.
+fidl_cpp(
+    name = "fuchsia.system.state_cpp",
+    library = ":fuchsia.system.state",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.system.state_rs",
+    library = ":fuchsia.system.state",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_system_state",
+    srcs = [":fuchsia.system.state_rs"],
+    crate_name = "fidl_fuchsia_system_state",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

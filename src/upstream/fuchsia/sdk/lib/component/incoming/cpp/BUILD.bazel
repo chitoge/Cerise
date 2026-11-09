@@ -1,0 +1,38 @@
+# sdk/lib/component/incoming/cpp — component namespace connection helpers.
+# Used by driver_runtime/dispatcher.cc to connect to fuchsia.scheduler.RoleManager.
+# Headers are at sdk/lib/component/incoming/cpp/*.h, included as
+# <lib/component/incoming/cpp/protocol.h> (strip_include_prefix = sdk/).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = [
+        "directory_watcher.cc",
+        "internal.cc",
+        "protocol.cc",
+    ],
+    hdrs = [
+        "clone.h",
+        "constants.h",
+        "directory.h",
+        "directory_watcher.h",
+        "internal.h",
+        "protocol.h",
+        "service.h",
+        "service_member_watcher.h",
+    ],
+    # Expose headers as <lib/component/incoming/cpp/...> by stripping the sdk/ prefix.
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

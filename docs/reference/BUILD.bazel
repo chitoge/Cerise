@@ -1,0 +1,21 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@stardoc//stardoc:stardoc.bzl", "stardoc")
+
+package(default_visibility = ["//visibility:private"])
+
+# Generated Bazel API reference. Regenerate the checked-in Markdown with:
+#   bazel build //docs/reference:providers_md
+#   cp bazel-bin/docs/reference/providers.md docs/reference/providers.md
+# The output is committed so GitHub Pages can publish it without running Bazel.
+
+bzl_library(
+    name = "providers_lib",
+    srcs = ["//assembly:providers.bzl"],
+)
+
+stardoc(
+    name = "providers_md",
+    out = "providers.gen.md",
+    input = "//assembly:providers.bzl",
+    deps = [":providers_lib"],
+)

@@ -1,0 +1,51 @@
+# Vendored compiler-rt builtins (the complex
+# multiply routines libc.so's complex-math pulls in) + freestanding runtime
+# stubs, for the x86_64-unknown-fuchsia target (the toolchain ships no
+# libclang_rt.builtins for fuchsia). Linked into libc.so so BIND_NOW resolves.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# 128-bit integer division builtins for libc++.so — std::filesystem's
+# operations.cpp (fs-time conversions) emits __divti3, and the runtime stages no
+# libclang_rt.builtins. Linked into libc++.so (not libc.so: libc.ifs doesn't
+# export __divti3, so resolving it there at load would fail). Vendored verbatim
+# from compiler-rt/lib/builtins (same LLVM rev as the toolchain).
+cc_library(
+    name = "int128_builtins",
+    srcs = [
+        "divti3.c",
+        "udivmodti4.c",
+    ],
+    hdrs = glob(["*.h"], allow_empty = True),
+    textual_hdrs = ["int_div_impl.inc"],
+    copts = [
+        "-fno-stack-protector",
+        "-fno-sanitize=safe-stack",
+        "-Isrc/upstream/fuchsia/third_party/compiler-rt-builtins",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "compiler_rt_builtins",
+    srcs = [
+        "cerise-runtime-stubs.c",
+        # setjmp-x86_64.S (interim canonical setjmp/longjmp shim) removed in
+        # libc.so now compiles the real Fuchsia implementations
+        # (sdk/lib/c/setjmp/fuchsia/x86_64/*.S — pointer-mangled, unsafe-SP
+        # aware, full public alias set incl. _setjmp/_longjmp/sig*jmp).
+        "muldc3.c",
+        "mulsc3.c",
+        "mulxc3.c",
+    ],
+    hdrs = glob(["*.h"], allow_empty = True),
+    copts = [
+        # No -fvisibility=hidden: __stack_chk_fail (+ the math builtins) export via the
+        # libc.ifs version script; internals stay local (lld relaxes to PC-relative).
+        "-fno-stack-protector", "-fno-sanitize=safe-stack",
+        # compiler-rt builtins assume their own include dir on the path.
+        "-Isrc/upstream/fuchsia/third_party/compiler-rt-builtins",
+    ],
+    alwayslink = True,
+)

@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# DDK (Driver Development Kit) headers — the ABI surface between drivers and driver_host.
+# Headers-only: function implementations are provided by driver_host at link time.
+cc_library(
+    name = "ddk",
+    hdrs = glob([
+        "include/lib/ddk/**/*.h",
+        "include/ddk/**/*.h",
+    ]),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/ddk-platform-defs:ddk-platform-defs",
+        "//src/upstream/fuchsia/sdk/lib/zbi-format:zbi-format",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime",
+        "//src/upstream/fuchsia/zircon/system/ulib/trace:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+# Deprecated bind-program binding headers (lib/ddk/binding.h etc.).
+cc_library(
+    name = "ddk-deprecated-binding-headers",
+    hdrs = glob(["include/lib/ddk/binding.h"], allow_empty = True),
+    deps = [":ddk"],
+)

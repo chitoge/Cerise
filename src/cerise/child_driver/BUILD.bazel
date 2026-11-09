@@ -1,0 +1,52 @@
+# Driver-host bring-up, Step 2: CHILD native DFv2 driver + its bind rules.
+# Self-contained DFv2 .so built exactly like //src/cerise/minimal_driver, plus a
+# driver_bind_rules target that compiles child.bind -> child.bindbc (consumed by
+# driver-index at runtime to match this driver to the parent's child node).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# Bind rules -> child.bindbc (referenced by child_driver.cm's program.bind field and
+# staged in the child_driver package at meta/bind/child.bindbc).
+driver_bind_rules(
+    name = "child-bind",
+    rules = "child.bind",
+    output_name = "child.bindbc",
+    includes = ["cerise.test.bind"],
+)
+
+cc_library(
+    name = "child_driver_impl",
+    srcs = ["child_driver.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    ],
+)
+
+cc_binary(
+    name = "cerise_child_driver.so",
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,cerise_child_driver.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--export-dynamic",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":child_driver_impl",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

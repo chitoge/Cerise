@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-zbi",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_zbi",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/sys/lib/fuchsia-zbi/abi:fuchsia-zbi-abi",
+        "@crates//:log",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)

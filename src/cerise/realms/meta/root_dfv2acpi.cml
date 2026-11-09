@@ -1,0 +1,114 @@
+// root_dfv2acpi — the component_manager root realm for x64-pci (SHARD A base
+// driver stack + SHARD B direct block-storage probes). Declared as a real .cml
+// compiled by cmc via cerise_component.
+//
+// Remaining exotic features proven here (beyond driver_manager's): the elf runner
+// registered in elf-env from the #elf_runner CHILD; the resolver offer RENAMED
+// parent's fuchsia.component.resolution.Resolver -> "...Resolver-boot"; per-child
+// startup modes (crypt_fxfs Lazy, the rest Eager); dev/block.volume and crypt
+// service routing for the direct storage probes.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "netdev_probe",
+            url: "fuchsia-boot:///netdev_probe#meta/netdev_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "nvme_probe",
+            url: "fuchsia-boot:///nvme_probe#meta/nvme_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "ahci_probe",
+            url: "fuchsia-boot:///ahci_probe#meta/ahci_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "crypt_fxfs",
+            url: "fuchsia-boot:///crypt_fxfs#meta/crypt_fxfs.cm",
+            startup: "lazy",
+            environment: "#elf-env",
+        },
+        {
+            name: "fxfs_probe",
+            url: "fuchsia-boot:///fxfs_probe#meta/fxfs_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        // LogSink fanned to every ELF child from the single logsink source.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: [
+                "#netdev_probe",
+                "#nvme_probe",
+                "#ahci_probe",
+                "#crypt_fxfs",
+                "#fxfs_probe",
+            ],
+        },
+
+        // elf runner offered to the driver-manager + probe children.
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: [
+                "#netdev_probe",
+                "#nvme_probe",
+                "#ahci_probe",
+                "#crypt_fxfs",
+                "#fxfs_probe",
+            ],
+        },
+
+        // dev directory (r*) from driver_manager -> devfs clients.
+        {
+            directory: "dev",
+            from: "#driver_manager_rust",
+            to: ["#netdev_probe"],
+            rights: ["r*"],
+        },
+
+        // Aggregated block.volume service from driver_manager -> storage probes.
+        {
+            service: "fuchsia.hardware.block.volume.Service",
+            from: "#driver_manager_rust",
+            to: ["#nvme_probe", "#ahci_probe", "#fxfs_probe"],
+        },
+
+        // Crypt protocols from crypt_fxfs -> fxfs_probe.
+        { protocol: "fuchsia.fxfs.Crypt", from: "#crypt_fxfs", to: "#fxfs_probe" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "#crypt_fxfs", to: "#fxfs_probe" },
+    ],
+}

@@ -1,0 +1,101 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# The I219 manageability path cannot be represented by an emulated e1000 NIC.
+# Keep the source-level ownership and ordering invariants that protect a real
+# shared host/ME controller from silently regressing.
+sh_test(
+    name = "manageability_ownership_test",
+    size = "small",
+    srcs = ["manageability_ownership_test.sh"],
+    data = ["e1000.cc"],
+)
+
+# Composite bind rules matching the e1000 composite spec published by bus-pci
+# (pci parent + acpi parent). Multi-DID accept-list — see meta/e1000.bind.
+driver_bind_rules(
+    name = "e1000-bind",
+    rules = "meta/e1000.bind",
+    output_name = "e1000_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# FIDL + framework alwayslink deps for the .so (all out-of-line wire/natural
+# symbols must be embedded — the .so links -nodefaultlibs with no DFv2 runtime
+# .so providing them). Mirrors virtio-net's VIRTIO_NET_ALWAYSLINK_DEPS policy.
+E1000_ALWAYSLINK_DEPS = [
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+]
+
+# Driver implementation, compiled separately so cc_binary(-shared) can whole-
+# archive it (same split as virtio-net/pci_probe).
+cc_library(
+    name = "e1000_impl",
+    srcs = ["e1000.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    tags = ["manual"],
+    deps = E1000_ALWAYSLINK_DEPS + [
+        # Vendored FreeBSD/Intel shared-code HAL (register/PHY/MAC bring-up).
+        "//src/cerise/drivers/e1000/third_party/e1000:e1000_hal",
+        # DriverBase + FUCHSIA_DRIVER_EXPORT.
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        # compat_server (device_server.cc — creates the compat child node).
+        "//src/upstream/fuchsia/sdk/lib/driver/compat/cpp:cpp",
+        # fdf::AddChild helpers / MakeOffer2.
+        "//src/upstream/fuchsia/sdk/lib/driver/node/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        # libsync::Completion.
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        # fbl (vmo_store transitive).
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        # vmo_store (pins the netdevice framework's data VMOs).
+        "//src/upstream/fuchsia/src/lib/vmo_store:vmo_store",
+    ],
+)
+
+# DFv2-native e1000 driver .so. Version-script (e1000.ld) exports only
+# __fuchsia_driver_registration__.
+cc_binary(
+    name = "e1000.so",
+    additional_linker_inputs = ["e1000.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,e1000.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location e1000.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = E1000_ALWAYSLINK_DEPS + [
+        ":e1000_impl",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

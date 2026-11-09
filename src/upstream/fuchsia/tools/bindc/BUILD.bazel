@@ -1,0 +1,20 @@
+# Cerise BUILD for bindc (the bind compiler), authored locally; upstream is GN.
+# Full tool: compile/debug/test/generate-bind/generate-cpp/generate-rust. Host tool
+# (exec config), used by the bind_library_cpp / bind_library codegen rules.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "bindc",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    compile_data = glob(["src/templates/*.template"]),
+    deps = [
+        "//src/upstream/fuchsia/src/devices/lib/bind:bind",
+        "//src/upstream/fuchsia/tools/fidl/fidl_ir:fidl_ir",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_json",
+    ],
+)

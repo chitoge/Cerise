@@ -1,0 +1,565 @@
+"""Shape test suite for the Cerise build.
+
+All shape checks run via:
+  bazel test //build/checks:all
+
+Every check ships with fixtures: a known-good input the check must accept AND
+a known-bad input it must reject.
+
+Earlier governance checks (legacy_freeze, frozen_inputs, vendored_divergence)
+and the live-closure/partition manifest checks (closure_inventory,
+closure_parity, partition, build_manifest_conformance) were removed: Cerise
+borrows Fuchsia constructs directly rather than tracking against a frozen
+upstream import.
+
+Retained checks:
+  layer_string, no_policy_in_build, layering_negative_probe,
+  flag_manifest_golden (kernel/phys/efi/user + rust user),
+  no_genrule_in_image, hermeticity, sdk_visibility, toolchain_ambient_include,
+  arch_separation_proof.
+"""
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    [
+        "BUILD.bazel",
+        "flag_manifest_golden_test.py",
+        "flag_manifest_golden_test_runner.sh",
+        "github_actions_pin_test.py",
+        "github_actions_pin_test_runner.sh",
+        "no_policy_in_build_test.py",
+        "no_policy_in_build_test_runner.sh",
+        "no_genrule_in_image_test.py",
+        "no_genrule_in_image_test_runner.sh",
+        "hermeticity_test.py",
+        "hermeticity_test_runner.sh",
+        "sdk_visibility_test.py",
+        "sdk_visibility_test_runner.sh",
+        "toolchain_ambient_include_test.py",
+        "toolchain_ambient_include_test_runner.sh",
+        "arch-neutral-set.txt",
+        "arch-proven-set.txt",
+        "arch_separation_proof_test.py",
+        "arch_separation_proof_test_runner.sh",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "no_policy_build_files",
+    srcs = [
+        "//src/cerise/rt:BUILD.bazel",
+        "//src/zircon/lib/zircon:BUILD.bazel",
+        "//zircon/kernel/arch/x86/hypervisor:BUILD.bazel",
+        "//zircon/kernel/dev/hw_rng:BUILD.bazel",
+        "//zircon/kernel/dev/interrupt:BUILD.bazel",
+        "//zircon/kernel/dev/iommu:BUILD.bazel",
+        "//zircon/kernel/dev/iommu/stub:BUILD.bazel",
+        "//zircon/kernel/dev/pdev/power:BUILD.bazel",
+        "//zircon/kernel/hypervisor:BUILD.bazel",
+        "//zircon/kernel/lib/acpi_lite:BUILD.bazel",
+        "//zircon/kernel/lib/arch/x86:BUILD.bazel",
+        "//zircon/kernel/lib/backtrace:BUILD.bazel",
+        "//zircon/kernel/lib/btree:BUILD.bazel",
+        "//zircon/kernel/lib/kconcurrent:BUILD.bazel",
+        "//zircon/kernel/lib/kpci:BUILD.bazel",
+        "//zircon/kernel/lib/ktrace:BUILD.bazel",
+        "//zircon/kernel/lib/libc:BUILD.bazel",
+        "//zircon/kernel/lib/lockup_detector:BUILD.bazel",
+        "//zircon/kernel/lib/object_cache:BUILD.bazel",
+        "//zircon/kernel/lib/page-map:BUILD.bazel",
+        "//zircon/kernel/lib/percpu_writer:BUILD.bazel",
+        "//zircon/kernel/lib/power-management:BUILD.bazel",
+        "//zircon/kernel/lib/sched:BUILD.bazel",
+        "//zircon/kernel/lib/spsc_buffer:BUILD.bazel",
+        "//zircon/kernel/lib/stall:BUILD.bazel",
+        "//zircon/kernel/lib/suspend_wakeup_timer:BUILD.bazel",
+        "//zircon/kernel/lib/thread_sampler:BUILD.bazel",
+        "//zircon/kernel/lib/wake-vector:BUILD.bazel",
+        "//zircon/kernel/phys/lib/memalloc:BUILD.bazel",
+        "//zircon/kernel/vm:BUILD.bazel",
+        "//zircon/kernel/vm/phys:BUILD.bazel",
+        "//zircon/system/ulib/affine:BUILD.bazel",
+        "//zircon/system/ulib/bitmap:BUILD.bazel",
+        "//zircon/system/ulib/concurrent:BUILD.bazel",
+        "//zircon/system/ulib/fbl:BUILD.bazel",
+        "//zircon/system/ulib/ffl:BUILD.bazel",
+        "//zircon/system/ulib/hwreg:BUILD.bazel",
+        "//zircon/system/ulib/page_tables:BUILD.bazel",
+        "//zircon/system/ulib/ram-crashlog:BUILD.bazel",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Toolchain flag-manifest goldens.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "flag_manifest_golden_self_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["flag_manifest_golden_test.py"],
+)
+
+sh_test(
+    name = "flag_manifest_golden_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain:zircon_x64_kernel_config)",
+        "--golden",
+        "$(rootpath //toolchain/goldens:zircon_x64_kernel_config.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain:zircon_x64_kernel_config",
+        "//toolchain/goldens:zircon_x64_kernel_config.manifest.json",
+    ],
+)
+
+sh_test(
+    name = "flag_manifest_golden_x64_phys_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain:zircon_x64_phys_config)",
+        "--golden",
+        "$(rootpath //toolchain/goldens:zircon_x64_phys_config.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain:zircon_x64_phys_config",
+        "//toolchain/goldens:zircon_x64_phys_config.manifest.json",
+    ],
+)
+
+sh_test(
+    name = "flag_manifest_golden_x86_32_phys_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain:zircon_x86_32_phys_config)",
+        "--golden",
+        "$(rootpath //toolchain/goldens:zircon_x86_32_phys_config.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain:zircon_x86_32_phys_config",
+        "//toolchain/goldens:zircon_x86_32_phys_config.manifest.json",
+    ],
+)
+
+sh_test(
+    name = "flag_manifest_golden_x64_efi_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain:zircon_x64_efi_config)",
+        "--golden",
+        "$(rootpath //toolchain/goldens:zircon_x64_efi_config.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain:zircon_x64_efi_config",
+        "//toolchain/goldens:zircon_x64_efi_config.manifest.json",
+    ],
+)
+
+sh_test(
+    name = "flag_manifest_golden_x64_user_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain:zircon_x64_user_config)",
+        "--golden",
+        "$(rootpath //toolchain/goldens:zircon_x64_user_config.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain:zircon_x64_user_config",
+        "//toolchain/goldens:zircon_x64_user_config.manifest.json",
+    ],
+)
+
+# Rust toolchain flag-manifest golden (cerise/user platform).
+sh_test(
+    name = "flag_manifest_golden_rust_x64_user_test",
+    size = "small",
+    srcs = ["flag_manifest_golden_test_runner.sh"],
+    args = [
+        "--actual",
+        "$(rootpath //toolchain/rust:cerise_rust_x64_user_manifest)",
+        "--golden",
+        "$(rootpath //toolchain/rust/goldens:cerise_rust_x64_user.manifest.json)",
+    ],
+    data = [
+        "flag_manifest_golden_test.py",
+        "//toolchain/rust:cerise_rust_x64_user_manifest",
+        "//toolchain/rust/goldens:cerise_rust_x64_user.manifest.json",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Lexical guard for architecture/environment strings.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "layer_string_self_test",
+    size = "small",
+    srcs = ["layer_string_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["layer_string_test.py"],
+)
+
+# The BUILD file of every package build/checks/arch-neutral-set.txt declares
+# arch-neutral. This list is NOT trusted by the check: layer_string_test.py
+# re-reads arch-neutral-set.txt and fails if any package named there is missing
+# from these inputs, so the scan set cannot be narrowed silently. (Narrowing it
+# to files the check could only skip is exactly how the previous version came to
+# read zero bytes while reporting "4 file(s) scanned".)
+filegroup(
+    name = "arch_neutral_build_files",
+    srcs = [
+        "//zircon/kernel/dev/interrupt:BUILD.bazel",
+        "//zircon/kernel/dev/iommu:BUILD.bazel",
+        "//zircon/kernel/dev/iommu/stub:BUILD.bazel",
+        "//zircon/kernel/dev/pdev/power:BUILD.bazel",
+        "//zircon/kernel/hypervisor:BUILD.bazel",
+        "//zircon/kernel/lib/acpi_lite:BUILD.bazel",
+        "//zircon/kernel/lib/backtrace:BUILD.bazel",
+        "//zircon/kernel/lib/btree:BUILD.bazel",
+        "//zircon/kernel/lib/kconcurrent:BUILD.bazel",
+        "//zircon/kernel/lib/kpci:BUILD.bazel",
+        "//zircon/kernel/lib/ktrace:BUILD.bazel",
+        "//zircon/kernel/lib/lockup_detector:BUILD.bazel",
+        "//zircon/kernel/lib/object_cache:BUILD.bazel",
+        "//zircon/kernel/lib/page-map:BUILD.bazel",
+        "//zircon/kernel/lib/percpu_writer:BUILD.bazel",
+        "//zircon/kernel/lib/power-management:BUILD.bazel",
+        "//zircon/kernel/lib/sched:BUILD.bazel",
+        "//zircon/kernel/lib/spsc_buffer:BUILD.bazel",
+        "//zircon/kernel/lib/stall:BUILD.bazel",
+        "//zircon/kernel/lib/suspend_wakeup_timer:BUILD.bazel",
+        "//zircon/kernel/lib/thread_sampler:BUILD.bazel",
+        "//zircon/kernel/lib/wake-vector:BUILD.bazel",
+        "//zircon/kernel/phys/lib/memalloc:BUILD.bazel",
+        "//zircon/kernel/vm/phys:BUILD.bazel",
+        "//zircon/system/ulib/affine:BUILD.bazel",
+        "//zircon/system/ulib/bitmap:BUILD.bazel",
+        "//zircon/system/ulib/concurrent:BUILD.bazel",
+        "//zircon/system/ulib/fbl:BUILD.bazel",
+        "//zircon/system/ulib/ffl:BUILD.bazel",
+        "//zircon/system/ulib/hwreg:BUILD.bazel",
+        "//zircon/system/ulib/page_tables:BUILD.bazel",
+        "//zircon/system/ulib/ram-crashlog:BUILD.bazel",
+    ],
+)
+
+sh_test(
+    name = "layer_string_test",
+    size = "small",
+    srcs = ["layer_string_test_runner.sh"],
+    args = [
+        "--neutral-set",
+        "$(rootpath :arch-neutral-set.txt)",
+        # Expands to all 32 BUILD files; sh_test args are whitespace-split, which
+        # is what makes one $(rootpaths ...) entry work here.
+        "$(rootpaths :arch_neutral_build_files)",
+    ],
+    data = [
+        "layer_string_test.py",
+        ":arch-neutral-set.txt",
+        ":arch_neutral_build_files",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Build-file policy guard for the active component trees.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "no_policy_in_build_self_test",
+    size = "small",
+    srcs = ["no_policy_in_build_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["no_policy_in_build_test.py"],
+)
+
+sh_test(
+    name = "no_policy_in_build_test",
+    size = "small",
+    srcs = ["no_policy_in_build_test_runner.sh"],
+    data = [
+        "no_policy_in_build_test.py",
+        ":no_policy_build_files",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Layering check negative probe.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "layering_negative_probe_self_test",
+    size = "small",
+    srcs = ["layering_negative_probe_runner.sh"],
+    args = ["--self-test"],
+    data = ["layering_negative_probe_runner.sh"],
+)
+
+sh_test(
+    name = "layering_negative_probe",
+    size = "small",
+    srcs = ["layering_negative_probe_runner.sh"],
+    data = [
+        "layering_negative_probe_runner.sh",
+        "//:MODULE.bazel",
+        "//toolchain:BUILD.bazel",
+        "//toolchain/tests:BUILD.bazel",
+        "//toolchain/tests:layering_probe_good.c",
+        "//toolchain/tests:layering_probe_good.h",
+        "//toolchain/tests:layering_probe_bad.c",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Image-layer shape checks: no genrule, hermetic actions.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "no_genrule_in_image_self_test",
+    size = "small",
+    srcs = ["no_genrule_in_image_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["no_genrule_in_image_test.py"],
+)
+
+sh_test(
+    name = "no_genrule_in_image_test",
+    size = "small",
+    srcs = ["no_genrule_in_image_test_runner.sh"],
+    args = [
+        "$(rootpath //build/images:BUILD.bazel)",
+        "$(rootpath //products:BUILD.bazel)",
+    ],
+    data = [
+        "no_genrule_in_image_test.py",
+        "//build/images:BUILD.bazel",
+        "//products:BUILD.bazel",
+    ],
+)
+
+sh_test(
+    name = "hermeticity_self_test",
+    size = "small",
+    srcs = ["hermeticity_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["hermeticity_test.py"],
+)
+
+sh_test(
+    name = "hermeticity_test",
+    size = "small",
+    srcs = ["hermeticity_test_runner.sh"],
+    args = [
+        "$(rootpath //build/images:BUILD.bazel)",
+        "$(rootpath //products:BUILD.bazel)",
+    ],
+    data = [
+        "hermeticity_test.py",
+        "//build/images:BUILD.bazel",
+        "//products:BUILD.bazel",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# SDK visibility check.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "sdk_visibility_self_test",
+    size = "small",
+    srcs = ["sdk_visibility_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["sdk_visibility_test.py"],
+)
+
+sh_test(
+    name = "sdk_visibility_test",
+    size = "small",
+    srcs = ["sdk_visibility_test_runner.sh"],
+    args = [
+        "$(rootpath //examples:BUILD.bazel)",
+        "$(rootpath //examples/hello-sdk:BUILD.bazel)",
+        "$(rootpath //examples/userboot-smoke:BUILD.bazel)",
+    ],
+    data = [
+        "sdk_visibility_test.py",
+        "//examples:BUILD.bazel",
+        "//examples/hello-sdk:BUILD.bazel",
+        "//examples/userboot-smoke:BUILD.bazel",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Toolchain ambient include golden: stdlib-resolution closure only.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "toolchain_ambient_include_self_test",
+    size = "small",
+    srcs = ["toolchain_ambient_include_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["toolchain_ambient_include_test.py"],
+)
+
+sh_test(
+    name = "toolchain_ambient_include_test",
+    size = "small",
+    srcs = ["toolchain_ambient_include_test_runner.sh"],
+    args = [
+        "--build-bazel",
+        "$(rootpath //toolchain:BUILD.bazel)",
+        "--golden",
+        "$(rootpath //toolchain:ambient-includes.json)",
+    ],
+    data = [
+        "toolchain_ambient_include_test.py",
+        "//toolchain:BUILD.bazel",
+        "//toolchain:ambient-includes.json",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Arch separation proof: validates arch-neutral partition structure.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "arch_separation_proof_self_test",
+    size = "small",
+    srcs = ["arch_separation_proof_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["arch_separation_proof_test.py"],
+)
+
+sh_test(
+    name = "arch_separation_proof_test",
+    size = "small",
+    srcs = ["arch_separation_proof_test_runner.sh"],
+    args = [
+        "--neutral-set",
+        "$(rootpath :arch-neutral-set.txt)",
+        "--proven-set",
+        "$(rootpath :arch-proven-set.txt)",
+    ],
+    data = [
+        "arch_separation_proof_test.py",
+        ":arch-neutral-set.txt",
+        ":arch-proven-set.txt",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# GitHub Actions supply-chain pinning.
+# ---------------------------------------------------------------------------
+sh_test(
+    name = "github_actions_pin_self_test",
+    size = "small",
+    srcs = ["github_actions_pin_test_runner.sh"],
+    args = ["--self-test"],
+    data = ["github_actions_pin_test.py"],
+)
+
+sh_test(
+    name = "github_actions_pin_test",
+    size = "small",
+    srcs = ["github_actions_pin_test_runner.sh"],
+    args = [
+        "--directory-of",
+        "$(rootpath //:.github/workflows/ci.yml)",
+    ],
+    data = [
+        "github_actions_pin_test.py",
+        "//:.github/workflows/ci.yml",
+        "//:github_workflows",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Convenience target: run all active checks.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# runtime ABI symbol check.
+# Asserts the historically-holed runtime symbols stay defined+exported in the
+# TARGET-built libraries: setjmp/longjmp family in libc.so; the exception ABI
+# (__cxa_throw/.../__gxx_personality_v0/_Unwind_*) and a REAL (nonzero-size)
+# __cxa_demangle in libc++.so. Uses the prebuilt llvm-nm on the
+# fuchsia-transitioned artifacts, so a silent unwiring can never regress.
+# ---------------------------------------------------------------------------
+fuchsia_artifact(
+    name = "runtime_abi_libc_so.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_artifact(
+    name = "runtime_abi_libcxx_so.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+sh_test(
+    name = "runtime_abi_symbols_test",
+    size = "small",
+    srcs = ["runtime_abi_symbols_test.sh"],
+    args = [
+        "$(rootpath //toolchain:linux_x86_64/bin/llvm-nm.prebuilt)",
+        "$(rootpaths :runtime_abi_libc_so.fuchsia)",
+        "$(rootpaths :runtime_abi_libcxx_so.fuchsia)",
+    ],
+    data = [
+        ":runtime_abi_libc_so.fuchsia",
+        ":runtime_abi_libcxx_so.fuchsia",
+        "//toolchain:linux_x86_64/bin/llvm-nm.prebuilt",
+    ],
+)
+
+test_suite(
+    name = "all",
+    tests = [
+        ":layer_string_self_test",
+        ":layer_string_test",
+        ":no_policy_in_build_self_test",
+        ":no_policy_in_build_test",
+        ":layering_negative_probe_self_test",
+        ":layering_negative_probe",
+        ":flag_manifest_golden_self_test",
+        ":flag_manifest_golden_test",
+        ":flag_manifest_golden_x64_phys_test",
+        ":flag_manifest_golden_x86_32_phys_test",
+        ":flag_manifest_golden_x64_efi_test",
+        ":flag_manifest_golden_x64_user_test",
+        ":flag_manifest_golden_rust_x64_user_test",
+        ":no_genrule_in_image_self_test",
+        ":no_genrule_in_image_test",
+        ":hermeticity_self_test",
+        ":hermeticity_test",
+        ":sdk_visibility_self_test",
+        ":sdk_visibility_test",
+        ":toolchain_ambient_include_self_test",
+        ":toolchain_ambient_include_test",
+        ":arch_separation_proof_self_test",
+        ":arch_separation_proof_test",
+        ":github_actions_pin_self_test",
+        ":github_actions_pin_test",
+        ":runtime_abi_symbols_test",
+        # Build-time CFv2 capability-routing + least-privilege checker.
+        # Positive gate over the six real products + a non-vacuous negative gate.
+        "//src/cerise/tools/route_check:route_check_test",
+        "//src/cerise/tools/route_check:route_check_negative_test",
+        # qemu_boot_test must parse marker contracts as JSON and emit escaped JSON reports.
+        "//bazel:qemu_boot_test_runner_test",
+        # content-dedup in tools/zbi/simple_zbi.py's build_bootfs.
+        "//tools/zbi:bootfs_dedup_test",
+    ],
+)

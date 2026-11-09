@@ -1,0 +1,46 @@
+# Bazel integration for this imported target. netstack3-bindings
+# dependency: real fidl_fuchsia_net_interfaces_ext (BUILD.gn target
+# "fidl_fuchsia_net_interfaces_ext", non-fdomain instantiation only -- Cerise has
+# no remote-FDomain use case, "_fdomain" sibling target intentionally not vendored).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_interfaces_ext",
+    srcs = [
+        "src/admin.rs",
+        "src/lib.rs",
+        "src/reachability.rs",
+    ],
+    crate_root = "src/lib.rs",
+    crate_name = "fidl_fuchsia_net_interfaces_ext",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:flex_fuchsia_hardware_network",
+        # HEAD-backed variant (same crate_name "flex_fuchsia_net"), not the plain
+        # one -- must match flex_fuchsia_net_interfaces/_admin/_resources below,
+        # all HEAD-backed, and netstack3's own direct fuchsia.net imports.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:flex_fuchsia_net_for_neighbor",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:flex_fuchsia_net_interfaces",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces.admin:flex_fuchsia_net_interfaces_admin",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:flex_fuchsia_net_resources",
+        "//src/upstream/fuchsia/src/lib/fdomain/client:flex_fidl",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types",
+        "//src/upstream/fuchsia/src/lib/async-utils:async-utils",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl_table_validation:fidl_table_validation",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:thiserror",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+)

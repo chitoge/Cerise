@@ -1,0 +1,24 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "diagnostics_log_encoding",
+    srcs = glob(["src/**/*.rs"], exclude = ["src/fuzzer.rs"]),
+    crate_name = "diagnostics_log_encoding",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/types:diagnostics_log_types",
+        "@crates//:bitfield",
+        "@crates//:log",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

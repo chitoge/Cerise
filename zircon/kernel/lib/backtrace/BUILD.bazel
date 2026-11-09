@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "backtrace",
+    srcs = ["backtrace.cc"],
+    hdrs = [
+        "include/lib/backtrace.h",
+        "include/lib/backtrace/cpu_context_exchange.h",
+        "include/lib/backtrace/global_cpu_context_exchange.h",
+    ],
+    includes = ["include"],
+    deps = [
+        # backtrace.cc uses <phys/boot-constants.h>
+        "//zircon/kernel/phys/include:headers",
+        # headers use <lib/affine/ratio.h>
+        "//zircon/system/ulib/affine:affine",
+        # arch/x86 and kernel/include headers via toolchain ambient
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/backtrace.h",
+        "include/lib/backtrace/cpu_context_exchange.h",
+        "include/lib/backtrace/global_cpu_context_exchange.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["backtrace.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+cc_library(
+    name = "backtrace_tests",
+    testonly = True,
+    tags = ["manual"],
+    srcs = glob(["tests/*_tests.cc"]),
+    alwayslink = True,
+    deps = [
+        ":backtrace",
+        "//zircon/kernel/lib/unittest:unittest",
+        "//:kernel_cc_headers",
+    ],
+)

@@ -1,0 +1,61 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+# the Crypt service itself - fxfs_crypt. Wraps fxfs_crypt_common's
+# key-wrapping logic behind the fuchsia.fxfs/Crypt + CryptManagement FIDL protocols.
+rust_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",
+        "src/log.rs",
+    ],
+    crate_name = "fxfs_crypt",
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        ":fxfs_crypt_common",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)
+
+alias(
+    name = "fxfs_crypt_common",
+    actual = "//src/upstream/fuchsia/src/storage/crypt/fxfs/common:fxfs_crypt_common",
+)
+
+rust_binary(
+    name = "fxfs_crypt",
+    srcs = ["src/main.rs"],
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    crate_name = "fxfs_crypt",
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/rust:diagnostics_log",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:anyhow",
+        "@crates//:futures",
+    ],
+)
+
+fuchsia_stripped(
+    name = "fxfs_crypt_stripped.fuchsia",
+    src = ":fxfs_crypt",
+)

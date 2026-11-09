@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# VHDX logical reader: resolves a sparse virtual disk's contents by consulting
+# its block allocation table, synthesizing zeros for the (usually vast) absent
+# regions instead of reading them.
+rust_library(
+    name = "cryogen_vhdx",
+    srcs = ["lib.rs"],
+    crate_name = "cryogen_vhdx",
+    edition = "2021",
+)
+
+# Host unit tests over a synthetic in-memory image with real headers, region
+# table, metadata and BAT: geometry parsing, every absent block state reading as
+# zeros, stored-block passthrough, and checksum/signature rejection.
+rust_test(
+    name = "cryogen_vhdx_test",
+    crate = ":cryogen_vhdx",
+    edition = "2021",
+)

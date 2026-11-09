@@ -1,0 +1,50 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl",
+    srcs = [
+        "src/client.rs",
+        "src/encoding.rs",
+        "src/endpoints.rs",
+        "src/epitaph.rs",
+        "src/error.rs",
+        "src/for_fidl_message_crate.rs",
+        "src/handle.rs",
+        "src/lib.rs",
+        "src/marker.rs",
+        "src/persistence.rs",
+        "src/prelude.rs",
+        "src/serializable.rs",
+        "src/server.rs",
+        "src/time.rs",
+    ],
+    crate_name = "fidl",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_constants:rust_constants",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "@crates//:slab",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# Host-runnable unit tests (rung 1, zero new external crates). Unlike most of
+# the storage tier (vfs/fs_management/block_client/...), the real "zx" dep
+# here is already select()-gated to @platforms//os:fuchsia, so this crate is
+# genuinely host-portable.
+rust_test(
+    name = "fidl_test",
+    crate = ":fidl",
+    deps = ["@crates//:assert_matches"],
+)

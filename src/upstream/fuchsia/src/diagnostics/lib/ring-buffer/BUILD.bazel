@@ -1,0 +1,23 @@
+# Authored locally for Cerise (Phase 1 logging: Archivist import).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "ring-buffer",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "ring_buffer",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

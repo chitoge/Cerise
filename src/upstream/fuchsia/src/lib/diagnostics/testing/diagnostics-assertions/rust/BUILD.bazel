@@ -1,0 +1,22 @@
+# Authored locally for Cerise (Phase 1 logging: inspect unit-test support).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# diagnostics_assertions: test-only helpers (assert_data_tree!, etc.) used by
+# the vendored inspect crate's own unit tests.
+rust_library(
+    name = "diagnostics-assertions",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_assertions",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy",
+        "@crates//:anyhow",
+        "@crates//:difference",
+        "@crates//:num-traits",
+        "@crates//:regex",
+        "@crates//:serde_json",
+    ],
+)

@@ -1,0 +1,33 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "percpu_writer",
+    srcs = ["allocator.cc"],
+    hdrs = [
+        "include/lib/percpu_writer/buffer.h",
+        "include/lib/percpu_writer/kernel_aspace_allocator.h",
+    ],
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/percpu_writer/buffer.h",
+        "include/lib/percpu_writer/kernel_aspace_allocator.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["allocator.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

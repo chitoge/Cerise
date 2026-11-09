@@ -1,0 +1,9 @@
+// nvme_probe leaf — real block read/write/readback via NVMe's aggregate-exposed
+// block.volume Service.
+{
+    program: { runner: "elf", binary: "bin/nvme_probe" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
+}

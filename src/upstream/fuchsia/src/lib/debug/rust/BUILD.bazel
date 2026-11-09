@@ -1,0 +1,34 @@
+# Unmodified upstream src/lib/debug/rust. Real compile-time
+# dependency of fxfs core's debug_assert_not_too_long! macro under cfg(debug_assertions)
+# (active in this repo's default build config) - not optional here.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# debug_sym_for_rust: small C++ shim exposing debug::IsDebuggerAttached/WaitForDebugger
+# and backtrace-request's free functions as extern "C" symbols the Rust crate binds to
+# (matches upstream's static_library("debug_sym_for_rust") in ../BUILD.gn).
+cc_library(
+    name = "debug_sym_for_rust",
+    srcs = ["debug_sym_for_rust.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/debug",
+        "//src/upstream/fuchsia/src/lib/debug:backtrace-request",
+    ],
+)
+
+rust_library(
+    name = "debug",
+    srcs = ["src/lib.rs"],
+    crate_name = "debug",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        ":debug_sym_for_rust",
+    ],
+)

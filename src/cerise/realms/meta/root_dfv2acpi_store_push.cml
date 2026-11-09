@@ -1,0 +1,80 @@
+// root_dfv2acpi_store_push — component_manager root for the guest-image push
+// product.
+//
+// The lean driver base (elf_runner + cerise_logsink + driver_index +
+// driver_manager_rust) PLUS netstack3 (for the gRPC listener) PLUS
+// guest_store_receiver, and nothing else.
+//
+// guest_store_receiver is the SOLE disk writer in this realm, and that is the
+// point of the realm existing at all. There is deliberately NO fshost, NO
+// fxfs_provisioner, NO fileserver and NO *_probe component here: every one of
+// those either formats a disk, writes a partition table or scribbles a test
+// pattern at offset 0, and a realm whose whole claim is "a refused push wrote
+// nothing to this disk" cannot contain another component that might have written
+// to it. A refusal gate against a realm with a second writer would be measuring
+// the realm rather than the receiver.
+//
+// It is also why the console realm was not reused. root_dfv2acpi_console_vmm
+// already has netstack3 and a driver stack, and would have cost nothing to
+// extend — but it also mounts fxfs through the file server, which claims a disk,
+// and the receiver's guarantee would then be a joint claim about two components.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "netstack3",
+            url: "fuchsia-boot:///netstack3#meta/netstack3.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        // EAGER. Nothing else in this realm would ever bind it, so a lazy leaf
+        // here is a component that never runs — and a gate against it would be
+        // green because nothing happened.
+        {
+            name: "guest_store_receiver",
+            url: "fuchsia-boot:///guest_store_receiver#meta/guest_store_receiver.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netstack3", "#guest_store_receiver"],
+        },
+
+        // The receiver's wiring: readiness/NIC discovery, raw block, network
+        // sockets. No statecontrol, no storage, no fxfs.
+        { directory: "dev", from: "#driver_manager_rust", to: "#guest_store_receiver", rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: "#guest_store_receiver" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#guest_store_receiver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#guest_store_receiver" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#guest_store_receiver" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#guest_store_receiver" },
+    ],
+}

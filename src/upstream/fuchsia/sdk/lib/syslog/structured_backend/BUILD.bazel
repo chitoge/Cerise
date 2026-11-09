@@ -1,0 +1,37 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "structured_backend",
+    # The implementation .cc live in cpp/ (logger.cc -> Logger::Create/FlushBuffer,
+    # log_buffer.cc -> LogBuffer::BeginRecord/WriteKeyValue); a bare *.cc glob matched
+    # nothing -> empty archive -> DFv2 driver .so left UND on these. Glob cpp/.
+    srcs = glob(["cpp/*.cc"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    # HEAD api level: Logger::FlushBuffer (logger.cc) is FUCHSIA_API_LEVEL_AT_LEAST(29)-
+    # gated; without an api level it's compiled out, leaving DFv2 driver .so's UND on it.
+    # HEAD = 4292870144 (sdk/version_history.json). Cerise sets no global C++ api level;
+    # this matches upstream's per-build -ffuchsia-api-level.
+    copts = ["-ffuchsia-api-level=4292870144"],
+    # alwayslink: a self-contained DFv2 driver .so (cc_binary -shared, which honors
+    # DIRECT alwayslink) whole-archives the fuchsia_logging Logger/LogBuffer out-of-line
+    # symbols (Create/FlushBuffer/BeginRecord/WriteKeyValue) it references via DriverBase's
+    # logger — archive resolution alone leaves them UND.
+    alwayslink = True,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Repo-relative header view ("sdk/lib/syslog/structured_backend/cpp/...") for .cc that use
+# build-root-relative includes (GN puts // on the include path; Bazel needs this view).
+cc_library(
+    name = "structured_backend_repo",
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

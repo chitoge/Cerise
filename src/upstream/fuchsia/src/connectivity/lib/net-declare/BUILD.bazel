@@ -1,0 +1,28 @@
+# Authored locally for Cerise. net-declare: the net_*/std_* address
+# macros netstack3-core uses. The FIDL crate re-export (fnet_common) is gated off
+# (feature "fidl-types") — that's a runtime closure; core needs only the non-FIDL macros.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "net-declare-macros",
+    srcs = ["src/macros.rs"],
+    crate_root = "src/macros.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_library(
+    name = "net-declare",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [":net-declare-macros"],
+)

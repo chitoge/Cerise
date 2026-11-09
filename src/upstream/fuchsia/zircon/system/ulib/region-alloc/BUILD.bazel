@@ -1,0 +1,17 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "region-alloc",
+    srcs = ["region-alloc.cc"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    features = ["host_cxx20"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

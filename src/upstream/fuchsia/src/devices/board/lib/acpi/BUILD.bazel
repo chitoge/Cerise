@@ -1,0 +1,60 @@
+# Cerise BUILD for src/devices/board/lib/acpi (authored locally; upstream is GN).
+# The ACPI board library used by board/drivers/x86. ACPI_FLEX_ARRAY define mirrors the
+# upstream shared_defines (the acgcc.h ACPI_FLEX_ARRAY workaround).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "acpi",
+    srcs = [
+        "acpi-impl.cc",
+        "acpi.cc",
+        "device-builder.cc",
+        "device.cc",
+        "event.cc",
+        "fidl.cc",
+        "global-lock.cc",
+        "irq-fragment.cc",
+        "manager.cc",
+        "pci.cc",
+        "pci_irqs.cc",
+        "pciroot.cc",
+        "power-resource.cc",
+        "resources.cc",
+    ],
+    hdrs = glob(["*.h"]),
+    # The acgcc.h ACPI_FLEX_ARRAY workaround (upstream shared_defines). Passed via copts,
+    # not local_defines, because the macro body has spaces (multi-token) which
+    # local_defines rejects; copts elements reach the compiler as single argv entries.
+    copts = ["'-DACPI_FLEX_ARRAY(TYPE, NAME)=TYPE NAME[0]'"],
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci_cpp",
+        "//src/upstream/fuchsia/src/devices/lib/acpi:acpi",
+        "//src/upstream/fuchsia/src/devices/lib/iommu:iommu-x86",
+        "//src/upstream/fuchsia/src/devices/pci/lib/pci:pci",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk-deprecated-binding-headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/svc:svc",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/third_party/acpica-migrating/src:acpica",
+        "//src/upstream/fuchsia/third_party/acpica-migrating/src:acpica_repo_headers",
+    ],
+)

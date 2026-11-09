@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# x86-specific CPU setup for the EFI environment.
+# Calls arch::InitializeBootCpuid() (needs __PE_COFF__ for COFF relocation stubs).
+cc_library(
+    name = "efi_arch_setup",
+    srcs = ["efi-arch-setup.cc"],
+    deps = [
+        "//:kernel_cc_headers",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/lib/arch/x86:arch_x86",
+    ],
+    alwayslink = True,
+)

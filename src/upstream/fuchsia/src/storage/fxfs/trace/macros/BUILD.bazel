@@ -1,0 +1,18 @@
+# Authored locally for Cerise.
+# fxfs_trace_macros: proc-macro crate providing the #[trace] attribute fxfs's core
+# source applies pervasively - required for fxfs to compile, not optional.
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "fxfs_trace_macros",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_trace_macros",
+    edition = "2024",
+    deps = [
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)

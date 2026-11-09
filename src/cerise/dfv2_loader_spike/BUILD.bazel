@@ -1,0 +1,67 @@
+# Cerise DFv2 driver loader core spike (DFv2 runtime bring-up, Component 2).
+# Brings up the fdf runtime, dlopens the minimal DFv2 driver .so, drives it via the
+# real fdf Driver transport (initialize + Start) so its Start() runs at boot.
+# Links libfdf (driver_runtime) + libc++ (sysroot) and exports its dynamic symbols
+# (--export-dynamic) so the dlopen'd driver's undefined fdf/libc++ refs bind to this
+# process (the .so was built -nostdlib --allow-shlib-undefined, no DT_NEEDED).
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "dfv2_loader_spike",
+    srcs = ["loader.cc"],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-DNTRACE",
+        # The fdf Driver wire bindings + DriverServer path are HEAD-gated.
+        "-ffuchsia-api-level=4292870144",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        # Export the process's dynamic symbols so the dlopen'd driver binds against
+        # them (fdf runtime, libc++, framework).
+        "-rdynamic",
+        # Force-keep the fdf C++ wrapper fdf::ProtocolReceive(zx::channel) — the only
+        # fdf:: C++ symbol the driver .so leaves UND (the fdf_* C runtime funcs are
+        # already referenced+kept). Without -u, --gc-sections drops it before
+        # -rdynamic can export it, so the driver's dlopen relocation fails.
+        "-Wl,-u,_ZN3fdf15ProtocolReceiveEN2zx7channelE",
+        # Force-keep + export the fuchsia_logging out-of-line symbols (structured_backend,
+        # HEAD-compiled) the driver .so leaves UND via DriverBase's logger; -rdynamic then
+        # exports them so the dlopen'd driver binds against this host process.
+        "-Wl,-u,_ZNK15fuchsia_logging6Logger11FlushBufferERNS_9LogBufferE",
+        "-Wl,-u,_ZN15fuchsia_logging6Logger6CreateERKNS_14RawLogSettingsEPNSt3__16atomicIhEE",
+        "-Wl,-u,_ZN15fuchsia_logging9LogBuffer11BeginRecordEhNSt3__18optionalINS1_17basic_string_viewIcNS1_11char_traitsIcEEEEEEjS7_jmm",
+        "-Wl,-u,_ZN15fuchsia_logging9LogBuffer13WriteKeyValueENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_",
+        "-lzircon",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/symbols:symbols",
+        "//src/upstream/fuchsia/sdk/lib/zbi-format:zbi-format",
+        "//src/upstream/fuchsia/src/devices/bin/driver_runtime:driver_runtime_impl",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        "//src/cerise/sysroot/fdio-stub:fdio_stub",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//sdk/lib/fit:fit",
+    ],
+)
+
+fuchsia_artifact(
+    name = "dfv2_loader_spike.fuchsia",
+    src = ":dfv2_loader_spike",
+)

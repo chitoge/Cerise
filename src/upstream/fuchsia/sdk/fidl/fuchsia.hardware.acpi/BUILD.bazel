@@ -1,0 +1,30 @@
+# Authored locally for Cerise. FIDL + C++ wire bindings for
+# fuchsia.hardware.acpi, consumed by board/lib/acpi.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.acpi",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # The whole library is @available(added=HEAD); compile at HEAD or the types are gated
+    # out (empty wire bindings).
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.acpi_cpp",
+    library = ":fuchsia.hardware.acpi",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+    ],
+)

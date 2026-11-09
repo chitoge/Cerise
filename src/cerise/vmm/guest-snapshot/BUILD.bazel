@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Guest RAM snapshot / restore on Zircon copy-on-write VMO clones.
+# The library builds for the Cerise target; the #[cfg(not(test))] `cerise`
+# module holds the VMO-clone mechanism.
+rust_library(
+    name = "guest_snapshot",
+    srcs = ["lib.rs"],
+    edition = "2021",
+    deps = ["//src/cerise/rt:cerise_rt"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)
+
+# Unit tests run on the build host: the #[cfg(test)] path exercises only the
+# portable AccessTracker / restore_dirty model over stack + heap buffers and
+# calls no Zircon syscalls (no hypervisor / emulator required).
+rust_test(
+    name = "guest_snapshot_unit_test",
+    srcs = ["lib.rs"],
+    edition = "2021",
+)

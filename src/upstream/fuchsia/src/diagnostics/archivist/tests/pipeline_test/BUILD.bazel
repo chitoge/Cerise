@@ -1,0 +1,6 @@
+# Neutralized for Cerise: the upstream BUILD.bazel here loaded @rules_fuchsia,
+# which does not exist in the Cerise build graph and would break `bazel //...`
+# analysis. This test package is not yet ported. See the vendored BUILD.gn in
+# this directory for the upstream target definitions.
+
+package(default_visibility = ["//visibility:public"])

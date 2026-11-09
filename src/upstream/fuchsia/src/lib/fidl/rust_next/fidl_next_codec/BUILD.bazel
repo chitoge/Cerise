@@ -1,0 +1,80 @@
+# Authored locally for Cerise. fidl_next_codec: low-level
+# wire encoding/decoding for the next-gen FIDL runtime.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_next_codec",
+    srcs = [
+        "src/chunk.rs",
+        "src/convert/from.rs",
+        "src/convert/into.rs",
+        "src/convert/mod.rs",
+        "src/copy_optimization.rs",
+        "src/decode/error.rs",
+        "src/decode/mod.rs",
+        "src/decoded.rs",
+        "src/decoder.rs",
+        "src/encode/error.rs",
+        "src/encode/mod.rs",
+        "src/encoder.rs",
+        "src/fuchsia.rs",
+        "src/lib.rs",
+        "src/slot.rs",
+        "src/util.rs",
+        "src/validate.rs",
+        "src/wire/boxed.rs",
+        "src/wire/envelope.rs",
+        "src/wire/fuchsia/handle.rs",
+        "src/wire/fuchsia/handle_types.rs",
+        "src/wire/fuchsia/mod.rs",
+        "src/wire/fuchsia/object_type.rs",
+        "src/wire/fuchsia/rights.rs",
+        "src/wire/mod.rs",
+        "src/wire/primitives.rs",
+        "src/wire/ptr.rs",
+        "src/wire/result.rs",
+        "src/wire/string/mod.rs",
+        "src/wire/string/optional.rs",
+        "src/wire/string/required.rs",
+        "src/wire/table.rs",
+        "src/wire/union.rs",
+        "src/wire/unit.rs",
+        "src/wire/vec/mod.rs",
+        "src/wire/vec/optional.rs",
+        "src/wire/vec/raw.rs",
+        "src/wire/vec/required.rs",
+        "src/wire_type.rs",
+    ],
+    crate_name = "fidl_next_codec",
+    edition = "2024",
+    # The `fuchsia` feature enables src/fuchsia.rs + src/wire/fuchsia/* (handle/
+    # rights/object-type wire encoding), the only code that touches `zx`. It is
+    # kept on-target; on host it is dropped so the crate builds without the real
+    # (Fuchsia-only) zx crate. The crate's unit tests live in the portable
+    # wire/{unit,primitives,boxed,result,vec,string} modules and reference no
+    # zx symbols, so they run in full on host.
+    crate_features = select({
+        "@platforms//os:fuchsia": ["fuchsia"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust_constants:rust_constants",
+        "@crates//:bitflags",
+        "@crates//:munge",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# Host-runnable unit tests: portable wire-format codec
+# tests; zx-free (the zx-touching modules are behind the `fuchsia` feature,
+# dropped on host above).
+rust_test(
+    name = "fidl_next_codec_test",
+    crate = ":fidl_next_codec",
+)

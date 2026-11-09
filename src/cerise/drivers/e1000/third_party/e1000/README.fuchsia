@@ -1,0 +1,67 @@
+Name: Intel e1000 ethernet shared code (FreeBSD-derived)
+License: BSD-3-Clause (see LICENSE)
+License File: LICENSE
+Upstream README: README.upstream
+
+Provenance
+==========
+
+This directory vendors the OS-independent "shared code" (the hardware
+abstraction layer: MAC/PHY/NVM bring-up for the whole 8254x / e1000e / I2xx
+family) of the Intel ethernet driver.
+
+Chain of custody:
+
+  FreeBSD  sys/dev/e1000  (BSD-3-Clause, Intel + FreeBSD authors)
+     |     original shared code, hash 3258eeeb442b48695165a6cb66aabd5b8422478c
+     v
+  Fuchsia  zircon/third_party/dev/ethernet/e1000
+     |     a DFv1 port of the above. REMOVED from upstream Fuchsia before the
+     |     Cerise vendored baseline; last present at Fuchsia commit
+     |     171ed3ae9231. Fetched via the gitiles +archive endpoint:
+     |       https://fuchsia.googlesource.com/fuchsia/+archive/171ed3ae9231/
+     |         zircon/third_party/dev/ethernet/e1000.tar.gz
+     v
+  Cerise   src/cerise/drivers/e1000/third_party/e1000  (this directory)
+
+What was vendored
+=================
+
+Only the OS-independent shared code is kept. Every file that is FreeBSD
+"iflib" glue or Fuchsia DFv1 glue was intentionally dropped:
+
+  DROPPED  fuchsia.c              -- DFv1 ddk/ethernet-banjo glue (replaced by
+                                     the Cerise DFv2 driver in ../../e1000.cc)
+  DROPPED  if_em.c, if_em.h       -- FreeBSD iflib driver (never built upstream)
+  DROPPED  em_txrx.c, igb_txrx.c  -- FreeBSD iflib tx/rx (never built upstream)
+  DROPPED  BUILD.gn               -- replaced by BUILD.bazel
+
+Local modifications
+===================
+
+  e1000_osdep.h  -- REWRITTEN for DFv2. The upstream file bridged the shared
+                    code to Fuchsia's DFv1 DDK (ddk/protocol/pci banjo,
+                    ddk/mmio-buffer). The rewrite keeps the E1000_* register
+                    macros byte-for-byte, but:
+                      * register access goes through a plain MMIO base pointer
+                        (`membase`), which the C++ driver sets to its
+                        fdf::MmioBuffer virtual base;
+                      * PCI config space goes through C-callable shims
+                        (e1000_osdep_pci_read16/write16/find_cap) that the C++
+                        driver implements against the fuchsia.hardware.pci FIDL
+                        client;
+                      * DEBUGOUT/DEBUGFUNC are compiled out (no printf in a
+                        -nodefaultlibs driver .so);
+                      * E1000_WRITE_REG_IO is routed to MMIO. Upstream used the
+                        IO-mapped BAR only to dodge an 82540/82544 silicon
+                        erratum on a CTRL.RST; the sole reachable caller here is
+                        QEMU's emulated 82540EM, where MMIO reset is reliable and
+                        no ioport resource is wired. Real targets (82574L / I219
+                        / I211) never take that path.
+
+  e1000_osdep.c  -- REWRITTEN: the six OS-specific PCI helpers
+                    (e1000_read/write_pci_cfg, e1000_pci_set/clear_mwi,
+                    e1000_read/write_pcie_cap_reg) now call the C shims above.
+
+No other vendored file was modified; they compile unchanged (warnings
+suppressed via -w, as upstream built them under -Wno-conversion).

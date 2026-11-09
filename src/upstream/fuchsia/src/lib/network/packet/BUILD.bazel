@@ -1,0 +1,19 @@
+# Bazel integration for this imported target. packet: the
+# netstack3 packet buffer/serialization library. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "packet",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/replace-with:replace-with",
+        "@crates//:arrayvec",
+        "@crates//:assert_matches",
+        "@crates//:rand",
+        "@crates//:zerocopy",
+    ],
+)

@@ -1,0 +1,144 @@
+# Bazel integration for this imported target. fdio: the POSIX-ish IO
+# shim (fds/sockets -> zxio -> FIDL). The top of the runtime I/O stack. Compiles against
+# zxio + the generated FIDL bindings + the binding runtime on the sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# Shared source/dep lists for the static-link (:fdio) and shared-lib
+# (:fdio_whole -> :libfdio_so) compilations.
+_FDIO_SRCS = glob(
+    ["**/*.cc", "**/*.c"],
+    exclude = ["**/*_test*.cc", "tests/**", "include/**"],
+    allow_empty = True,
+)
+
+_FDIO_HDRS = glob(["**/*.h"], exclude = ["include/**", "tests/**"], allow_empty = True)
+
+# -Isrc/upstream/fuchsia for "sdk/lib/fdio/..." root-relative includes;
+# -Isrc/upstream/fuchsia/sdk for the SDK-style <lib/fdio/...> includes (some
+# private headers, e.g. namespace, use the SDK form).
+_FDIO_COPTS = [
+    "-Isrc/upstream/fuchsia",
+    "-Isrc/upstream/fuchsia/sdk",
+]
+
+_FDIO_DEPS = [
+    ":headers",
+    "//sdk/lib/fit:fit",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fuchsia.posix_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+    "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+    "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+    "//src/upstream/fuchsia/sdk/lib/zxio:zxio",
+    "//src/upstream/fuchsia/zircon/system/public:public",
+    "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+    "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_private_headers",
+    "//src/upstream/fuchsia/zircon/third_party/ulib/safemath:safemath",
+]
+
+cc_library(
+    name = "fdio",
+    srcs = _FDIO_SRCS,
+    hdrs = _FDIO_HDRS,
+    copts = _FDIO_COPTS,
+    tags = ["manual"],
+    deps = _FDIO_DEPS,
+)
+
+# The same fdio objects, alwayslink'd, for the shared libfdio.so link: the POSIX
+# interposition surface (open/read/write/...) has no in-link referencers, so
+# without --whole-archive the linker would drop those objects and the .so would
+# export nothing. Kept separate from :fdio so static linkers don't pay the
+# whole-archive cost.
+cc_library(
+    name = "fdio_whole",
+    srcs = _FDIO_SRCS,
+    hdrs = _FDIO_HDRS,
+    copts = _FDIO_COPTS,
+    alwayslink = True,
+    tags = ["manual"],
+    deps = _FDIO_DEPS,
+)
+
+# The REAL runtime libfdio.so (replaces the ENOSYS stub at
+# //src/cerise/sysroot/fdio-stub as the staged runtime default).
+#
+# Built with the cc_binary(-shared) pattern (like //src/cerise/runtime:libc++.so),
+# NOT cc_shared_library: the generated FIDL bindings (fidl_cpp) are a custom
+# CcInfo rule whose linker inputs cc_shared_library's graph aspect silently
+# drops (leaving every fuchsia_io::wire outline symbol undefined); cc_binary
+# links the full transitive closure.
+#
+# Layout mirrors upstream Fuchsia's shared fdio:
+#   - fdio + zxio + FIDL C++ bindings + fbl/zx/fit/safemath statically absorbed;
+#   - DT_NEEDED libc.so, libzircon.so, libc++.so.1 — recorded by linking the
+#     built .so files directly (SONAME is taken from each). Every package that
+#     stages libfdio.so already stages ld.so.1 + libc++.so.1 (and the vDSO is
+#     kernel-provided), and the bootfs stores bytes per staged path (no dedup),
+#     so DT_NEEDED libc++.so.1 is strictly smaller than absorbing another
+#     libc++ copy into each staged libfdio.so.
+#   - Exports exactly the upstream surface via the vendored fdio.ld version
+#     script (fdio_* API + POSIX interposition symbols); everything else local.
+#     musl's weak ENOSYS fallbacks (write/open/... in libc.so) lose to these
+#     strong definitions in the musl ldso's find_sym (a weak def is recorded
+#     but the search continues; the first strong def wins).
+cc_binary(
+    name = "libfdio.so",
+    additional_linker_inputs = [
+        "fdio.ld",
+        "//src/cerise/runtime:libc++.so",
+        "//src/cerise/sysroot/libzircon:libzircon",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+    ],
+    linkopts = [
+        "-shared",
+        "-nostdlib",
+        "-Wl,-soname,libfdio.so",
+        "-Wl,--version-script=$(location fdio.ld)",
+        # fdio.ld lists the full upstream surface; symbols our fdio doesn't
+        # define are simply not exported rather than erroring.
+        "-Wl,--undefined-version",
+        # musl's ldso resolves eagerly; mark BIND_NOW for parity with libc_so.
+        "-Wl,-z,now",
+        # Prune unreferenced sections (the alwayslink'd generated FIDL bindings
+        # include driver-transport messaging that references the fdf runtime;
+        # nothing reachable from the exported surface uses it). The version
+        # script's exported set forms the GC roots.
+        "-Wl,--gc-sections",
+        # Fold identical sections (heavily templated FIDL wire/natural code).
+        "-Wl,--icf=all",
+        # The linked .so files carry their own UND zx_* (vDSO) symbols.
+        "-Wl,--allow-shlib-undefined",
+        # DT_NEEDED libc.so + libzircon.so + libc++.so.1.
+        "$(location //src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so)",
+        "$(location //src/cerise/sysroot/libzircon:libzircon)",
+        "$(location //src/cerise/runtime:libc++.so)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":fdio_whole",
+        # Support closure for the .so link: compiler-rt arithmetic builtins for
+        # any lowered 128-bit/soft ops in the statically absorbed closure, and
+        # libsync (sync_completion_* over zx_futex) referenced via zxio/fdio.
+        "//src/upstream/fuchsia/third_party/compiler-rt-builtins:compiler_rt_builtins",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+    ],
+)

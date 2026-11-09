@@ -1,0 +1,7 @@
+# Cerise BUILD for the fuchsia.pci.massstorage bind library (authored locally;
+# upstream is GN). Extends BIND_PCI_SUBCLASS with mass-storage subclass values
+# (SCSI/IDE/SATA/NVMEM/...) that nvme.bind matches against. Bind-rule-compile-time
+# only (bindc), no C++ consumer, so no _cpp target is generated.
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["fuchsia.pci.massstorage.bind"])

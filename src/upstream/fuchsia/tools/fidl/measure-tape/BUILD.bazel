@@ -1,0 +1,8 @@
+# Vendored for Cerise (Phase 2 logging: Archivist). Package marker so the
+# measure_tape codegen rule (measure_tape.bzl) is loadable. The Go host tool
+# lives in src/; the rule is instantiated by consumers (e.g. the archivist
+# BUILD) to generate measuring-tape Rust modules.
+# Upstream: //tools/fidl/measure-tape.
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["measure_tape.bzl"])

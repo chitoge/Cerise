@@ -1,0 +1,28 @@
+#ifndef LIB_ZIRCON_INTERNAL_KTRACE_H_
+#define LIB_ZIRCON_INTERNAL_KTRACE_H_
+
+#include <stdint.h>
+
+// Minimal kernel-only ktrace control surface for local Bazel builds.
+#define KTRACE_ACTION_START 1u
+#define KTRACE_ACTION_STOP 2u
+#define KTRACE_ACTION_REWIND 3u
+#define KTRACE_ACTION_START_CIRCULAR 4u
+
+#define KTRACE_GRP_META_BIT 0u
+#define KTRACE_GRP_MEMORY_BIT 1u
+#define KTRACE_GRP_SCHEDULER_BIT 2u
+#define KTRACE_GRP_CONTENTION_BIT 3u
+#define KTRACE_GRP_IPC_BIT 4u
+#define KTRACE_GRP_IRQ_BIT 5u
+#define KTRACE_GRP_PROBE_BIT 6u
+#define KTRACE_GRP_ARCH_BIT 7u
+#define KTRACE_GRP_SYSCALL_BIT 8u
+#define KTRACE_GRP_VM_BIT 9u
+#define KTRACE_GRP_RESTRICTED_BIT 10u
+#define KTRACE_GRP_POWER_BIT 11u
+#define KTRACE_GRP_OOM_BIT 12u
+
+#define KTRACE_GRP_ALL ((1u << (KTRACE_GRP_OOM_BIT + 1u)) - 1u)
+
+#endif  // LIB_ZIRCON_INTERNAL_KTRACE_H_

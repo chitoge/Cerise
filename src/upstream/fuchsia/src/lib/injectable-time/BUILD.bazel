@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "injectable-time",
+    srcs = [
+        "src/injectable_time.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "injectable_time",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:chrono",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,11 @@
+# Bazel integration for this imported target. stdcompat: header-only
+# C++ std polyfill (lib/stdcompat/*), used across the Fuchsia C++ libs.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "stdcompat",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)

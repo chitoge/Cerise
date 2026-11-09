@@ -1,0 +1,115 @@
+# Cerise BUILD for the real upstream AHCI/SATA DFv2 driver (storage driver validation).
+# Vendored from src/devices/block/drivers/ahci (pinned commit). Test sources (test/*)
+# are NOT vendored — this BUILD covers only the real driver (export.cc, bus.cc,
+# controller.cc, pci-bus.cc, port.cc, sata.cc).
+#
+# Unlike NVMe, this driver's two extra common_deps (src/devices/block/lib/common,
+# src/devices/lib/io-buffer) are GENUINELY used (sata.cc includes common.h for
+# CheckIoRange/CheckFlushValid; port.cc includes io-buffer/phys-iter.h for DMA
+# scatter-gather PRD list building) — verified via grep before vendoring, unlike
+# NVMe's same-named-but-vestigial deps.
+#
+# Bind rule matches by PCI class/subclass/interface (MASS_STORAGE/SATA/0x01), same
+# shape as nvme.bind (MASS_STORAGE/NVMEM/2). Composite spec's acpi parent is upstream
+# `optional`; made MANDATORY here for the same reason as nvme.bind (see
+# in meta/ahci.bind).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+driver_bind_rules(
+    name = "ahci-bind",
+    rules = "meta/ahci.bind",
+    output_name = "ahci_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci.massstorage:fuchsia.pci.massstorage.bind",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "ahci_impl",
+    srcs = [
+        "bus.cc",
+        "controller.cc",
+        "export.cc",
+        "pci-bus.cc",
+        "port.cc",
+        "sata.cc",
+    ],
+    hdrs = [
+        "ahci.h",
+        "bus.h",
+        "controller.h",
+        "pci-bus.h",
+        "port.h",
+        "sata.h",
+    ],
+    copts = [
+        # _ALL_SOURCE: same musl feature-test-macro gate nvme_impl needed
+        # (thrd_create_with_name / other non-standard extensions).
+        "-D_ALL_SOURCE",
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/inspect/component/cpp:cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+        "//src/upstream/fuchsia/src/devices/block/lib/common:common",
+        "//src/upstream/fuchsia/src/devices/lib/dma-buffer:dma-buffer",
+        "//src/upstream/fuchsia/src/devices/lib/io-buffer:io-buffer",
+        "//src/upstream/fuchsia/src/storage/lib/block_server:block_server_cc",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)
+
+# DFv2-native ahci driver .so — cc_binary(-shared), non-colocated (own driver_host),
+# version-script pattern matching e1000/virtio-net/network-device/nvme. Like nvme, this
+# statically links block_server_c (Rust staticlib via block_server_cc) so needs the same
+# --sysroot linker fix (see nvme/BUILD.bazel's comment for the full mechanism).
+cc_binary(
+    name = "ahci.so",
+    additional_linker_inputs = [
+        "ahci.ld",
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,ahci.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location ahci.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":ahci_impl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

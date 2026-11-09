@@ -1,0 +1,125 @@
+# Authored locally for Cerise. Mirrors upstream's BUILD.gn shape:
+# a host tool (unicode_gen_builder) parses UCD.zip and emits unicode_gen.rs, compiled
+# into its own crate (unicode_gen) to keep gen/ path imports out of the hand-written lib.
+#
+# UCD.zip provenance: upstream fetches //prebuilt/third_party/ucd/UCD.zip via CIPD at
+# build time; that path does not exist in the fuchsia.git source tree (confirmed via a
+# direct gitiles fetch - 404). Vendored instead from unicode.org's own public archive
+# (the standards body's direct distribution - CIPD just repackages the same official
+# UCD.zip, so the two are expected to be byte-identical for a matching version) at
+# //prebuilt/third_party/ucd/UCD.zip. Version 16.0.0 chosen as contemporaneous with this
+# pin (generator.rs/lib.rs headers say "Copyright 2024"; edition 2024 requires a rustc
+# new enough that a 2024-era Fuchia checkout postdates Unicode 16.0's Aug 2024 release).
+# No exact CIPD version string was recoverable (the manifest pinning it lives in the
+# separate, inaccessible integration.git repo) - validated instead by running lib.rs's
+# existing unit tests (test_ccc/test_decomposition/test_deafault_ignorable/test_casefold)
+# against data generated from this version; all pass, confirming compatibility for the
+# codepoint ranges this project actually exercises.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "types",
+    srcs = ["src/types.rs"],
+    crate_name = "types",
+    crate_root = "src/types.rs",
+    edition = "2024",
+)
+
+# Host-only: parses UCD.zip, emits unicode_gen.rs. Never shipped to the fuchsia target.
+rust_binary(
+    name = "unicode_gen_builder",
+    srcs = ["src/generator.rs"],
+    crate_name = "unicode_gen_builder",
+    crate_root = "src/generator.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        ":types",
+        "@crates//:regex",
+        "@crates//:zip",
+    ],
+)
+
+genrule(
+    name = "generate_unicode_gen",
+    srcs = ["//src/upstream/fuchsia/prebuilt/third_party/ucd:UCD.zip"],
+    outs = ["unicode_gen.rs"],
+    cmd = "$(execpath :unicode_gen_builder) $(location //src/upstream/fuchsia/prebuilt/third_party/ucd:UCD.zip) $(location unicode_gen.rs)",
+    tags = ["manual"],
+    tools = [":unicode_gen_builder"],
+)
+
+rust_library(
+    name = "unicode_gen",
+    srcs = [":generate_unicode_gen"],
+    crate_name = "unicode_gen",
+    crate_root = "unicode_gen.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":types"],
+)
+
+rust_library(
+    name = "unicode",
+    srcs = [
+        "src/lib.rs",
+        "src/lookup.rs",
+        "src/nfd.rs",
+    ],
+    crate_name = "fxfs_unicode",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        ":types",
+        ":unicode_gen",
+        "//src/upstream/fuchsia/src/storage/type-fprint:fprint",
+        "@crates//:arbitrary",
+        "@crates//:serde",
+    ],
+)
+
+# Host-only: validates the vendored Unicode 16.0.0 data against upstream's own test
+# vectors (test_ccc/test_decomposition/test_deafault_ignorable/test_casefold in
+# lookup.rs) - see the provenance note above. Not part of the fuchsia-target build.
+# nfd.rs's own #[cfg(test)] module (a separate, independent normalization self-test
+# against raw UCD.zip data) needs regex/zip/UCD_ZIP too, mirroring upstream's
+# rustc_test("unicode_test") GN target exactly (extra test-only deps + rustenv).
+rust_test(
+    name = "unicode_test",
+    srcs = [
+        "src/lib.rs",
+        "src/lookup.rs",
+        "src/nfd.rs",
+    ],
+    crate_root = "src/lib.rs",
+    data = ["//src/upstream/fuchsia/prebuilt/third_party/ucd:UCD.zip"],
+    edition = "2024",
+    rustc_env = {"UCD_ZIP": "$(location //src/upstream/fuchsia/prebuilt/third_party/ucd:UCD.zip)"},
+    # tests excluded (kept manual): nfd::test::test_nfd fails under `bazel
+    # test` - not flaky, deterministically broken. nfd.rs's real upstream test
+    # code reads its UCD.zip fixture via `std::env!("UCD_ZIP")`, a COMPILE-
+    # TIME env lookup baked into the binary by rustc. rustc_env's $(location)
+    # here resolves to a path valid only inside the *compile* action's own
+    # (ephemeral) sandbox; the compiled test binary is then invoked later, in
+    # a separate *test* action/sandbox, where that baked-in path no longer
+    # exists ("Os { code: 2, kind: NotFound }" - confirmed by direct
+    # `bazel test` run: 11/12 tests pass, only test_nfd - the one that opens
+    # UCD_ZIP at runtime via read_zip() - fails). Not fixable without either
+    # rewriting the test to use a runtime `std::env::var()` + rlocation
+    # lookup (a real behavior change to vendored upstream test source, out of
+    # scope) or a different fixture-delivery mechanism entirely. Rung-1 task
+    # asked to try removing `manual`; verified it does NOT pass, so it stays.
+    tags = ["manual"],
+    deps = [
+        ":types",
+        ":unicode_gen",
+        "//src/upstream/fuchsia/src/storage/type-fprint:fprint",
+        "@crates//:arbitrary",
+        "@crates//:regex",
+        "@crates//:serde",
+        "@crates//:zip",
+    ],
+)

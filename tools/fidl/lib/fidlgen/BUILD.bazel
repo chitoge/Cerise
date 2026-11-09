@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+go_library(
+    name = "fidlgen",
+    srcs = glob(["*.go"], exclude = ["*_test.go"]),
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen",
+)

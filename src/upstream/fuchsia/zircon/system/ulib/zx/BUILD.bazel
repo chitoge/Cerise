@@ -1,0 +1,33 @@
+# Bazel integration for this imported target. Header surface of
+# the zx C++ library (lib/zx/*), used by the libc startup/ldso layer.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# the compiled zx:: C++ wrappers (thin out-of-line shims over the _zx_*
+# vDSO syscalls). libc.so's own C++ glue references these; linked into libc.so so
+# BIND_NOW resolves them. Hidden visibility so they are internal (PC-relative).
+cc_library(
+    name = "zx",
+    srcs = glob(["*.cc"], allow_empty = True),
+    # -fno-sanitize=safe-stack + -fno-stack-protector: the zx:: wrappers (e.g.
+    # zx::vmar::allocate) are called during basic-ABI startup (GetStartupHandles ->
+    # GuardedPageBlock::Allocate) BEFORE zxr_tp_set installs the thread pointer, so
+    # any %fs:0x18 (unsafe-stack) / %fs:0x10 (stack-guard) access faults (fault addr
+    # 0x18, %fs.base=0). gdb-confirmed: fault IP was `movq %fs:0x18,%rdi`.
+    copts = ["-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    deps = [
+        ":headers",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

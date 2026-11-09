@@ -1,0 +1,39 @@
+# Cerise BUILD for configc (the structured-config compiler), authored locally;
+# upstream is GN (tools/configc/BUILD.gn). Host tool (exec config) used by the
+# structured-config codegen rules. Faithful port of the upstream rustc_binary.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "configc",
+    srcs = [
+        "src/client_cpp.rs",
+        "src/client_fidl.rs",
+        "src/client_rust.rs",
+        "src/common.rs",
+        "src/cvf.rs",
+        "src/cvm.rs",
+        "src/dump_values.rs",
+        "src/main.rs",
+        "src/validate_package.rs",
+    ],
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/src/lib/assembly/validate_package:validate_package",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/src/sys/lib/config_encoder:config_encoder",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "//src/upstream/fuchsia/tools/lib/config_client:config_client",
+        "//src/upstream/fuchsia/tools/lib/config_value_file:config_value_file",
+        "@crates//:anyhow",
+        "@crates//:argh",
+        "@crates//:camino",
+        "@crates//:serde_json",
+        "@crates//:serde_json5",
+    ],
+)

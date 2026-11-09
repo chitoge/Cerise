@@ -1,0 +1,61 @@
+# Bazel integration for this imported target.
+# block_device.rs is vendored in full (, reversing the earlier
+# deferral per explicit user
+# direction) — storage_device::block_device is backed by the real
+# src/storage/lib/block_client crate, also vendored in full.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "storage_device",
+    srcs = [
+        "src/block_device.rs",
+        "src/buffer.rs",
+        "src/buffer_allocator.rs",
+        "src/fake_device.rs",
+        "src/file_backed_device.rs",
+        "src/lib.rs",
+        "src/ranged_device.rs",
+    ],
+    crate_name = "storage_device",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:async-trait",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/block_protocol:block_protocol",
+        "@crates//:anyhow",
+        "@crates//:event-listener",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:num",
+        "@crates//:rand",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# tests excluded (host) - ON-TARGET-ONLY, documented reason:
+# Two independent blockers, neither fixable by the Cerise host-zx shim
+# (//src/cerise/lib/zx_host): (1) storage_device unconditionally depends on
+# fuchsia-runtime, whose zx surface is genuine Fuchsia runtime primitives -
+# zx_thread_self/process_self/job_default/vmar_root_self, the startup-handle
+# table (zx_take_startup_handle), and the UTC reference clock - none of which a
+# host process has or a userspace shim can honestly emulate; (2) its buffer
+# allocator creates zx::Vmo and *maps* it via zx::Vmar (VmarFlags, op_range
+# COMMIT/ZERO), reading/writing through the mapped pointer, which needs a real
+# mmap-backed VMO emulation in fuchsia-async's shared emulated backend. Belongs
+# to a future on-target (zircon-test) product. (Legacy note retained below:)
+# storage_device's own zx/block_client deps are select()-gated off for host,
+# but it unconditionally depends on fuchsia-runtime, which unconditionally
+# depends on the real "zx" crate (host build fails: zx-sys's syscall extern
+# block is `#[cfg(target_os = "fuchsia")]`-only). Out of scope to fix (would
+# need a host-portable fuchsia-runtime or zx shim, i.e. new library code).

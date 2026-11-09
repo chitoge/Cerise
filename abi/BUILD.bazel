@@ -1,0 +1,197 @@
+load("//abi:defs.bzl", "zircon_abi_boundary", "zircon_abi_fidl_ir", "zircon_abi_zither_kernel_sources")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "fidl_compiler_sources",
+    actual = "//:fidl_compiler_sources",
+)
+
+alias(
+    name = "zircon_public_headers",
+    actual = "//:zircon_public_headers",
+)
+
+alias(
+    name = "zircon_public_header_files",
+    actual = "//:zircon_public_header_files",
+)
+
+alias(
+    name = "zircon_system_public_headers",
+    actual = "//:zircon_system_public_headers",
+)
+
+alias(
+    name = "zircon_system_public_header_files",
+    actual = "//:zircon_system_public_header_files",
+)
+
+alias(
+    name = "zither_sources",
+    actual = "//:zither_sources",
+)
+
+alias(
+    name = "vdso_fidl_sources",
+    actual = "//:vdso_fidl_sources",
+)
+
+alias(
+    name = "vdso_fidl_files",
+    actual = "//:vdso_fidl_files",
+)
+
+filegroup(
+    name = "abi_sources",
+    srcs = [
+        ":fidl_compiler_sources",
+        ":zircon_public_headers",
+        ":zircon_system_public_headers",
+        ":zither_sources",
+        ":vdso_fidl_sources",
+        ":metadata",
+    ],
+)
+
+filegroup(
+    name = "metadata",
+    srcs = [
+        "README.md",
+        "defs.bzl",
+        "make_manifest.py",
+        "tests/check_manifest.sh",
+    ],
+)
+
+zircon_abi_boundary(
+    name = "zircon_abi",
+    fidl_sources = [":vdso_fidl_files"],
+    main_library = "zx",
+    public_headers = [
+        ":zircon_public_header_files",
+        ":zircon_system_public_header_files",
+    ],
+)
+
+zircon_abi_fidl_ir(
+    name = "zircon_abi_fidl_ir",
+    abi = ":zircon_abi",
+    fidlc = "//tools/fidl:fidlc",
+    output_name = "zx.fidl.json",
+)
+
+zircon_abi_zither_kernel_sources(
+    name = "zx_syscall_headers_generated",
+    abi = ":zircon_abi",
+    fidl_ir = ":zircon_abi_fidl_ir_file",
+    zither = "//zircon/tools/zither/cmd/kernel_only:zither_kernel",
+)
+
+cc_library(
+    name = "zx_syscall_headers",
+    hdrs = [":zx_syscall_headers_generated"],
+    strip_include_prefix = "zx_syscall_headers_generated.gen",
+)
+
+genrule(
+    name = "zx_syscall_numbers_header",
+    srcs = [":zx_syscall_headers_generated"],
+    outs = ["zx-syscall-numbers.h"],
+    cmd = " ".join([
+        "for file in $(locations :zx_syscall_headers_generated); do",
+        "case \"$$file\" in",
+        "*/lib/syscalls/zx-syscall-numbers.h) cp \"$$file\" \"$@\"; exit 0 ;;",
+        "esac;",
+        "done;",
+        "echo 'zx-syscall-numbers.h not found in zx_syscall_headers_generated outputs' >&2;",
+        "exit 1",
+    ]),
+    visibility = ["//kernel:__pkg__"],
+)
+
+genrule(
+    name = "zx_syscall_kernel_inc",
+    srcs = [":zx_syscall_headers_generated"],
+    outs = ["kernel.inc"],
+    cmd = " ".join([
+        "for file in $(locations :zx_syscall_headers_generated); do",
+        "case \"$$file\" in",
+        "*/lib/syscalls/kernel.inc) cp \"$$file\" \"$@\"; exit 0 ;;",
+        "esac;",
+        "done;",
+        "echo 'kernel.inc not found in zx_syscall_headers_generated outputs' >&2;",
+        "exit 1",
+    ]),
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "zx_syscall_headers_manifest_file",
+    srcs = [":zx_syscall_headers_generated"],
+    output_group = "manifest",
+)
+
+cc_binary(
+    name = "zx_syscall_headers_compile_check",
+    srcs = ["tests/zx_syscall_numbers_compile.cc"],
+    copts = ["-std=c++17"],
+    deps = [":zx_syscall_headers"],
+)
+
+filegroup(
+    name = "zircon_abi_manifest_file",
+    srcs = [":zircon_abi"],
+    output_group = "manifest",
+)
+
+filegroup(
+    name = "zircon_abi_fidl_ir_file",
+    srcs = [":zircon_abi_fidl_ir"],
+    output_group = "fidl_ir",
+)
+
+filegroup(
+    name = "zircon_abi_fidlc_response_file",
+    srcs = [":zircon_abi"],
+    output_group = "fidlc_response",
+)
+
+filegroup(
+    name = "zircon_abi_library_manifest_file",
+    srcs = [":zircon_abi"],
+    output_group = "library_manifest",
+)
+
+filegroup(
+    name = "zircon_abi_staged_fidl_inputs",
+    srcs = [":zircon_abi"],
+    output_group = "staged_fidl",
+)
+
+filegroup(
+    name = "zircon_abi_staged_public_headers",
+    srcs = [":zircon_abi"],
+    output_group = "staged_headers",
+)
+
+genrule(
+    name = "zircon_abi_boundary_check",
+    srcs = [
+        "tests/check_manifest.sh",
+        ":zircon_abi_manifest_file",
+        ":zircon_abi_fidlc_response_file",
+        ":zircon_abi_library_manifest_file",
+        ":zircon_abi_staged_fidl_inputs",
+        ":zircon_abi_staged_public_headers",
+    ],
+    outs = ["zircon_abi_boundary_check.ok"],
+    cmd = "bash $(location tests/check_manifest.sh) $(location :zircon_abi_manifest_file) $(location :zircon_abi_fidlc_response_file) $(location :zircon_abi_library_manifest_file) $(location :zircon_abi_staged_fidl_inputs) $(location :zircon_abi_staged_public_headers) && echo ok > $@",
+)
+
+alias(
+    name = "zircon_abi_manifest_check",
+    actual = ":zircon_abi_boundary_check",
+)
+

@@ -1,0 +1,129 @@
+# Cerise Archivist component (logging bring-up).
+#
+# Wires the vendored upstream Archivist binary
+#   //src/upstream/fuchsia/src/diagnostics/archivist:archivist
+# in as a real CMv2 component via `cerise_component`: meta/archivist.cml compiles
+# to meta/archivist.cm (reusing the upstream common/config shards so the lowered
+# ConfigSchema checksum matches the vendored :archivist-config read crate the
+# binary links), and the `config_values` below are delivered as meta/archivist.cvf.
+#
+# The component is authored to drop straight into a product bootfs: its
+# ComponentInfo carries pkg/archivist/meta/archivist.cm, pkg/archivist/meta/
+# archivist.cvf and pkg/archivist/bin/archivist. The product stages the two Rust
+# shared libs (ld.so.1 + libc++.so.1) alongside, same DT_NEEDED closure as the
+# other Cerise Rust components (netstack3_probe/fileserver).
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:component.bzl", "cerise_component", "cerise_config_values")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/archivist.cml"])
+
+# The Archivist ELF binary, built for //platforms:x64-fuchsia and stripped.
+fuchsia_stripped(
+    name = "archivist_bin_stripped.fuchsia",
+    src = "//src/upstream/fuchsia/src/diagnostics/archivist:archivist",
+)
+
+# The component: compile meta/archivist.cml -> meta/archivist.cm (reusing the
+# upstream shards via the default includeroot=src/upstream/fuchsia so the
+# //src/diagnostics/... include paths resolve), deliver the structured-config
+# values -> meta/archivist.cvf, and package the bootfs placements as ComponentInfo.
+#
+# config_values (the authoritative delivered structured config):
+#   enable_klog=false            -> the diagnostics/conformance test products do
+#                                   not drain klog and take the "archivist"
+#                                   self-moniker.
+#   num_threads=1                -> single-threaded LocalExecutor (simplest).
+#   logs_max_cached_original_bytes=2 MiB, maximum_concurrent_snapshots_per_reader=4.
+#   pipelines_path="/config/data" -> absent in namespace (we ship no pipelines child);
+#                                   PipelineManager falls back to the "all" pipeline,
+#                                   which serves fuchsia.diagnostics.ArchiveAccessor.
+#   the remaining vector/int fields are the neutral defaults (no serial-log
+#   allow/deny lists, no bind_services, no initial interests, max batch timeout).
+cerise_component(
+    name = "archivist",
+    manifest = "meta/archivist.cml",
+    binary = ":archivist_bin_stripped.fuchsia",
+    includes = [
+        "//src/upstream/fuchsia/src/diagnostics/archivist:meta/common.shard.cml",
+        "//src/upstream/fuchsia/src/diagnostics/archivist:meta/config.shard.cml",
+        "//src/upstream/fuchsia/src/diagnostics/archivist:meta/config_capabilities.shard.cml",
+    ],
+    cml_features = ["dynamic_dictionaries"],
+    config_values = {
+        "enable_klog": False,
+        "logs_max_cached_original_bytes": 2097152,
+        "maximum_concurrent_snapshots_per_reader": 4,
+        "num_threads": 1,
+        "pipelines_path": "/config/data",
+        "bind_services": [],
+        "allow_serial_logs": [],
+        "component_initial_interests": [],
+        "deny_serial_log_tags": [],
+        "per_component_batch_timeout_seconds": -1,
+        "fuchsia_diagnostics_sample_min_period_seconds": 0,
+    },
+    visibility = ["//visibility:public"],
+)
+
+# Production values for the generic VM-host product. Keep this separate from
+# :archivist_cvf: the diagnostics and runtime-conformance products deliberately
+# exercise only component LogSink ingestion, while the production VM host also
+# owns the one read-only kernel-log drain. Both CVFs are validated against the
+# exact same compiled ConfigSchema and are staged at meta/archivist.cvf by their
+# respective products.
+#
+# allow_serial_logs: a component-selector allowlist for Archivist's
+# serial-forwarding task (launch_serial, gated on
+# `!config.allow_serial_logs.is_empty()` in
+# src/upstream/fuchsia/src/diagnostics/archivist/src/archivist.rs) — the ONLY
+# thing that puts LogSink-ingested text back on the serial console (enable_klog
+# above is the opposite direction: it drains klog INTO Archivist, it does not
+# echo Archivist's log repo back out).
+#
+# "vm_gateway/workers\\:*" selects exactly the managed VM worker
+# (cryogen_vmm_managed) and nothing else. It is NOT the worker's package name —
+# it is the worker's live component moniker: cryogen_vmm_managed instances are
+# dynamic children of vm_gateway's `workers` collection and are instantiated
+# with the VM identifier as their child name, so each
+# instance's moniker segment renders as "workers:<vm_id>" (moniker::ChildName's
+# Display is "[collection:]name" — see
+# src/upstream/fuchsia/src/sys/lib/moniker/src/child_name.rs:17). A per-vm_id
+# literal can't be written statically since vm_id varies per VM (and per
+# restart), so this selects the whole `workers` collection under `vm_gateway`
+# instead — the closest static thing that still names only this one component
+# type, since cf-sz5-vm-host stages exactly one reusable worker package into
+# that collection.
+#
+# The `\\:` is required, not decorative: src/upstream/fuchsia/src/lib/
+# diagnostics/selectors/src/parser.rs's `component_selector()` parses
+# `parse_component_selector`'s (RequireEscaped::COLONS) mode by treating an
+# UNESCAPED ':' as the component/tree-selector delimiter, so a collection's
+# literal ':' must be backslash-escaped to be part of the moniker segment
+# (mirrors `sanitize_moniker_for_selectors` in that same crate's selectors.rs,
+# which escapes ':' the same way when building selectors from real monikers).
+# The trailing '*' is an ordinary glob wildcard (matches "workers:" + any
+# vm_id) — see `match_pattern` in .../selectors/src/selectors.rs. Segment
+# count is otherwise exact (no `**`), so this matches ONLY 2-segment monikers
+# "vm_gateway/workers:<anything>" — not vm_gateway itself, not its other
+# capabilities, not any other realm child.
+cerise_config_values(
+    name = "archivist_production_cvf",
+    cm = ":archivist_manifest",
+    output_name = "archivist.production.cvf",
+    values = {
+        "enable_klog": True,
+        "logs_max_cached_original_bytes": 2097152,
+        "maximum_concurrent_snapshots_per_reader": 4,
+        "num_threads": 1,
+        "pipelines_path": "/config/data",
+        "bind_services": [],
+        "allow_serial_logs": ["vm_gateway/workers\\:*"],
+        "component_initial_interests": [],
+        "deny_serial_log_tags": [],
+        "per_component_batch_timeout_seconds": -1,
+        "fuchsia_diagnostics_sample_min_period_seconds": 0,
+    },
+    visibility = ["//visibility:public"],
+)

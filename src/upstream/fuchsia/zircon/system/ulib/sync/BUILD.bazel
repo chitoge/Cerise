@@ -1,0 +1,43 @@
+# Bazel integration for this imported target. Replaces the
+# upstream BUILD.bazel (unavailable idk_cc_* macros). libsync: C synchronization
+# primitives (mutex/condition/completion) over zx_futex. Exposed as headers here
+# (musl's thread code includes <lib/sync/mutex.h>); the compiled library is built
+# when the link path lands.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)
+
+# the compiled libsync (sync_mutex_*/sync_completion_* over zx_futex),
+# referenced by musl's thread code. Linked into libc.so.
+# Includes condition.cc (sync_condition_*): the *.c-only glob used to drop it, leaving
+# sync_condition_* undefined for out-of-line consumers like acpica (mutex.cc/semaphore.cc).
+cc_library(
+    name = "sync",
+    srcs = glob(["*.c", "*.cc"], allow_empty = True),
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    deps = [
+        ":headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+# sync-cpp — C++ wrapper headers (cpp/mutex.h, cpp/completion.h).
+# Header-only; the C impl is in :sync. Used by driver_runtime dispatcher.
+cc_library(
+    name = "sync-cpp",
+    hdrs = glob(["include/lib/sync/cpp/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

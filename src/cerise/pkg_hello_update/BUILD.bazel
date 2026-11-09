@@ -1,0 +1,195 @@
+# Cerise packages: the updatable demo package pkg_hello, in two versions.
+#
+# v1 and v2 share ONE component manifest (meta/pkg_hello.cml -> meta/pkg_hello.cm) and the SAME
+# package NAME ("pkg_hello"); they differ ONLY in the bin/pkg_hello binary (a distinct marker) =>
+# distinct content-blob merkle => distinct meta.far merkle. So they are genuine different VERSIONS of
+# one named package — the substrate for "make packages updatable":
+#   * v1 ships in the boot image (its blobs staged into pkg_fetcher's /pkg; its manifest is the
+#     resolver's BASE index). Resolving fuchsia-pkg://cerise/pkg_hello hits the base index -> v1.
+#   * v2 is NOT in the image: pkg_fetcher downloads its blobs over the network, verifies + installs
+#     them, and registers "pkg_hello" v2 in the PERSISTENT dynamic index (which shadows base).
+#     Its meta.far + manifest + blobs are served by the host as gate test data.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+load("//build:package.bzl", "cerise_package")
+
+package(default_visibility = ["//visibility:public"])
+
+_PKG_HELLO_RUSTC_FLAGS = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+    "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+    "-Clink-arg=-lc++",
+]
+
+# v1 / v2 binaries — identical but for the launch marker => distinct bytes => distinct merkle.
+rust_binary(
+    name = "pkg_hello_v1_bin",
+    srcs = ["src/v1.rs"],
+    crate_name = "pkg_hello",
+    edition = "2021",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    rustc_flags = _PKG_HELLO_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ],
+)
+
+rust_binary(
+    name = "pkg_hello_v2_bin",
+    srcs = ["src/v2.rs"],
+    crate_name = "pkg_hello",
+    edition = "2021",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    rustc_flags = _PKG_HELLO_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ],
+)
+
+fuchsia_stripped(
+    name = "pkg_hello_v1_bin_stripped.fuchsia",
+    src = ":pkg_hello_v1_bin",
+)
+
+fuchsia_stripped(
+    name = "pkg_hello_v2_bin_stripped.fuchsia",
+    src = ":pkg_hello_v2_bin",
+)
+
+# ONE shared compiled manifest (the .cm bytes depend only on the .cml, not the binary), embedded by
+# BOTH packages. The `binary` arg only affects the unused ComponentInfo staging; the package path
+# consumes only :pkg_hello_component_manifest (the .cm File).
+cerise_component(
+    name = "pkg_hello_component",
+    manifest = "meta/pkg_hello.cml",
+    binary = ":pkg_hello_v1_bin_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)
+
+# v1 package: name "pkg_hello". Produces :pkg_hello_v1.meta.far / .manifest.json / .blob_<i>.
+cerise_package(
+    name = "pkg_hello_v1",
+    package_name = "pkg_hello",
+    far_files = {
+        ":pkg_hello_component_manifest": "meta/pkg_hello.cm",
+    },
+    blobs = {
+        ":pkg_hello_v1_bin_stripped.fuchsia": "bin/pkg_hello",
+        "//src/cerise/pkg_hello:ld_so_pkg_hello.fuchsia": "lib/ld.so.1",
+        "//src/cerise/pkg_hello:libm_so_pkg_hello.fuchsia": "lib/libm.so",
+        "//src/cerise/pkg_hello:libcxx_so_pkg_hello.fuchsia": "lib/libc++.so.1",
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# A distinct copy of v1's ingest manifest for the resolver's BASE index (/pkg/index/manifest.json).
+# Same bytes as pkg_hello_v1_manifest_json, but bootfs staging can't point two dests at one label.
+genrule(
+    name = "pkg_hello_v1_index_json",
+    srcs = [":pkg_hello_v1_manifest_json"],
+    outs = ["pkg_hello_v1_index.json"],
+    cmd = "cp $< $@",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------------------------
+# (signed index): the ed25519 PUBLIC key embedded (staged into bootfs /pkg) in pkg_resolver
+# and pkg_fetcher, derived at build time from the checked-in private seed via the pkg_signer host
+# tool. Two identical copies because bootfs staging can't point two dests at one label.
+# ---------------------------------------------------------------------------------------------
+_SEED = "//build/keys:signing_seed"
+
+genrule(
+    name = "pkg_index_pubkey_resolver",
+    srcs = [_SEED],
+    outs = ["pkg_index_pub_resolver.ed25519"],
+    cmd = "$(location //src/cerise/tools/pkg_signer:pkg_signer) pubkey --seed $(location %s) --out $@" % _SEED,
+    tools = ["//src/cerise/tools/pkg_signer:pkg_signer"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "pkg_index_pubkey_fetcher",
+    srcs = [_SEED],
+    outs = ["pkg_index_pub_fetcher.ed25519"],
+    cmd = "$(location //src/cerise/tools/pkg_signer:pkg_signer) pubkey --seed $(location %s) --out $@" % _SEED,
+    tools = ["//src/cerise/tools/pkg_signer:pkg_signer"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# v2's SIGNED dynamic-index entry: the host serves this at /entry.json; pkg_fetcher downloads it,
+# verifies the signature + counter, and merges it VERBATIM into the persistent dynamic index. counter=2
+# (base v1 is trusted-in-image, not counted; the first dynamic registration accepts any counter).
+genrule(
+    name = "pkg_hello_v2_signed_entry_json",
+    srcs = [":pkg_hello_v2_manifest_json", _SEED],
+    outs = ["pkg_hello_v2_signed_entry.json"],
+    cmd = ("$(location //src/cerise/tools/pkg_signer:pkg_signer) sign " +
+           "--seed $(location %s) " % _SEED +
+           "--manifest $(location :pkg_hello_v2_manifest_json) --version 2 --counter 2 --out $@"),
+    tools = ["//src/cerise/tools/pkg_signer:pkg_signer"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The NEGATIVE-test payload: the same entry with a CORRUPTED signature. The host serves it at
+# /entry_bad.json; pkg_fetcher's signature check rejects it loudly (CERISE-PKG-SIGNATURE-REJECT, no install).
+genrule(
+    name = "pkg_hello_v2_bad_entry_json",
+    srcs = [":pkg_hello_v2_manifest_json", _SEED],
+    outs = ["pkg_hello_v2_bad_entry.json"],
+    cmd = ("$(location //src/cerise/tools/pkg_signer:pkg_signer) sign --tamper " +
+           "--seed $(location %s) " % _SEED +
+           "--manifest $(location :pkg_hello_v2_manifest_json) --version 2 --counter 2 --out $@"),
+    tools = ["//src/cerise/tools/pkg_signer:pkg_signer"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The IDENTITY negative form: a VALIDLY-SIGNED entry that LIES about identity —
+# name "pkg_hello_evil" bound to v2's real meta.far merkle. The signature is genuine (the signer signs
+# whatever it is told), so it passes the resolver's signature gate; the identity binding then catches
+# that the meta.far declares "pkg_hello", not "pkg_hello_evil". Bound to v2 (not v1) deliberately: v2's
+# meta.far is LIVE (referenced by pkg_hello), so it survives the GC sweep and the identity test
+# still has a present blob to resolve; v1's blobs are collectible and get reclaimed.
+genrule(
+    name = "pkg_hello_evil_signed_entry_json",
+    srcs = [":pkg_hello_v2_manifest_json", _SEED],
+    outs = ["pkg_hello_evil_signed_entry.json"],
+    cmd = ("$(location //src/cerise/tools/pkg_signer:pkg_signer) sign " +
+           "--seed $(location %s) " % _SEED +
+           "--manifest $(location :pkg_hello_v2_manifest_json) --name pkg_hello_evil " +
+           "--version 1 --counter 1 --out $@"),
+    tools = ["//src/cerise/tools/pkg_signer:pkg_signer"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# v2 package: SAME name "pkg_hello", different binary => different meta.far merkle. Its artifacts are
+# NOT staged in any product's bootfs — they are the gate's host-served download payload.
+cerise_package(
+    name = "pkg_hello_v2",
+    package_name = "pkg_hello",
+    far_files = {
+        ":pkg_hello_component_manifest": "meta/pkg_hello.cm",
+    },
+    blobs = {
+        ":pkg_hello_v2_bin_stripped.fuchsia": "bin/pkg_hello",
+        "//src/cerise/pkg_hello:ld_so_pkg_hello.fuchsia": "lib/ld.so.1",
+        "//src/cerise/pkg_hello:libm_so_pkg_hello.fuchsia": "lib/libm.so",
+        "//src/cerise/pkg_hello:libcxx_so_pkg_hello.fuchsia": "lib/libc++.so.1",
+    },
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

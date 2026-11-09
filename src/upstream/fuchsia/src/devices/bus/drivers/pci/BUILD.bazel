@@ -1,0 +1,178 @@
+# Cerise BUILD (authored locally) — the DFv2 user-space PCI bus driver.
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("//build:structured_config.bzl", "compiled_manifest")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# Driver component manifest -> bus-pci.cm (packaged at pkg/bus-pci/meta/bus-pci.cm).
+compiled_manifest(
+    name = "bus-pci-manifest",
+    src = "meta/pci.cml",
+    output_name = "bus-pci.cm",
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    tags = ["manual"],
+)
+
+# Bind rules -> pci_bind.bindbc (driver-index matches this against device nodes;
+# referenced by the CML's bind: meta/bind/pci_bind.bindbc).
+driver_bind_rules(
+    name = "pci_bind",
+    rules = "meta/pci.bind",
+    output_name = "pci_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.platform:fuchsia.platform.bind",
+    ],
+    tags = ["manual"],
+)
+
+# FIDL alwayslink deps: cc_binary(-shared) only honors DIRECT alwayslink, not
+# transitive (cc_shared_library doesn't honor transitive alwayslink at all). Both
+# the :pci cc_library AND the final cc_binary list these so that:
+#   1. The cc_library compiles cleanly (headers visible, targets reachable).
+#   2. The cc_binary whole-archives their objects (out-of-line FIDL wire/natural
+#      symbols embedded into bus-pci.so, not left UND — compat.so does NOT export
+#      C++ FIDL symbols, only the 29 DFv1 ABI C symbols).
+#
+# NOTE: do NOT add devices/lib/driver:driver here. That library provides stubs for
+# device_add_from_driver, device_get_protocol etc. (all return ZX_ERR_NOT_SUPPORTED)
+# intended only for DFv2-only unit tests. When linked into bus-pci.so those stubs are
+# DEFINED and the version script (local:*) makes them local — causing direct calls
+# to the stubs instead of compat.so's real implementations. All 29 DFv1 ABI symbols
+# are exported by compat.so (RTLD_GLOBAL) and resolve at dlopen time.
+BUS_PCI_FIDL_ALWAYSLINK_DEPS = [
+    # fuchsia.hardware.pci (FidlDevice inherits WireServer<Device>; dispatch methods
+    # and natural_types vtables are out-of-line in the generated wire_messaging.cc).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    # fuchsia.io (device.cc includes fuchsia.io/cpp/wire.h; WireServer dispatch chain)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    # fuchsia.logger (syslog / zxlog chain)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    # fuchsia.driver.metadata (driver/metadata/cpp SDK — GetMetadata<BoardConfiguration>)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
+    # fuchsia.driver.framework (component SDK types — DriverStartArgs etc.)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    # fuchsia.mem (wire::Range — referenced by fuchsia.hardware.pci resources)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+    # fuchsia.diagnostics.types (via fuchsia.logger -> fuchsia.diagnostics chain)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+    # ddktl:fidl (ddk::FromDeviceFIDLTransaction; bus.h includes ddktl/fidl.h)
+    "//src/upstream/fuchsia/src/lib/ddktl:fidl",
+]
+
+cc_library(
+    name = "pci",
+    srcs = glob(
+        ["*.cc", "capabilities/*.cc"],
+        # bind.cc (the ZIRCON_DRIVER entry point) lives in the driver target, not
+        # the library (mirrors upstream user_pci vs bus-pci-driver split).
+        exclude = ["*test*", "kpci.cc", "bind.cc"],
+        allow_empty = True,
+    ),
+    hdrs = glob(["*.h", "capabilities/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = BUS_PCI_FIDL_ALWAYSLINK_DEPS + [
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/metadata/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/platform-device/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+        # NOTE: do NOT add devices/lib/driver:driver — see BUS_PCI_FIDL_ALWAYSLINK_DEPS comment.
+        "//src/upstream/fuchsia/src/devices/pci/lib/device-protocol-pci:device-protocol-pci",
+        "//src/upstream/fuchsia/src/devices/pci/lib/pci:pci",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/hwreg:hwreg",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/pretty:pretty",
+        "//src/upstream/fuchsia/zircon/system/ulib/region-alloc:region-alloc",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Loadable driver form: upstream fuchsia_cc_driver("bus-pci-driver", legacy=true)
+# = sources=[bind.cc] + deps=[user_pci] -> driver/bus-pci.so. bind.cc registers
+# ZIRCON_DRIVER(pci, ...). The bind bytecode (.bindbc) is a separate packaged
+# file consumed by driver-index, not linked into the .so.
+cc_library(
+    name = "pci-driver-impl",
+    srcs = ["bind.cc"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    deps = [
+        ":pci",
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk-deprecated-binding-headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/ddk-platform-defs:ddk-platform-defs",
+    ],
+)
+
+# Self-contained legacy driver .so — built as cc_binary(-shared) so that DIRECT
+# alwayslink deps (the FIDL *_cpp targets in BUS_PCI_FIDL_ALWAYSLINK_DEPS) are
+# whole-archived, embedding the out-of-line wire/natural template-instantiation
+# symbols INTO the .so.  cc_shared_library does NOT honor transitive alwayslink,
+# which left those symbols UND and caused dlopen relocation failures.
+#
+# compat.so is loaded RTLD_GLOBAL and exports ONLY the 29 DFv1 ABI C symbols.
+# driver_host_dfv2 exports fdf_*/fuchsia_logging via -rdynamic.  ALL C++ FIDL
+# binding symbols are PCI-driver-specific and must live IN this .so.
+#
+# The ZIRCON_DRIVER macro (bind.cc) emits __zircon_driver_note__ and
+# __zircon_driver_rec__ with STV_DEFAULT; the version script exports ONLY those
+# two so dfv2_main.rs's load_compat_module can dlsym them, while hiding the
+# FIDL/ddk globals. The version script's local:* collapses .dynsym to ~2 DEFINED
+# exports + the legitimate UND imports (libc/libc++/vDSO/compat-ABI/fdf).
+# -u force-keeps both against any accidental --gc-sections pass.
+cc_binary(
+    name = "bus-pci.so",
+    additional_linker_inputs = ["bus-pci.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,bus-pci.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # Root the ZIRCON_DRIVER symbols: prevent GC.
+        "-Wl,-u,__zircon_driver_note__",
+        "-Wl,-u,__zircon_driver_rec__",
+        # Export ONLY __zircon_driver_note__ + __zircon_driver_rec__; hide all
+        # other DEFINED globals (FIDL wire/natural vtables, ddk helpers).
+        "-Wl,--version-script=$(location bus-pci.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [":pci-driver-impl"] + BUS_PCI_FIDL_ALWAYSLINK_DEPS + [
+        # 128-bit arithmetic helpers (__umodti3 etc.) used by FIDL code; excluded
+        # by -nodefaultlibs.  Same lib as compat.so / minimal_driver / platform-bus-x86.
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)
+
+cc_test(
+    name = "pci_lock_order_host_test",
+    size = "small",
+    srcs = ["lock_order_test.cc"],
+    copts = ["-std=c++20"],
+    # The host toolchain's libc++abi objects are non-PIC; keep this tiny test
+    # static so Bazel does not try to link its shared runtime.
+    linkstatic = True,
+    deps = [":msi_lock_host"],
+)
+
+cc_library(
+    name = "msi_lock_host",
+    hdrs = ["msi_lock.h"],
+)

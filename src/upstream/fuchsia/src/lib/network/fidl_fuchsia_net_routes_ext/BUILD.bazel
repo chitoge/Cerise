@@ -1,0 +1,47 @@
+# Bazel integration for this imported target. netstack3-bindings
+# dependency: real fidl_fuchsia_net_routes_ext (BUILD.gn target
+# "fidl_fuchsia_net_routes_ext", non-fdomain instantiation only -- Cerise has
+# no remote-FDomain use case, "_fdomain" sibling target intentionally not
+# vendored). testutil.rs is real upstream source, vendored for completeness
+# (matches unmodified upstream's own source list) though only exercised by tests.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_routes_ext",
+    srcs = [
+        "src/admin.rs",
+        "src/lib.rs",
+        "src/rules.rs",
+        "src/testutil.rs",
+    ],
+    crate_root = "src/lib.rs",
+    crate_name = "fidl_fuchsia_net_routes_ext",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        # HEAD-backed instance (same crate_name, different backing target) --
+        # routes_ext also depends on fidl_fuchsia_net_ext, which is built on the
+        # HEAD/_common fuchsia.net instance; the plain :flex_fuchsia_net target
+        # would be a second, incompatible compiled instance of the same crate.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:flex_fuchsia_net_for_neighbor",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.matchers:flex_fuchsia_net_matchers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:flex_fuchsia_net_resources",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.root:flex_fuchsia_net_root",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes:flex_fuchsia_net_routes",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes.admin:flex_fuchsia_net_routes_admin",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.stack:flex_fuchsia_net_stack",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types",
+        "//src/upstream/fuchsia/src/lib/async-utils:async-utils",
+        "//src/upstream/fuchsia/src/lib/fdomain/client:flex_fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_ext:fidl_fuchsia_net_ext",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ],
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+)

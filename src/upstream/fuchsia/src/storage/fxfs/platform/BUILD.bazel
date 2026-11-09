@@ -1,0 +1,147 @@
+# the real fxfs/platform library - the Vnode/fuchsia.io
+# serving layer, mount/format/fsck entrypoints. Unmodified upstream sources; BUILD.bazel
+# authored locally (upstream is GN).
+#
+# Same fio-HEAD divergence as Fxfs core (fxfs:lib, see its BUILD.bazel):
+# fxfs/platform passes fio::MutableNodeAttributes and other types between itself and
+# fxfs core, so it must use the SAME consistent HEAD-level fuchsia.io binding, not the
+# level-30 default (which would be a distinct, incompatible type). All 15 files in
+# this crate that reference fuchsia.io had `use fidl_fuchsia_io as fio` (or an
+# equivalent import form) renamed to `use fidl_fuchsia_io_head as fio`, applied
+# uniformly for the same reason fxfs core's comment gives: "the whole crate needs ONE
+# consistent choice, not per-symbol cherry-picking." fxfs/platform is now a SECOND
+# consumer of sdk/fidl/fuchsia.io:fidl_fuchsia_io_head (fxfs core's comment claiming
+# to be the "only consumer" is now stale - noted here rather than silently left wrong).
+#
+# src/fuchsia/debug.rs is the one file that mixes pseudo_fs's PseudoDirectory/
+# LazyPseudoDirectory types with vfs_platform's Directory/File trait bounds - so this
+# crate depends on "pseudo_fs_platform" (not "pseudo_fs_static"/level-30 "pseudo_fs"),
+# the same zero-risk parallel-target technique as vfs_platform: unmodified
+# pseudo_fs source recompiled against vfs_platform, a SEPARATE target from ":pseudo_fs"
+# so elf_runner (pseudo_fs's other, unrelated consumer) is untouched.
+#
+# rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS below - NOT PLATFORM. This crate's
+# own deprecated_open impls (debug.rs x2, directory.rs, fxblob/directory.rs) are
+# unconditional in upstream (real upstream compiles this at PLATFORM, where
+# the deprecated surface still exists), but a genuine PLATFORM-level fuchsia.io FIDL
+# binding doesn't exist here (fidlc's HEAD > NEXT ordering + LEGACY disabled - see
+# vfs/rust/BUILD.bazel's vfs_platform comment for the full chain of evidence) and
+# Cerise has no legacy clients needing DeprecatedOpen (explicit user decision).
+# A prior pass added `#[cfg(any(at_least="PLATFORM", not(at_least="NEXT")))]` to
+# those 4 impl blocks, matching vfs's own trait-method gate exactly - but this crate
+# was never given ANY rustc_flags, so its cfg predicates were all undefined/false,
+# making `not(at_least="NEXT")` evaluate true and keeping the impls compiled in
+# (mismatched against vfs_platform's trait, which correctly excludes the method).
+# Setting HEAD flags here makes this crate's copy of the same gate evaluate false too
+# - consistent with vfs_platform/pseudo_fs_platform, zero further source edits needed.
+#
+# NOT vendored (deliberately, out of Phase 3 scope): src/testing.rs (the testonly
+# "fxfs-testing" library, only consumed by starnix/zxio-tests/conformance-harness
+# integration tests - not needed for the core mount+read gate), and all of
+# fxfs_platform_library("platform")'s test_deps (crypt/fxfs, crypt/starnix,
+# blobfs-component, make-blob-image, block_server/vmo_backed test harness, etc. -
+# those are Fxfs's OWN test suite, same scope call as Phase 2's deliberately-skipped
+# fxfs:lib_test).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "constants",
+    srcs = ["src/constants.rs"],
+    crate_name = "fxfs_platform_constants",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "platform",
+    srcs = [
+        "src/fuchsia.rs",
+        "src/fuchsia/component.rs",
+        "src/fuchsia/debug.rs",
+        "src/fuchsia/device.rs",
+        "src/fuchsia/directory.rs",
+        "src/fuchsia/dirent_cache.rs",
+        "src/fuchsia/errors.rs",
+        "src/fuchsia/file.rs",
+        "src/fuchsia/fxblob.rs",
+        "src/fuchsia/fxblob/atomic_vec.rs",
+        "src/fuchsia/fxblob/blob.rs",
+        "src/fuchsia/fxblob/directory.rs",
+        "src/fuchsia/fxblob/reader.rs",
+        "src/fuchsia/fxblob/testing.rs",
+        "src/fuchsia/fxblob/writer.rs",
+        "src/fuchsia/inline_encryption.rs",
+        "src/fuchsia/memory_pressure.rs",
+        "src/fuchsia/node.rs",
+        "src/fuchsia/paged_object_handle.rs",
+        "src/fuchsia/pager.rs",
+        "src/fuchsia/power.rs",
+        "src/fuchsia/profile.rs",
+        "src/fuchsia/remote_crypt.rs",
+        "src/fuchsia/symlink.rs",
+        "src/fuchsia/testing.rs",
+        "src/fuchsia/volume.rs",
+        "src/fuchsia/volumes_directory.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fxfs_platform",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/storage/fxfs/macros:fxfs_macros",
+        "@crates//:async-trait",
+    ],
+    deps = [
+        ":constants",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.feedback:fidl_fuchsia_feedback",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs:fidl_fuchsia_fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.memory.attribution:fidl_fuchsia_memory_attribution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.memorypressure:fidl_fuchsia_memorypressure",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.battery:fidl_fuchsia_power_battery",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.system:fidl_fuchsia_power_system",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process.lifecycle:fidl_fuchsia_process_lifecycle",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs.startup:fidl_fuchsia_fs_startup",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/client:client",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/performance/memory/attribution/refaults_vmo:refaults_vmo",
+        "//src/upstream/fuchsia/src/storage/fxfs:fxfs",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        "//src/upstream/fuchsia/src/storage/fxfs/trace:fxfs_trace",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "//src/upstream/fuchsia/src/storage/lib/delivery_blob:delivery_blob",
+        "//src/upstream/fuchsia/src/storage/lib/fs_inspect:fs_inspect",
+        "//src/upstream/fuchsia/src/storage/lib/pseudo_fs:pseudo_fs_platform",
+        "//src/upstream/fuchsia/src/storage/lib/storage_device:storage_device",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs_platform",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "@crates//:anyhow",
+        "@crates//:arrayref",
+        "@crates//:async-channel",
+        "@crates//:base64",
+        "@crates//:bitflags",
+        "@crates//:either",
+        "@crates//:event-listener",
+        "@crates//:futures",
+        "@crates//:linked-hash-map",
+        "@crates//:log",
+        "@crates//:rustc-hash",
+        "@crates//:scopeguard",
+        "@crates//:static_assertions",
+        "@crates//:zstd",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

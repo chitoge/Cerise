@@ -1,0 +1,35 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# fsverity-merkle. fxfs Phase 2: this IS a real compile-time dependency of fxfs's
+# core :lib target (fxfs_deps in upstream's BUILD.gn, not fxfs_test_deps) - Phase 1
+# had deferred it based on a runtime call-site analysis that didn't account for
+# Rust's compile-time crate-presence requirement. See upstream/manifest.bzl's
+# comment for the full writeup.
+#
+# ONE divergence from unmodified upstream: util.rs's `use fidl_fuchsia_io as fio`
+# renamed to `use fidl_fuchsia_io_head as fio` (2 lines). fio::HashAlgorithm/
+# VerificationOptions are @available(added=HEAD) in file.fidl - this project's
+# main `fuchsia.io` target stays pinned at level 30 (bumping it to HEAD would
+# swap in a different, incompatible Directory.Open shape for every other already-
+# working consumer - see fuchsia.io/BUILD.bazel's fidl_fuchsia_io_head
+# comment for the full reasoning). This crate is the only consumer of the parallel
+# HEAD-level binding, so the rename is safe and narrowly scoped.
+rust_library(
+    name = "fsverity-merkle",
+    srcs = [
+        "src/builder.rs",
+        "src/lib.rs",
+        "src/tree.rs",
+        "src/util.rs",
+    ],
+    crate_name = "fsverity_merkle",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head",
+        "//src/upstream/fuchsia/src/lib/mundane",
+        "@crates//:anyhow",
+        "@crates//:zerocopy",
+    ],
+)

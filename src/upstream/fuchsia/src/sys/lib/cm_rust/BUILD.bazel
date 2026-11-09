@@ -1,0 +1,89 @@
+# Bazel integration for this imported target.
+# cm_rust has a companion proc-macro (cm_rust_derive) in src/macro.rs.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "cm_rust_derive",
+    srcs = ["src/macro.rs"],
+    crate_name = "cm_rust_derive",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "@crates//:darling",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+# Upstream gates serde on `is_host`: host tools (cmc/configc/config_client) serialize
+# cm_rust types, but device binaries (component_manager, driver_index) must stay
+# serde-free. The faithful Bazel mirror of `if (is_host)` is a select on target OS:
+# fuchsia (device) => no serde; default (host/exec linux) => serde + serde_ext.rs.
+rust_library(
+    name = "cm_rust",
+    srcs = [
+        "src/capability.rs",
+        "src/config.rs",
+        "src/lib.rs",
+        "src/offer.rs",
+        "src/use.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["src/serde_ext.rs"],
+    }),
+    crate_features = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["serde"],
+    }),
+    crate_name = "cm_rust",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        ":cm_rust_derive",
+        "@crates//:strum_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/from-enum:from-enum",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fidl_fuchsia_process",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.sys2:fidl_fuchsia_sys2",
+        "//src/upstream/fuchsia/src/lib/directed_graph:directed_graph",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "@crates//:bitflags",
+        "@crates//:flyweights",
+        "@crates//:strum",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": [
+            "//src/upstream/fuchsia/src/sys/lib/bitflags-serde-legacy:bitflags-serde-legacy",
+            "@crates//:serde",
+        ],
+    }),
+)
+
+# src/lib.rs's #[cfg(test)] mod (line ~1359) does
+# `use difference::Changeset;` for diff-based assertions; serde_ext.rs's own
+# #[cfg(test)] mod (only compiled on non-fuchsia, same as the host test
+# platform) does `use serde_json::{Deserializer, Serializer};`. Both crates
+# are now in @crates, unblocking the whole cm_rust test module (rust_test's
+# `crate` attribute pulls in all of the library's srcs as one compilation
+# unit, so the whole crate's tests were blocked on these two deps).
+rust_test(
+    name = "cm_rust_test",
+    crate = ":cm_rust",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    deps = [
+        "@crates//:difference",
+        "@crates//:serde_json",
+    ],
+)

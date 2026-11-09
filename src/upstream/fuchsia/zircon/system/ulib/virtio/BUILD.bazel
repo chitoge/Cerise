@@ -1,0 +1,13 @@
+# Authored locally for Cerise — zircon/system/ulib/virtio: protocol header-only lib.
+# Contains the standard virtio device definitions (virtio_ring.h, net.h, block.h, etc.)
+# as defined by the OASIS virtio spec. No .cc sources; pure headers.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "virtio",
+    hdrs = glob(["include/virtio/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+)

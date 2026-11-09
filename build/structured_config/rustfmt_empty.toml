@@ -1,0 +1,3 @@
+# Empty rustfmt config - the rustfmt_noop passthrough ignores --config-path
+# entirely, but configc's `rust` subcommand requires a real, readable file to
+# pass to it.

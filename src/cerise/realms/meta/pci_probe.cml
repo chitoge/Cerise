@@ -1,0 +1,11 @@
+// pci_probe leaf-driver — DFv2-native driver binding the e1000 isolate child.
+{
+    program: {
+        runner: "driver",
+        binary: "cerise_pci_probe.so",
+        bind: "meta/bind/pci_probe.bindbc",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

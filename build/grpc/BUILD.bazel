@@ -1,0 +1,55 @@
+# Rust prost/tonic codegen toolchain (grpc-design.md §"Bazel codegen").
+#
+# Runtime crates come from the isolated @grpc universe (fuchsia + host triples,
+# tokio[io-util] only). The protoc plugins come from the host-only @grpc_tools
+# universe. protoc itself is selected via proto toolchain resolution
+# (--incompatible_enable_proto_toolchain_resolution in .bazelrc), so the
+# deprecated proto_compiler attr is intentionally omitted.
+#
+# Registered as //build/grpc:prost_toolchain in MODULE.bazel.
+
+load("@rules_rust//rust:defs.bzl", "rust_library_group")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+# prost runtime reexport.
+rust_library_group(
+    name = "prost_runtime",
+    deps = [
+        "@grpc//:prost",
+    ],
+)
+
+# tonic runtime reexport (includes the prost runtime it builds on).
+rust_library_group(
+    name = "tonic_runtime",
+    deps = [
+        ":prost_runtime",
+        "@grpc//:tonic",
+    ],
+)
+
+rust_prost_toolchain(
+    name = "prost_toolchain_impl",
+    prost_plugin = "@grpc_tools//:protoc-gen-prost__protoc-gen-prost",
+    prost_runtime = ":prost_runtime",
+    prost_types = "@grpc//:prost-types",
+    tonic_plugin = "@grpc_tools//:protoc-gen-tonic__protoc-gen-tonic",
+    tonic_runtime = ":tonic_runtime",
+    # no_transport: tonic-build 0.12 emits the client `connect()` helper (which
+    # references tonic::transport::{Channel,Endpoint,Error}) UNGATED whenever
+    # transport codegen is on — that will not compile against our transport-free
+    # tonic ([codegen,prost], no `server`/`transport` feature, so no
+    # tokio/net -> mio on fuchsia). no_transport keeps the full client+server
+    # stubs but drops that helper, so the generated lib compiles for both the
+    # host and the fuchsia triple. The design's host client (which does want
+    # FileServerClient::connect) uses a separate transport-enabled host toolchain.
+    tonic_opts = ["no_transport"],
+)
+
+toolchain(
+    name = "prost_toolchain",
+    toolchain = ":prost_toolchain_impl",
+    toolchain_type = "@rules_rust_prost//:toolchain_type",
+)

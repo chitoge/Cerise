@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "zx-types",
+    srcs = ["src/lib.rs"],
+    crate_name = "zx_types",
+    crate_features = ["zerocopy"],
+    edition = "2024",
+    proc_macro_deps = ["@crates//:zerocopy-derive"],
+    deps = ["@crates//:zerocopy"],
+)

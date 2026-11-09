@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "dev_init",
+    srcs = ["init.cc"],
+    alwayslink = True,
+    deps = [
+        "//zircon/system/ulib/uart:uart",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "init_sources",
+    srcs = ["init.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True, exclude = ["pcie/**/*"]),
+)

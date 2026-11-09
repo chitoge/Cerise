@@ -1,0 +1,18 @@
+// nvme leaf-driver — upstream NVMe block driver; exposes block.volume.Service.
+{
+    program: {
+        runner: "driver",
+        binary: "driver/nvme.so",
+        bind: "meta/bind/nvme_bind.bindbc",
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        { service: "fuchsia.hardware.block.volume.Service", from: "self" },
+    ],
+}

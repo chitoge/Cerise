@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "heap",
+    defines = [
+        "KERNEL_MEMORY_PROFILER=0",
+        "HEAP_COLLECT_STATS=0",
+    ],
+    srcs = [
+        "cxx_allocator.cc",
+        "heap_wrapper.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//zircon/kernel/lib/heap/cmpctmalloc",
+        "//zircon/kernel/lib/heap/profile:heap_profile",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "cxx_allocator_source",
+    srcs = ["cxx_allocator.cc"],
+)
+
+filegroup(
+    name = "heap_wrapper_source",
+    srcs = ["heap_wrapper.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True) + [
+        "//zircon/kernel/lib/heap/cmpctmalloc:source_snapshot",
+    ],
+)

@@ -1,0 +1,72 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# pci_probe.bind → pci_probe.bindbc: COMPOSITE bind rules matching the e1000 composite
+# node spec published by bus-pci (composite.cc) — pci parent + acpi parent (acpi=1).
+# bindc auto-detects the `composite` keyword and emits composite bytecode, which
+# driver-index decodes as DecodedRules::Composite so match_parent_specs can associate
+# this driver with the spec.
+# Includes:
+#   fuchsia.pci.bind  — BIND_PCI_VID.INTEL / BIND_PCI_DID constants (pci parent)
+#   fuchsia.hardware.pci_bindlib_cpp_gen — fuchsia.hardware.pci.Service.ZirconTransport
+#     (FIDL-derived bind library; .bind file in OutputGroupInfo.bindlib) (pci parent)
+#   fuchsia.acpi.bind — BIND_PROTOCOL.DEVICE / BIND_ACPI_BUS_TYPE.PCI (acpi parent)
+driver_bind_rules(
+    name = "pci-probe-bind",
+    rules = "meta/pci_probe.bind",
+    output_name = "pci_probe.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# Compile the driver implementation separately so cc_binary(-shared) can link it as
+# an alwayslink dep (same split as minimal_driver/parent_driver/child_driver).
+cc_library(
+    name = "pci_probe_impl",
+    srcs = ["pci_probe.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    ],
+)
+
+# DFv2-native probe driver .so — built as cc_binary(-shared), no compat path needed.
+# Version-script (pci_probe.ld) exports ONLY __fuchsia_driver_registration__ and
+# hides everything else with local:*; so .dynsym stays tiny (DFv2 loader lesson).
+# driver_host_dfv2 dlopens this by soname ("cerise_pci_probe.so"); the soname must
+# match program["binary"] in pci_probe.cm and the staged pkg/driver_host/lib/ path.
+cc_binary(
+    name = "cerise_pci_probe.so",
+    additional_linker_inputs = ["pci_probe.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,cerise_pci_probe.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # GC-root: keep the registration symbol even without an internal reference.
+        "-Wl,-u,__fuchsia_driver_registration__",
+        # Version script: export ONLY __fuchsia_driver_registration__; hide the rest.
+        "-Wl,--version-script=$(location pci_probe.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":pci_probe_impl",
+        # Structured syslog backend (needed by FDF_LOG; same dep as minimal_driver/child_driver).
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

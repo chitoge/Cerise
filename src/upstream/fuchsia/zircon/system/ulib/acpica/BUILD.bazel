@@ -1,0 +1,59 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Internal OSL header exposed as "zircon/system/ulib/acpica/osfuchsia.h"
+# (repo-relative path used by all acpica/*.cc OSL source files).
+cc_library(
+    name = "acpica_osl_headers",
+    hdrs = ["osfuchsia.h"],
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = ["//src/upstream/fuchsia/third_party/acpica-migrating/src:acpica"],
+)
+
+# Config/header-only target: provides acfuchsia.h (ACPICA Fuchsia OS configuration).
+# The ACPICA core depends on this at compile time: platform/acenv.h includes
+# "acfuchsia.h" when __Fuchsia__ is defined, finding it via this include path.
+cc_library(
+    name = "acpica_config",
+    hdrs = ["include/acfuchsia.h"],
+    includes = ["include"],
+)
+
+# Compiled OS-Services Layer (OSL) — wraps Fuchsia primitives for ACPICA.
+# alwayslink = True is required: ACPICA core and the OSL are mutually circular
+# (core calls AcpiOs*, OSL calls AcpiFindRootPointer etc.).  Without alwayslink
+# the linker can't resolve the cycle and AcpiOs* stay UND in the shared library
+# despite --allow-shlib-undefined masking the link-time error.
+cc_library(
+    name = "acpica_fuchsia",
+    srcs = [
+        "ioport.cc",
+        "irq.cc",
+        "mmio.cc",
+        "mutex.cc",
+        "osfuchsia.cc",
+        "pci.cc",
+        "semaphore.cc",
+        "task.cc",
+    ],
+    alwayslink = True,
+    local_defines = ["_ALL_SOURCE"],
+    deps = [
+        ":acpica_config",
+        ":acpica_osl_headers",
+        "//src/upstream/fuchsia/src/devices/pci/lib/pci:pci",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/third_party/acpica-migrating/src:acpica",
+        "//src/upstream/fuchsia/zircon/system/ulib/bitmap:bitmap",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        # The real compiled sync lib, not just :headers. acpica's mutex.cc/semaphore.cc
+        # call out-of-line sync_mutex_*/sync_condition_* symbols; libc.so builds sync with
+        # hidden visibility, so those symbols are NOT in its .dynsym and won't resolve for
+        # an external consumer. Depending on :sync gives acpica its own definitions so the
+        # eventual ACPI binary links instead of failing with undefined symbols.
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

@@ -1,0 +1,48 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Cerise: real lz4 C library, vendored for fxfs/platform's delivery_blob
+# for Fxfs delivery blobs. Source: fuchsia.googlesource.com/third_party/lz4,
+# submodule commit 5ff839680134437dbf4678f3d0c7b371d84f4964 (the exact
+# commit pinned by this repo's fuchsia.git tree at
+# 0f3c21bc890c06e8549431abf9d333fbc581937d — see third_party/ directory's
+# JSON listing, "type": "commit", "name": "lz4").
+#
+# Sources/defines transcribed from that pin's own
+# zircon/third_party/ulib/lz4/BUILD.gn (zx_library("lz4")).
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lz4",
+    srcs = [
+        "lz4.c",
+        "lz4frame.c",
+        "lz4hc.c",
+        "xxhash.c",
+    ],
+    hdrs = [
+        "lz4.h",
+        "lz4frame.h",
+        "lz4hc.h",
+        "xxhash.h",
+    ],
+    # lz4hc.c does `#include "lz4.c"` directly (upstream's own pattern, reusing
+    # LZ4_count/constants/mem internals) — lz4.c must also be a textual_hdr so
+    # it's available for that inclusion, in addition to being compiled on its
+    # own as a srcs entry.
+    textual_hdrs = ["lz4.c"],
+    defines = [
+        "XXH_NAMESPACE=LZ4_",
+        # Preempt the default that would break symbols out of hidden visibility.
+        "LZ4LIB_VISIBILITY=",
+        # lz4frame.h doesn't let you predefine LZ4FLIB_API the way you can
+        # LZ4LIB_VISIBILITY, so this kludge works with how its macros are
+        # defined so the upstream sources don't need to be touched.
+        "LZ4_DLL_IMPORT=1",
+        "__declspec(x)=",
+    ],
+    copts = [
+        "-Wno-implicit-fallthrough",
+        "-Wno-missing-declarations",
+        "-Wno-missing-prototypes",
+    ],
+)

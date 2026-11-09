@@ -1,0 +1,24 @@
+# Cerise BUILD (authored locally) — DFv2 driver power-management C++ helpers.
+# BOUNDED: library deps only (the power-broker component + VFS in upstream BUILD.gn are
+# test-only). Used by platform-device/cpp.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*", "*unittest*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

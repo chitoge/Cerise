@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# exceptions link-readiness probe — a real (crt1 + libc.so + libc++.so)
+# Fuchsia binary that throws/catches/rethrows across frames and demangles a
+# typeid name. Build it (link proof) with:
+#   bazel build //examples/cxx-throw-probe:cxx_throw_probe \
+#     --platforms=//platforms:x64-fuchsia
+# Running it on-target is the #34 runtime-conformance boot gate (this binary is
+# the intended seed probe). Exceptions are ON explicitly (-fexceptions) so the
+# link pulls the full __cxa_throw/__gxx_personality_v0/_Unwind_* chain.
+cc_binary(
+    name = "cxx_throw_probe",
+    srcs = ["probe.cc"],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    copts = [
+        "-fexceptions",
+        "-frtti",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-lzircon",
+    ],
+    tags = ["manual"],
+)

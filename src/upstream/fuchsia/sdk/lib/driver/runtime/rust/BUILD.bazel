@@ -1,0 +1,19 @@
+# Vendored from upstream (faithful port). fdf: the top-level safe Rust bindings
+# for the fuchsia driver framework C runtime; re-exports fdf_channel + fdf_core.
+# Upstream GN target is named "rust" (crate "fdf"); this Bazel target is named
+# "fdf" to match the crate name. Compile-only rlib.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fdf",
+    srcs = ["src/lib.rs"],
+    crate_name = "fdf",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust/channel:channel",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust/core:core",
+    ],
+)

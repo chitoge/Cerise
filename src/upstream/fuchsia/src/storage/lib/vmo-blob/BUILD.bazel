@@ -1,0 +1,25 @@
+# Vendored `vmo-blob` (Cerise packages). A tiny wrapper that exposes an fxfs
+# blob VMO as a `fuchsia.io/File` (vfs `File` impl) whose `get_backing_memory(EXECUTE)` does
+# `replace_as_executable` against a process-global VMEX resource (`init_vmex_resource`). This is
+# the exact mechanism upstream `blobfs::Client` + pkg-cache use to serve EXECUTABLE package blobs
+# from a remote `fuchsia.fxfs/BlobReader`; Cerise's `fxblob_storage` crate reuses it so a package
+# directory served over the fxfs blob volume can back a launched component's /pkg (bin + lib/*).
+#
+# GN had no BUILD.bazel for this leaf; the deps mirror BUILD.gn exactly.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "vmo-blob",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "vmo_blob",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "@crates//:anyhow",
+        "@crates//:log",
+    ],
+)

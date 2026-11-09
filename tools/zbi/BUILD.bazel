@@ -1,0 +1,25 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files([
+	"elf_build_id_to_interp.py",
+	"make_arm64_stub_elf.py",
+	"set_elf_interp.py",
+	"simple_zbi.py",
+])
+
+# Content-dedup coverage for simple_zbi.py's build_bootfs: identical
+# entry bytes share one page-aligned data block; round-trips byte-identical and,
+# with no duplicates, matches the pre-dedup layout exactly. Also run from the
+# aggregate //build/checks:all suite.
+sh_test(
+    name = "bootfs_dedup_test",
+    size = "small",
+    srcs = ["bootfs_dedup_test_runner.sh"],
+    data = [
+        "bootfs_dedup_test.py",
+        "simple_zbi.py",
+        "//assembly/tools:bootfs_diff.py",
+        "//tools/zstd:zstd_cli",
+    ],
+    visibility = ["//visibility:public"],
+)

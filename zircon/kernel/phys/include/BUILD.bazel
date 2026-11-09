@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Exposes the phys/include path for kernel code that #include <phys/...> headers.
+# Only declares the headers needed for the kernel (not full phys subsystem deps).
+cc_library(
+    name = "headers",
+    hdrs = [
+        "phys/boot-constants.h",
+        "phys/handoff-ptr.h",
+        "phys/zircon-abi-spec.h",
+    ],
+    includes = ["."],
+    deps = [
+        "//sdk/lib/zbi-format:zbi-format",
+        "//zircon/system/public:public",
+    
+        "//:kernel_cc_headers",
+],
+)
+
+filegroup(
+    name = "all_headers",
+    srcs = glob(["**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

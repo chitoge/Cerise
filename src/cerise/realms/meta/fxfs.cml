@@ -1,0 +1,27 @@
+// fxfs leaf — the real Fxfs server (bin/fxfs_bin), a static #fxfs child of fshost
+// dynamically started (Lazy) via fshost's fs.startup FIDL. Exposes its debug/volumes/
+// root directories and the fs.startup protocols.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/fxfs_bin",
+        lifecycle: { stop_event: "notify" },
+    },
+    capabilities: [
+        { directory: "debug", rights: ["r*"], path: "/debug" },
+        { directory: "volumes", rights: ["r*"], path: "/volumes" },
+        { directory: "root", rights: ["r*"], path: "/root" },
+        { protocol: "fuchsia.fs.startup.Startup" },
+        { protocol: "fuchsia.fs.startup.Volumes" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { directory: "debug", from: "self" },
+        { directory: "volumes", from: "self" },
+        { directory: "root", from: "self" },
+        { protocol: "fuchsia.fs.startup.Startup", from: "self" },
+        { protocol: "fuchsia.fs.startup.Volumes", from: "self" },
+    ],
+}

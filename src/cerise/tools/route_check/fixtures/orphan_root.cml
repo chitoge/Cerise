@@ -1,0 +1,7 @@
+// NEGATIVE-TEST FIXTURE root: declares orphan_app as a child but offers it
+// nothing, so orphan_app's required `use` of cerise.example.Unoffered is unrouted.
+{
+    children: [
+        { name: "orphan_app", url: "fuchsia-boot:///orphan_app#meta/orphan_app.cm", startup: "eager" },
+    ],
+}

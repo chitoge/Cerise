@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# ARM generic platform initialization (qemu-arm64 / generic-arm board).
+# Mirrors GN source_set("generic-arm") in BUILD.gn.
+#
+# BLOCKED: compilation requires deps that are not yet in the vendor tree:
+#   - zircon/kernel/arch/arm64 (needs-import; provides arch ops, percpu, MMU)
+#   - zircon/kernel/dev/interrupt/gic (needs-import; GIC v2/v3)
+#   - zircon/kernel/dev/timer/arm_generic (needs-import; ARM generic timer)
+#   - zircon/kernel/dev/psci (needs-import; power state coordination)
+#   - various product-specific SoC drivers not needed for qemu-arm64 virt boot
+# Missing imported dependencies are intentionally omitted from this target.
+# The imported dependency closure is now complete enough to compile.
+cc_library(
+    name = "generic_arm",
+    srcs = [
+        # dev-init-qemu.cc: minimal replacement for dev-init.cc; excludes SOC-specific
+        # drivers (moonflower, amlogic, qcom, iris, motmot, hdcp, watchdog32) whose
+        # headers are not present in this vendor tree.
+        "dev-init-qemu.cc",
+        "efi.cc",
+        "platform.cc",
+        "uart.cc",
+    ],
+    deps = [
+        "//zircon/kernel/dev/hw_rng",
+        "//zircon/kernel/dev/iommu/arm_smmu:arm_smmu",
+        "//zircon/kernel/dev/interrupt/gic/v2:gicv2",
+        "//zircon/kernel/dev/interrupt/gic/v3:gicv3",
+        "//zircon/kernel/dev/psci:psci",
+        "//zircon/kernel/dev/timer/arm_generic:arm_generic_timer",
+        "//zircon/system/ulib/explicit-memory:explicit-memory",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

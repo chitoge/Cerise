@@ -1,0 +1,1647 @@
+load("@rules_ostest//ostest:defs.bzl", "uefi_disk_image", "uefi_esp_image", "uefi_py_test", "uefi_test")
+load("//bazel:qemu_boot_test.bzl", "qemu_boot_test")
+load("//bazel:debug_symbols.bzl", "cerise_debug_symbols")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "BUILD.bazel",
+    "goldens/smoke-markers.json",
+    "goldens/hello-rust-markers.json",
+    "goldens/arm64-smoke-markers.json",
+    "goldens/arm64-hello-markers.json",
+    "fixtures/smoke-good.log",
+    "fixtures/smoke-bad.log",
+    "fixtures/new-boot-smoke.log",
+    "fixtures/hello-rust-boot.log",
+])
+
+# the .build-id debug-symbol store for the x64-smoke boot.
+# Collects the UNSTRIPPED ELFs of every module a smoke boot's symbolizer markup
+# references — physload, physboot, the kernel (vmzircon) and the vDSO (libzircon)
+# — into a .build-id/xx/rest.debug tree. //src/cerise/tools/symbolize and gdb's
+# `set debug-file-directory` resolve boot backtraces against this store. Richer
+# products extend `binaries` with their fuchsia_stripped userspace/driver targets
+# (which expose CeriseUnstrippedInfo).
+cerise_debug_symbols(
+    name = "x64-smoke.build-id",
+    binaries = [
+        "//build/phys:physload",
+        "//build/phys:physboot",
+        "//build/kernel:vmzircon",
+        "//build/vdso:libzircon",
+    ],
+)
+
+# post-mortem: the .build-id store for the crash-handler gate. Collects the
+# UNSTRIPPED ELFs of the crasher (whose fault PC the gate symbolizes) and the
+# crash_handler, so //src/cerise/tools/symbolize resolves the markup crash_handler
+# emits into named crasher frames.
+cerise_debug_symbols(
+    name = "crash-handler.build-id",
+    binaries = [
+        "//src/cerise/crasher:crasher_bin_stripped.fuchsia",
+        "//src/cerise/crash_handler:crash_handler_bin_stripped.fuchsia",
+    ],
+)
+
+# (debugging): store AUTO-DISCOVERY for a RICH product. Instead
+# of a hand-maintained `binaries` list, `product =` runs an aspect over the whole
+# qemu-x64-console dep graph and collects the unstripped ELF of every staged
+# userspace component/driver/shared-lib (every CeriseUnstrippedInfo target). The
+# kernel/phys/vdso ELF targets are NOT in the product graph (only their assembled
+# ZBIs are), so they stay in the explicit `binaries` list — the two compose. This
+# is the follow-up ("the product's ProductBundleInfo keeps only staged Files,
+# not the providers, so it wants an aspect"). See bazel/debug_symbols.bzl.
+cerise_debug_symbols(
+    name = "qemu-x64-console.build-id",
+    product = "//products:qemu-x64-console",
+    binaries = [
+        "//build/phys:physload",
+        "//build/phys:physboot",
+        "//build/kernel:vmzircon",
+        "//build/vdso:libzircon",
+    ],
+)
+
+# proof: a NORMAL opt component (no per-target debug flags) symbolizes to a real
+# function name + file:line from its unstripped store copy — the #40 `<no symbols>`
+# caveat is closed by the global fuchsia-transition/toolchain debug info. Structural
+# (no boot): picks a function PC in each crash-handler-store ELF and runs
+# llvm-symbolizer. crash_handler never carried the crasher's old special flags.
+sh_test(
+    name = "normal_symbolization_test",
+    size = "small",
+    srcs = ["normal_symbolization_test_runner.sh"],
+    args = [
+        "--store=$(rootpath :crash-handler.build-id)",
+        # Prebuilt minimal-toolchain tools (NOT //toolchain:llvm_nm, which aliases the
+        # from-SOURCE @llvm-project//llvm:llvm-nm — an hours-long build).
+        "--nm=$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-nm)",
+        "--symbolizer=$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer)",
+    ],
+    data = [
+        "normal_symbolization_test.py",
+        ":crash-handler.build-id",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-nm",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer",
+    ],
+)
+
+# coverage: every ELF staged into the RICH qemu-x64-console bootfs has its
+# build-id present in the aspect-built store (the real promise: an auto-discovered
+# store covers a product that stages drivers/components, not just 4 smoke modules).
+# Passes --zstd-tool (the console bootfs is zstd-compressed) and a raised
+# --min-entries floor.
+sh_test(
+    name = "build_id_store_test_console",
+    size = "medium",
+    srcs = ["build_id_store_test_runner.sh"],
+    args = [
+        "--store=$(rootpath :qemu-x64-console.build-id)",
+        "--zbi=$(rootpath //products:qemu-x64-console)",
+        "--readelf=$(rootpath //toolchain:llvm_readelf)",
+        "--bootfs-diff=$(rootpath //assembly/tools:bootfs_diff.py)",
+        "--zstd-tool=$(rootpath //tools/zstd:zstd_cli)",
+        "--min-entries=10",
+    ],
+    data = [
+        "build_id_store_test.py",
+        ":qemu-x64-console.build-id",
+        "//products:qemu-x64-console",
+        "//toolchain:llvm_readelf",
+        "//assembly/tools:bootfs_diff.py",
+        "//tools/zstd:zstd_cli",
+    ],
+)
+
+# Store-coverage + integrity gate: asserts every collected .debug ELF actually
+# carries the build-id its store path claims, and that the modules a smoke boot
+# symbolizes are all present. Reuses bootfs_diff.py's STORAGE_BOOTFS parser to
+# enforce the design invariant "every staged bootfs ELF's build-id is in the
+# store" against the x64-smoke ZBI. Stdlib-only python via an sh_test runner
+# (this tree has no rules_python), matching build/checks/*_test convention.
+sh_test(
+    name = "build_id_store_test",
+    size = "small",
+    srcs = ["build_id_store_test_runner.sh"],
+    args = [
+        "--store=$(rootpath :x64-smoke.build-id)",
+        "--zbi=$(rootpath //products:x64-smoke)",
+        "--readelf=$(rootpath //toolchain:llvm_readelf)",
+        "--bootfs-diff=$(rootpath //assembly/tools:bootfs_diff.py)",
+    ],
+    data = [
+        "build_id_store_test.py",
+        ":x64-smoke.build-id",
+        "//products:x64-smoke",
+        "//toolchain:llvm_readelf",
+        "//assembly/tools:bootfs_diff.py",
+    ],
+)
+
+# ZBI size: structural gate that every ELF staged into a
+# product bootfs is stripped of its non-allocated symbol table. Parses the actual
+# STORAGE_BOOTFS of the flagship qemu-x64-console ZBI (which stages libc.so/
+# libc++.so.1/the libm stub/platform-bus-x86.so — the ELFs that previously shipped
+# with a .symtab) and fails on any staged ELF carrying SHT_SYMTAB, except the
+# `bin/userboot*` Zircon-toolchain payload (allowlisted). Reuses bootfs_diff.py's
+# parser; stdlib-only python via an sh_test runner.
+sh_test(
+    name = "no_unstripped_bootfs_elf_test",
+    size = "medium",
+    srcs = ["no_unstripped_bootfs_elf_test_runner.sh"],
+    args = [
+        "--zbi=$(rootpath //products:qemu-x64-console)",
+        "--bootfs-diff=$(rootpath //assembly/tools:bootfs_diff.py)",
+        # qemu-x64-console ships a zstd-compressed STORAGE_BOOTFS;
+        # decompress it so the staged ELFs are actually scanned, not skipped.
+        "--zstd-tool=$(rootpath //tools/zstd:zstd_cli)",
+    ],
+    data = [
+        "no_unstripped_bootfs_elf_test.py",
+        "//products:qemu-x64-console",
+        "//assembly/tools:bootfs_diff.py",
+        "//tools/zstd:zstd_cli",
+    ],
+)
+
+# ZBI size (the ".dynstr diet"): structural gate that every
+# leaf DFv2 driver .so staged into a product bootfs exports ONLY
+# __fuchsia_driver_registration__ (its version-script surface) and has not
+# regressed to export-everything (-rdynamic/--export-dynamic), which is what
+# re-inflates .dynstr into the tens of MB. Parses the actual STORAGE_BOOTFS of
+# the flagship qemu-x64-console ZBI (reusing bootfs_diff.py's parser); asserts a
+# symbol invariant, not a byte threshold. platform-bus.so (the deferred 30.9 MB
+# --export-dynamic prize) and compat.so (curated DFv1 ABI) are allowlisted.
+sh_test(
+    name = "driver_export_surface_test",
+    size = "medium",
+    srcs = ["driver_export_surface_test_runner.sh"],
+    args = [
+        "--zbi=$(rootpath //products:qemu-x64-console)",
+        "--bootfs-diff=$(rootpath //assembly/tools:bootfs_diff.py)",
+        # qemu-x64-console ships a zstd-compressed STORAGE_BOOTFS;
+        # decompress it so the staged driver .so's are actually scanned.
+        "--zstd-tool=$(rootpath //tools/zstd:zstd_cli)",
+    ],
+    data = [
+        "driver_export_surface_test.py",
+        "//products:qemu-x64-console",
+        "//assembly/tools:bootfs_diff.py",
+        "//tools/zstd:zstd_cli",
+    ],
+)
+
+# debug boot variants: `bazel run //validation:smoke-debug` (or :fshost-debug)
+# boots the product under QEMU held for gdb attach (direct-kernel path) instead
+# of asserting markers. See validation/run-qemu.sh --gdb.
+sh_binary(
+    name = "smoke-debug",
+    srcs = ["debug_boot.sh"],
+    args = ["x64-smoke"],
+    data = ["run-qemu.sh"],
+    tags = ["manual", "local"],
+)
+
+sh_binary(
+    name = "fshost-debug",
+    srcs = ["debug_boot.sh"],
+    # qemu-x64-storage: the cerise_product that replaced the retired x64-fshost
+    # (legacy retirement).
+    args = ["qemu-x64-storage"],
+    data = ["run-qemu.sh"],
+    tags = ["manual", "local"],
+)
+
+qemu_boot_test(
+    name = "marker_contract_good",
+    serial_log = "fixtures/smoke-good.log",
+    markers = "goldens/smoke-markers.json",
+)
+
+sh_test(
+    name = "marker_contract_bad",
+    srcs = ["marker_contract_bad.sh"],
+    args = [
+        "$(location :marker_contract_good)",
+        "$(rootpath :fixtures/smoke-bad.log)",
+        "$(rootpath :goldens/smoke-markers.json)",
+    ],
+    data = [
+        ":marker_contract_good",
+        ":fixtures/smoke-bad.log",
+        ":goldens/smoke-markers.json",
+    ],
+)
+
+qemu_boot_test(
+    name = "new-boot-smoke",
+    serial_log = "fixtures/new-boot-smoke.log",
+    markers = "goldens/smoke-markers.json",
+)
+
+qemu_boot_test(
+    name = "hello-rust-boot",
+    serial_log = "fixtures/hello-rust-boot.log",
+    markers = "goldens/hello-rust-markers.json",
+)
+
+test_suite(
+    name = "all",
+    tests = [
+        ":marker_contract_good",
+        ":marker_contract_bad",
+        ":new-boot-smoke",
+        ":hello-rust-boot",
+        # Structural bootfs gates (parse a built product ZBI; not live boots).
+        # Enumerated here so the acceptance `bazel test //validation:all` actually
+        # enforces them rather than leaving them runnable only by explicit name.
+        ":build_id_store_test",
+        ":no_unstripped_bootfs_elf_test",
+        ":driver_export_surface_test",
+        #: normal-component symbolization proof + rich-product
+        # store auto-discovery coverage. (qemu-x64-console is already built by
+        # no_unstripped_bootfs_elf_test above, so this adds no new heavy product.)
+        ":normal_symbolization_test",
+        ":build_id_store_test_console",
+        # The negative control for the framebuffer gates' pixel assertions. Those gates
+        # are manual, so this is the only thing that ever proves their checkers can go
+        # red — it must not be manual too.
+        ":framebuffer_assert_test",
+    ],
+)
+
+# -----------------------------------------------------------------------------
+# Negative control: the framebuffer gates' pixel assertions, proven able to fail.
+#
+# //validation:console-spike-boot, :console-boot, :firstlight-uefi-boot and
+# :cf-sz5-uefi-boot all assert on pixels, and all four are manual, so nothing
+# automated ever exercises their checkers at all. This target builds the frames a
+# WRONG implementation would produce — a mode set and one title-bar stripe, the
+# pattern painted at the wrong offset or in swapped channels, a status panel with all
+# its chrome and labels and none of its measured values, the right text in the wrong
+# colour, a value drawn twice — and requires every one to be rejected. Several of them
+# are recorded here as frames the old "not one flat colour" assertion accepted.
+#
+# Host-only, stdlib python, ~2s. It parses the renderer's font.rs and the spike's
+# fb_spike.rs, so it also fails if either drifts away from what the gates expect.
+sh_test(
+    name = "framebuffer_assert_test",
+    size = "small",
+    srcs = ["framebuffer_assert_test_runner.sh"],
+    args = [
+        "--font=$(rootpath //src/cerise/status_console:src/font.rs)",
+        "--fb-spike-rs=$(rootpath //src/cerise/status_console:src/fb_spike.rs)",
+    ],
+    data = [
+        "framebuffer_assert_test.py",
+        "panel_check.py",
+        "//src/cerise/status_console:src/font.rs",
+        "//src/cerise/status_console:src/fb_spike.rs",
+    ],
+    # Runs where the gates it speaks for run. panel_check.py is the module the live
+    # framebuffer gates import, and it uses `from __future__ import annotations`
+    # (python >= 3.7); a remote-execution image with a python older than that fails to
+    # import it — measured 2026-07-26 against this developer machine's remote executor,
+    # which reports `SyntaxError: future feature annotations is not defined`. Pinning
+    # this to the local toolchain keeps the control running against the same
+    # interpreter the gates themselves use, rather than passing or failing on a
+    # property of the executor image.
+    tags = [
+        "local",
+        "no-remote-exec",
+    ],
+)
+
+# -----------------------------------------------------------------------------
+# Live UEFI boot under `bazel test`, via rules_ostest.
+#
+# Boot chain: OVMF firmware (pflash) -> efi-boot-shim staged as the removable-
+# media boot file \EFI\BOOT\BOOTX64.EFI (auto-mapped by uefi_esp_image) ->
+# shim opens \bootx64.zbi from the ESP root (its DEFAULT_ZBI_FILENAME) ->
+# Zircon kernel -> userboot-smoke, which writes CERISE-SMOKE-OK to the kernel
+# debuglog, surfaced on the q35 legacy serial port the runner scrapes.
+uefi_esp_image(
+    name = "smoke-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        # Volume-root filename the shim's DEFAULT_ZBI_FILENAME expects.
+        "//products:x64-smoke": "bootx64.zbi",
+    },
+    size_mb = 64,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "smoke-uefi-disk",
+    esp = ":smoke-uefi-esp",
+    size_mb = 96,
+)
+
+uefi_test(
+    name = "smoke-uefi-boot",
+    arch = "x86_64",
+    disk = ":smoke-uefi-disk",
+    failure_pattern = "(panic|triple fault|KERNEL FAULT)",
+    firmware = "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+    firmware_vars = "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    # 2048 MiB matches the proven validation/run-qemu-uefi.sh invocation for this
+    # exact product; a direct pinned-QEMU/OVMF boot of the same shim+ZBI reached
+    # CERISE-SMOKE-OK at this size. The rules_ostest 256 MiB default is unproven
+    # for a full Zircon boot.
+    memory_mb = 2048,
+    qemu = "@qemu_x86_64//:qemu-system-x86_64",
+    require_kvm = False,
+    success_pattern = "CERISE-SMOKE-OK",
+    timeout_seconds = 180,
+)
+
+# (debugging): ESP-path gdb attach parity. A MANUAL debug
+# variant of smoke-uefi-boot using rules_ostest's own gdb support (gdb=True +
+# pause_at_start = QEMU -S freeze). Boots the SAME smoke ESP disk, holds the guest
+# frozen with a gdbstub listener, and prints the attach line + a gdb-init snippet
+# (symbol-file vmzircon + set debug-file-directory <store> + target remote) — the
+# ESP analogue of `run-qemu.sh --gdb` (which covers the direct-kernel path). Manual
+# (never in a gate); `bazel run //validation:smoke-uefi-debug`.
+uefi_py_test(
+    name = "smoke-uefi-debug",
+    srcs = ["smoke_uefi_debug.py"],
+    main = "smoke_uefi_debug.py",
+    arch = "x86_64",
+    disk = ":smoke-uefi-disk",
+    firmware = "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+    firmware_vars = "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    qemu = "@qemu_x86_64//:qemu-system-x86_64",
+    memory_mb = 2048,
+    gdb = True,
+    pause_at_start = True,
+    data = [
+        "//build/kernel:vmzircon",
+        ":x64-smoke.build-id",
+    ],
+    args = [
+        "--kernel-elf=$(rootpath //build/kernel:vmzircon)",
+        "--build-id-store=$(rootpath :x64-smoke.build-id)",
+    ],
+    tags = ["manual", "local"],
+)
+
+# -----------------------------------------------------------------------------
+# Real-hardware first light: the full UEFI GOP framebuffer path.
+#
+# firstlight-uefi-disk is BOTH the QEMU-gate boot medium and the dd-able USB
+# image for real hardware: protective-MBR
+# GPT with the ESP carrying \EFI\BOOT\BOOTX64.EFI (efi-boot-shim) + bootx64.zbi
+# (hw-x64-firstlight). The gate boots it under OVMF with `-device VGA` (OVMF
+# publishes a real Graphics Output Protocol on it) and asserts, IN ORDER:
+# CERISE-SHIM-GOP-FB (shim emitted ZBI_TYPE_FRAMEBUFFER) -> CERISE-GOP-DISPLAY-OK
+# (gop_display bound + serving cerise.display) -> CERISE-CONSOLE-RENDERED
+# (status_console painted), then QMP-screendumps and asserts what is ON the panel.
+#
+# The pixel assertion is not "non-blank" — the console's own title bar satisfied
+# that, so the gate could pass with an empty panel under a header. It is the
+# console_boot_test.py proof on the UEFI/GOP path instead of stdvga: the console
+# reports its memory and CPU readings as RAW values after the paint that
+# contained them, this harness validates them against the -m/-smp it chose,
+# formats the expected on-screen text itself, and finds it by exact full-cell
+# glyph comparison (foreground and background) anchored to its own label, using
+# the font parsed out of the renderer's font.rs. Storage is deliberately not
+# required: this product's realm never starts fshost and the gate attaches no
+# data disk, so that metric is honestly unavailable.
+# sh_test (not uefi_test): uefi_test takes a single success regex and adds no
+# VGA device; this gate needs ordered markers + an extra -device + QMP.
+uefi_esp_image(
+    name = "firstlight-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        "//products:hw-x64-firstlight": "bootx64.zbi",
+    },
+    size_mb = 96,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "firstlight-uefi-disk",
+    esp = ":firstlight-uefi-esp",
+    size_mb = 128,
+)
+
+sh_test(
+    name = "firstlight-uefi-boot",
+    srcs = ["firstlight_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :firstlight-uefi-disk)",
+        "$(rootpath firstlight_boot_test.py)",
+        "$(rootpath //src/cerise/status_console:src/font.rs)",
+    ],
+    data = [
+        "firstlight_boot_test.py",
+        "panel_check.py",
+        # The renderer's own glyph table, parsed at test time so the matcher cannot
+        # drift from what the console actually draws.
+        "//src/cerise/status_console:src/font.rs",
+        ":firstlight-uefi-disk",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# CF-SZ5 first light: the same UEFI/GOP image, on the AMT Serial-over-LAN UART.
+#
+# cf-sz5-uefi-disk is the //products:cf-sz5-firstlight counterpart of
+# firstlight-uefi-disk. Its ONLY difference is the board kernel cmdline
+# `kernel.serial=ioport,0xf0a0,19` — the Panasonic CF-SZ5's AMT Serial-over-LAN
+# 16550A, which is where the machine's only remote console lives (it has no
+# COM1, so hw-x64's `kernel.serial=legacy` would boot it stone silent).
+#
+# The gate is the SAME test, run with --pio-serial, which gives QEMU a SECOND
+# UART at 0xf0a0 and watches both ports. The split matters: the pre-kernel boot
+# shim runs under UEFI and prints on the firmware console (COM1), while the
+# kernel's UART does not exist until physboot parses the ZBI cmdline. So
+# CERISE-SHIM-GOP-FB is asserted on COM1, and every KERNEL-side marker
+# (physload onward, through CERISE-CONSOLE-RENDERED) is asserted on 0xf0a0.
+#
+# That is the point: the kernel markers have to arrive through a UART the kernel
+# found only by parsing the board's cmdline. If `ioport,<base>,<irq>` were
+# mis-spelled, mis-ordered (ParseConfig reads base then irq) or silently
+# ignored, the kernel's output would fall back to COM1, the 0xf0a0 log would
+# stay empty, and the gate fails — instead of the mistake being discovered as an
+# unexplained dead machine on the far end of a network.
+#
+# WHY THE GATE'S IRQ IS 5 AND THE BOARD'S IS 0: QEMU's ISA bus asserts
+# irqnum < ISA_NUM_IRQS (16), so the CF-SZ5's real PCI GSI 19 cannot be wired to
+# an isa-serial device at all — and the kernel would panic on it anyway
+# (apic_io_isa_to_global's `isa_irq < NUM_ISA_IRQS` assert; see the board file).
+# The board therefore runs the UART in the kernel's polling mode (irq=0) and the
+# QEMU wiring uses an ISA-legal stand-in. Both are sound because uart::ns8250
+# transmits by POLLING LineStatusRegister::tx_register_empty (ns8250.h
+# TxReady/Write), so console output never depends on interrupt delivery. This
+# gate proves the BASE ADDRESS and the cmdline GRAMMAR — where the risk actually
+# is — and deliberately does not claim to prove IRQ routing.
+#
+# NOTE: this rehearses the CONSOLE CONFIG, not the SOL transport. Under QEMU the
+# UART at 0xf0a0 is an ordinary emulated 16550A; on the real unit the same
+# register window is the ME's SOL function (PCI 00:16.3) tunnelling to amtterm.
+uefi_esp_image(
+    name = "cf-sz5-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        # Volume-root filename the shim's DEFAULT_ZBI_FILENAME expects.
+        "//products:cf-sz5-firstlight": "bootx64.zbi",
+    },
+    size_mb = 96,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "cf-sz5-uefi-disk",
+    esp = ":cf-sz5-uefi-esp",
+    size_mb = 128,
+)
+
+# -----------------------------------------------------------------------------
+# CF-SZ5 IN-KERNEL UNIT TESTS as a bootable disk image.
+#
+# Exactly the cf-sz5-uefi-esp/-disk pair above, with //tests/zircon:cf-sz5-kernel-utest
+# (the `ut all` kernel + the AMT SOL cmdline `kernel.serial=ioport,0xf0a0,0`) in place
+# of //products:cf-sz5-firstlight. The shim's DEFAULT_ZBI_FILENAME is the ESP-root
+# `bootx64.zbi`, so the only thing that changes is which ZBI sits there.
+#
+# WHY A DISK IMAGE AND NOT A ZBI COPY: the disk image can be served over HTTP and
+# `sanboot`ed by iPXE, so a unit-test run on the unit writes NOTHING to its SSD —
+# no partitioning, no ESP flashing, no chance of a storage stack touching a disk
+# whose contents matter. The utest ZBI is already safe on that axis by construction
+# (its bootfs is a single entry, bin/userboot-smoke: no fshost, no component_manager,
+# no drivers), and this keeps it safe on the DELIVERY axis too.
+#
+# WHY compression = "none" HERE, unlike every other image in this file: an iPXE
+# `sanboot http://...` exposes the URL as a random-access block device, so it needs
+# raw bytes. The gzipped default those other targets keep is fine for them because
+# their consumer (uefi_test / a `dd` after `gunzip`) materializes the image first;
+# a SAN URI has no such step, and a .gz served there is simply not a disk.
+#
+# Sizes: the utest ZBI is ~8.2 MiB against firstlight's ~63.8 MiB, so the smoke-uefi
+# pair's 64/96 MiB is ample (fat_image's own floor is 34 MiB) and keeps the served
+# image small. testonly because //tests/zircon is a testonly package.
+#
+# The pass/fail contract for what comes back over the serial console is
+# //tests/zircon:cf-sz5-utest-contract.
+uefi_esp_image(
+    name = "cf-sz5-utest-uefi-esp",
+    testonly = True,
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        # Volume-root filename the shim's DEFAULT_ZBI_FILENAME expects.
+        "//tests/zircon:cf-sz5-kernel-utest": "bootx64.zbi",
+    },
+    size_mb = 64,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "cf-sz5-utest-uefi-disk",
+    testonly = True,
+    compression = "none",
+    esp = ":cf-sz5-utest-uefi-esp",
+    size_mb = 96,
+)
+
+sh_test(
+    name = "cf-sz5-uefi-boot",
+    srcs = ["firstlight_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :cf-sz5-uefi-disk)",
+        "$(rootpath firstlight_boot_test.py)",
+        "$(rootpath //src/cerise/status_console:src/font.rs)",
+        "--pio-serial=0xf0a0:5",
+        "--label=cf-sz5-firstlight",
+    ],
+    data = [
+        "firstlight_boot_test.py",
+        "panel_check.py",
+        "//src/cerise/status_console:src/font.rs",
+        ":cf-sz5-uefi-disk",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# QEMU boot medium for the HP EliteDesk first-light product. It carries the
+# product ZBI at the boot shim's expected volume-root filename. The QEMU UART
+# uses ISA IRQ 5 because its ISA bus cannot model the machine's PCI GSI 19;
+# the product itself retains polling mode (IRQ 0).
+uefi_esp_image(
+    name = "hp-elitedesk-800-g3-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {"//products:hp-elitedesk-800-g3-firstlight": "bootx64.zbi"},
+    size_mb = 96,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "hp-elitedesk-800-g3-uefi-disk",
+    esp = ":hp-elitedesk-800-g3-uefi-esp",
+    size_mb = 128,
+)
+
+sh_test(
+    name = "hp-elitedesk-800-g3-uefi-boot",
+    srcs = ["firstlight_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :hp-elitedesk-800-g3-uefi-disk)",
+        "$(rootpath firstlight_boot_test.py)",
+        "$(rootpath //src/cerise/status_console:src/font.rs)",
+        "--pio-serial=0x4088:5",
+        "--label=hp-elitedesk-800-g3-firstlight",
+    ],
+    data = [
+        "firstlight_boot_test.py",
+        "panel_check.py",
+        "//src/cerise/status_console:src/font.rs",
+        ":hp-elitedesk-800-g3-uefi-disk",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+
+# -----------------------------------------------------------------------------
+# OS-self-OTA A/B ROLLBACK gate (//validation:ota-rollback-boot).
+#
+# Proves the boot shim's A/B slot selection + rollback + \abr write-back
+# PERSISTENCE, with no dependency on the in-OS updater. The ESP is a real
+# protective-MBR/GPT disk (uefi_disk_image) booted under OVMF like real
+# hardware, staged with a good slot A, a deliberately TRUNCATED slot B, and an
+# \abr that points at B with one try. The shim spends B's try, fails to load
+# the truncated \zircon_b.zbi (before ExitBootServices), and falls back
+# in-process to A — rewriting \abr active=A. A second launch on the SAME disk
+# boots straight to A with no fallback, proving the rollback survived on disk.
+# See ota_rollback_boot_test.py for the full marker chain.
+
+# The good slot-A image: kernel-only x64-smoke prints CERISE-SMOKE-OK.
+# The broken slot-B image: the first 8 KiB of a real ZBI — a valid container
+# header claiming a large length but truncated, so the shim's ZBI load fails
+# (simulates an interrupted slot write) and rollback engages.
+genrule(
+    name = "ota-truncated-zbi",
+    srcs = ["//products:x64-smoke"],
+    outs = ["ota_truncated.zbi"],
+    cmd = "head -c 8192 $(location //products:x64-smoke) > $@",
+)
+
+# Staged \abr: active=B, tries=[A:0,B:1], successful=[A:1,B:0] — B is the pending
+# (never-committed) slot with a single try; A is the known-good fallback.
+genrule(
+    name = "ota-rollback-abr",
+    srcs = ["make_abr.py"],
+    outs = ["ota_rollback_abr.bin"],
+    cmd = "python3 $(location make_abr.py) --active B --tries-a 0 --succ-a 1 " +
+          "--tries-b 1 --succ-b 0 --out $@",
+)
+
+uefi_esp_image(
+    name = "ota-rollback-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        "//products:x64-smoke": "zircon_a.zbi",
+        ":ota-truncated-zbi": "zircon_b.zbi",
+        ":ota-rollback-abr": "abr",
+    },
+    size_mb = 128,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "ota-rollback-uefi-disk",
+    esp = ":ota-rollback-uefi-esp",
+    size_mb = 160,
+)
+
+sh_test(
+    name = "ota-rollback-boot",
+    srcs = ["ota_rollback_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :ota-rollback-uefi-disk)",
+        "$(rootpath ota_rollback_boot_test.py)",
+    ],
+    data = [
+        "ota_rollback_boot_test.py",
+        ":ota-rollback-uefi-disk",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# OS-self-OTA UPDATE gate (//validation:ota-update-boot). Slot A = qemu-x64-ota
+# (v1, apply=true); the in-OS ota_updater fetches qemu-x64-ota-v2's ZBI over HTTP
+# (host server, sha256-verified), writes it to \zircon_b.zbi, flips \abr, and
+# reboots; the shim then boots B = v2. Two launches on one persistent disk prove
+# apply -> boot-new-slot; :ota-update-tamper-boot is the negative control (one launch,
+# corrupt-signature manifest, must refuse and must not write); //validation:ota-persist-boot
+# covers persistence. See ota_update_boot_test.py.
+
+# Staged \abr: active=A, successful[A]=1 (A is the factory-good slot; B is empty).
+genrule(
+    name = "ota-update-abr",
+    srcs = ["make_abr.py"],
+    outs = ["ota_update_abr.bin"],
+    cmd = "python3 $(location make_abr.py) --active A --tries-a 0 --succ-a 1 " +
+          "--tries-b 0 --succ-b 0 --out $@",
+)
+
+uefi_esp_image(
+    name = "ota-update-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        # Slot A = the v1 factory OTA product; slot B is a placeholder the updater
+        # overwrites with the fetched v2 image (the shim never boots B until then).
+        "//products:qemu-x64-ota": "zircon_a.zbi",
+        ":ota-truncated-zbi": "zircon_b.zbi",
+        ":ota-update-abr": "abr",
+    },
+    # ~62 MiB per slot ZBI; 256 MiB holds both (v1 + the applied v2) + FAT + shim.
+    size_mb = 256,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "ota-update-uefi-disk",
+    esp = ":ota-update-uefi-esp",
+    size_mb = 300,
+)
+
+# The SIGNED manifest the host serves alongside the v2 ZBI, and its corrupt-signature
+# twin. Built by //src/cerise/ota_updater:ota_signer from //build/keys:signing_seed —
+# the private seed exists only on the build side, and the device carries only the
+# derived public key (staged into qemu-x64-ota's package by //products:BUILD.bazel).
+#
+# WHY THESE EXIST. The harness used to compute the manifest's sha256 from the very bytes
+# it was about to serve as the image, so the manifest and image always agreed and the
+# device's integrity check could not fail. There was no negative test not because nobody
+# wrote one but because no bad input was CONSTRUCTIBLE. Signing at build time moves the
+# authority out of the harness's reach; `--tamper` then produces an input the harness
+# cannot fix, which is what :ota-update-tamper-boot serves.
+genrule(
+    name = "ota-v2-signed-manifest",
+    srcs = [
+        "//products:qemu-x64-ota-v2",
+        "//build/keys:signing_seed",
+    ],
+    outs = ["ota_v2_manifest.json"],
+    cmd = ("$(location //src/cerise/ota_updater:ota_signer) sign " +
+           "--seed $(location //build/keys:signing_seed) " +
+           "--image $(location //products:qemu-x64-ota-v2) --version 2 --out $@"),
+    tags = ["manual"],
+    tools = ["//src/cerise/ota_updater:ota_signer"],
+)
+
+genrule(
+    name = "ota-v2-tampered-manifest",
+    srcs = [
+        "//products:qemu-x64-ota-v2",
+        "//build/keys:signing_seed",
+    ],
+    outs = ["ota_v2_manifest_bad.json"],
+    cmd = ("$(location //src/cerise/ota_updater:ota_signer) sign --tamper " +
+           "--seed $(location //build/keys:signing_seed) " +
+           "--image $(location //products:qemu-x64-ota-v2) --version 2 --out $@"),
+    tags = ["manual"],
+    tools = ["//src/cerise/ota_updater:ota_signer"],
+)
+
+sh_test(
+    name = "ota-update-boot",
+    srcs = ["ota_update_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :ota-update-uefi-disk)",
+        "$(rootpath ota_update_boot_test.py)",
+        "$(rootpath //products:qemu-x64-ota-v2)",
+        "$(rootpath :ota-v2-signed-manifest)",
+    ],
+    data = [
+        "ota_update_boot_test.py",
+        ":ota-update-uefi-disk",
+        ":ota-v2-signed-manifest",
+        "//products:qemu-x64-ota-v2",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# THE NEGATIVE CONTROL for :ota-update-boot's verification assertions, as a SEPARATE
+# TARGET rather than a branch inside the positive gate — the //validation:marker_contract_bad
+# and //src/cerise/tools/route_check:route_check_negative_test shape, where an
+# independently executed run proves the checker itself turns red.
+#
+# It boots the SAME disk and the SAME harness, serving the SAME v2 image, and differs in
+# exactly one respect: the manifest's signature has one corrupted hex character. The
+# guest must emit `CERISE-OTA-IMAGE-REJECT: bad-signature`, must not emit
+# CERISE-OTA-SIG-OK / CERISE-OTA-FETCH-OK / CERISE-OTA-APPLIED, and the v2 image's bytes
+# must not be on the disk afterwards — checked with a probe window the positive gate
+# proves does appear when an image really is written, so the byte assertion is known to
+# be capable of failing.
+#
+# One launch, not two, so this costs less than the positive gate it guards.
+sh_test(
+    name = "ota-update-tamper-boot",
+    srcs = ["ota_update_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :ota-update-uefi-disk)",
+        "$(rootpath ota_update_boot_test.py)",
+        "$(rootpath //products:qemu-x64-ota-v2)",
+        "$(rootpath :ota-v2-tampered-manifest)",
+        "--tamper-manifest",
+    ],
+    data = [
+        "ota_update_boot_test.py",
+        ":ota-update-uefi-disk",
+        ":ota-v2-tampered-manifest",
+        "//products:qemu-x64-ota-v2",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# OS-self-OTA PERSISTENCE gate (//validation:ota-persist-boot). The companion to
+# ota-update-boot: it proves the FOURTH step (a committed slot keeps booting and
+# does not re-apply) with a single launch off a PRE-STAGED committed-B disk, so
+# each gate's QEMU runtime stays well under the foreground time cap. See
+# ota_persist_boot_test.py.
+
+# Staged \abr: active=B, successful[A]=1, successful[B]=1 (B is the committed slot).
+genrule(
+    name = "ota-persist-abr",
+    srcs = ["make_abr.py"],
+    outs = ["ota_persist_abr.bin"],
+    cmd = "python3 $(location make_abr.py) --active B --tries-a 0 --succ-a 1 " +
+          "--tries-b 2 --succ-b 1 --out $@",
+)
+
+uefi_esp_image(
+    name = "ota-persist-uefi-esp",
+    arch = "x86_64",
+    efi_binary = "//zircon/kernel/phys/boot-shim:efi-boot-shim",
+    files = {
+        # Slot A = v1, slot B = the committed v2 image (what an applied+committed
+        # ESP looks like after ota-update-boot).
+        "//products:qemu-x64-ota": "zircon_a.zbi",
+        "//products:qemu-x64-ota-v2": "zircon_b.zbi",
+        ":ota-persist-abr": "abr",
+    },
+    size_mb = 256,
+    volume_label = "CERISE",
+)
+
+uefi_disk_image(
+    name = "ota-persist-uefi-disk",
+    esp = ":ota-persist-uefi-esp",
+    size_mb = 300,
+)
+
+sh_test(
+    name = "ota-persist-boot",
+    srcs = ["ota_persist_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath :ota-persist-uefi-disk)",
+        "$(rootpath ota_persist_boot_test.py)",
+    ],
+    data = [
+        "ota_persist_boot_test.py",
+        ":ota-persist-uefi-disk",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@ovmf//:usr/share/OVMF/OVMF_CODE_4M.fd",
+        "@ovmf//:usr/share/OVMF/OVMF_VARS_4M.fd",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise gRPC gate initial prototype (fasync async TCP accept) is proven by the service integration live
+# test below: fileserver-grpc-boot exercises the SAME fuchsia_async::net async
+# accept + read/write path (a full gRPC round-trip subsumes a byte echo). The
+# //products:qemu-x64-fasync-spike product + //src/cerise/fasync_tcp_spike component
+# remain as the isolated de-risk artifact and can be booted by hand via the same
+# direct-kernel recipe (-kernel //build/phys:linux_x86_64_boot_shim -initrd the ZBI;
+# see the initial prototype commit). No ESP/uefi_py_test target is wired for it: the
+# rules_ostest FAT32 ESP path does not load the ~1.3 GiB netstack3 ZBI, so this gate
+# uses the direct-kernel boot that validation/run-qemu.sh already uses for netstack3.
+
+# -----------------------------------------------------------------------------
+# Cerise gRPC gate service integration live-boot proof: gRPC Stat over netstack3, host-reachable.
+#
+# Boots //products:qemu-x64-fileserver via the DIRECT-KERNEL path (the same
+# -kernel/-initrd recipe validation/run-qemu.sh uses for netstack3-sized ZBIs — the
+# rules_ostest UEFI FAT32 ESP tool does not scale to the ~1.3 GiB ZBI), then a HOST
+# hand-rolled HTTP/2 gRPC client calls FileServer/Stat through QEMU SLIRP hostfwd and
+# asserts the canned StatResponse. Proves the whole novel stack (gRPC over hyper over
+# cerise-hyper-rt over fuchsia_async over netstack3, as a CMv2 component). Proven
+# manually (service integration commit); wired here for reproduction.
+sh_test(
+    name = "fileserver-grpc-boot",
+    srcs = ["fileserver_grpc_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-fileserver)",
+        "$(rootpath fileserver_grpc_boot_test.py)",
+    ],
+    data = [
+        "fileserver_grpc_boot_test.py",
+        "grpc_h2.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-fileserver",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise status-console initial prototype live-boot proof: a driverless QEMU framebuffer.
+#
+# Boots //products:qemu-x64-console-spike via the DIRECT-KERNEL path with a
+# `-device VGA` (QEMU stdvga) display and a QMP channel. The guest fb_spike component
+# brings up the stdvga linear framebuffer with no display driver (PCI CF8/CFC + Bochs
+# VBE + a physical-VMO mapping of the framebuffer BAR), paints a pattern, and emits
+# CERISE-FBSPIKE-RENDERED. This test then drives QMP `screendump`, saves the PPM as an
+# undeclared output, and asserts on it. This is the residual-risk gate for the whole
+# console path.
+#
+# The pixel assertion is not "non-blank" — one stripe satisfied that, and so would a
+# framebuffer the guest never wrote to but the VGA device had decorated. It is now
+# EXACT: every pixel of the captured frame must equal the frame fb_spike.rs paints,
+# with the mode, the colours and the geometry all reconstructed from the guest's own
+# source (so the matcher cannot describe a picture nobody draws). The known-bad frames
+# that satisfy the old check and fail this one are built and asserted red by
+# //validation:framebuffer_assert_test.
+sh_test(
+    name = "console-spike-boot",
+    srcs = ["console_spike_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-console-spike)",
+        "$(rootpath console_spike_boot_test.py)",
+        "$(rootpath //src/cerise/status_console:src/fb_spike.rs)",
+    ],
+    data = [
+        "console_spike_boot_test.py",
+        "panel_check.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-console-spike",
+        # The guest's own paint, parsed at test time so the expected frame cannot
+        # drift from the one the spike draws.
+        "//src/cerise/status_console:src/fb_spike.rs",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise PMU path A live-boot proof.
+#
+# Boots //products:qemu-x64-perfmon (kernel.enable-debugging-syscalls=true) via the
+# direct-kernel path. The guest realm root_perfmon runs the perfmon component, which
+# acquires the narrowly-routed fuchsia.kernel.DebugResource and drives the seven
+# zx_mtrace_control(MTRACE_KIND_PERFMON) actions to read raw hardware performance
+# counters. The test asserts the ordered chain up through GET_PROPERTIES, then BRANCHES:
+# SUPPORTED -> real non-zero instruction/cycle counts (instructions >= the loop count);
+# UNSUPPORTED -> the clean CERISE-PERFMON-UNSUPPORTED no-PMU path. BOTH are a PASS (the
+# gate proves the syscall path + client; whether the vCPU exposes counters is
+# environmental). It tries KVM+host-PMU first when /dev/kvm is usable, falling back to
+# TCG. A CERISE-PERFMON-ERROR (routing/flag/ABI bug) always fails. Manual/local like the
+# other live boots — NOT in :all.
+sh_test(
+    name = "perfmon-boot",
+    srcs = ["perfmon_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-perfmon)",
+        "$(rootpath perfmon_boot_test.py)",
+    ],
+    data = [
+        "perfmon_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-perfmon",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise orderly-shutdown live-boot proof.
+#
+# Boots //products:qemu-x64-shutdown via the direct-kernel path. The guest's
+# shutdown_trigger, once driver_manager is up, calls Admin.Poweroff on the builtin
+# shutdown-shim, which drives component_manager's reverse-dependency topology teardown
+# (SystemController); driver_manager then issues zx_system_powerctl(SHUTDOWN) -> ACPI
+# poweroff. The test asserts the ordered markers CERISE-SHUTDOWN-READY then
+# CERISE-SHUTDOWN-REQUESTED, then that QEMU exits on its own with returncode 0 (a clean
+# poweroff), with no panic/fault. This is the real-shutdown gate.
+sh_test(
+    name = "shutdown-boot",
+    srcs = ["shutdown_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-shutdown)",
+        "$(rootpath shutdown_boot_test.py)",
+    ],
+    data = [
+        "shutdown_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-shutdown",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise post-mortem gate: kernel crashlog survives a warm reboot.
+#
+# Boots //products:x64-crashlog (x64-smoke + a ZBI_TYPE_NVRAM ram-crashlog region
+# + kernel.cerise-test-crashlog=true) via the direct-kernel path in ONE QEMU
+# session run WITHOUT -no-reboot, so a guest panic warm-reboots the same kernel
+# image (QEMU DRAM survives system_reset). The self-terminating recovery-gated
+# hook (zircon/kernel/platform/pc/platform.cc) panics on the cold boot and, on the
+# warm reboot, recovers+prints the stowed crashlog. The test asserts, IN ORDER,
+# the live panic then the recovered crashlog with SW reason KERNEL PANIC and the
+# intentional-panic message (proving the crashlog CONTENT survived), and that
+# exactly one panic fired (no panic/reboot loop).
+sh_test(
+    name = "crashlog-boot",
+    srcs = ["crashlog_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:x64-crashlog)",
+        "$(rootpath crashlog_boot_test.py)",
+        # symbolize the recovered kernel crashlog / failing tail.
+        "$(rootpath //src/cerise/tools/symbolize)",
+        "$(rootpath :x64-smoke.build-id)",
+        "$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer)",
+    ],
+    data = [
+        "crashlog_boot_test.py",
+        ":x64-smoke.build-id",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:x64-crashlog",
+        "//src/cerise/tools/symbolize",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise post-mortem gate: userspace crash handler on the root-job channel.
+#
+# Boots //products:qemu-x64-crash-handler (a minimal realm: crash_handler eager +
+# crasher lazy). crash_handler binds the narrowly-routed root job's exception
+# channel, launches the crasher, observes its null-deref crash, and emits
+# self-contained symbolizer markup. The test asserts the ordered crash-observation
+# chain + the markup, then pipes the serial through //src/cerise/tools/symbolize
+# against the crash-handler .build-id store and asserts a REAL symbolized crasher
+# frame (crasher::trigger_null_deref).
+sh_test(
+    name = "crash-handler-boot",
+    srcs = ["crash_handler_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-crash-handler)",
+        "$(rootpath crash_handler_boot_test.py)",
+        "$(rootpath //src/cerise/tools/symbolize)",
+        "$(rootpath :crash-handler.build-id)",
+        "$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer)",
+    ],
+    data = [
+        "crash_handler_boot_test.py",
+        ":crash-handler.build-id",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-crash-handler",
+        "//src/cerise/tools/symbolize",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise fshost gate: fshost owns the disk lifecycle, race-free.
+#
+# Boots //products:qemu-x64-storage (root_dfv2acpi_fshost.cm) via the direct-kernel path with a
+# SINGLE fresh NVMe disk (fresh image every run => a clean FIRST boot, so the provisioning
+# marker must appear). Asserts, in order: drivers bind, the fxfs_provisioner formats the
+# virgin disk + creates the "blob" volume then RELEASES it (CERISE-PROVISION-FORMAT-OK ->
+# -READY), fshost's OWN data-volume auto-mount (PROCESS-DEVICE-MOUNT-DATA-VOLUME-OK), and a
+# userspace consumer writes+reads a real file through fshost's exported data dir
+# (CERISE-FSHOST-MOUNT-OK -> CERISE-FSHOST-READ-OK), with zero panics/faults. The
+# provisioner-then-fshost ordering is a real routed capability dependency (fshost_probe gates
+# on the provisioner's "provisioned" directory), so it is deterministic — run 3x to prove the
+# old fxfs_probe-vs-fshost device-contention race is gone. Uses the direct-kernel sh_test
+# path (not uefi_test): the fshost ZBI is ~1.4 GiB and does not fit the rules_ostest FAT32
+# ESP path, the same reason fileserver/shutdown use direct-kernel.
+sh_test(
+    name = "fshost-boot",
+    srcs = ["fshost_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-storage)",
+        "$(rootpath fshost_boot_test.py)",
+    ],
+    data = [
+        "fshost_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-storage",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# Packages foundation: boots //products:qemu-x64-pkg with a single fresh NVMe disk
+# and proves a REAL Fuchsia package lands in the fxfs "blob" volume and resolves end to end —
+# provisioning, then pkg_probe ingests the demo package's blobs via fuchsia.fxfs/BlobCreator
+# (content-addressed, write-verified), then resolves it with the vendored package_directory
+# crate: meta/package + meta/pkg_hello.cm read from the meta.far, and the bin/pkg_hello content
+# blob read back merkle-verified (CERISE-PKG-* markers), zero panics. Direct-kernel sh_test (the
+# ~1.4 GiB fshost-class ZBI doesn't fit the rules_ostest FAT32 ESP), same shape as fshost-boot.
+sh_test(
+    name = "pkg-boot",
+    srcs = ["fshost_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-pkg)",
+        "$(rootpath pkg_boot_test.py)",
+    ],
+    data = [
+        "pkg_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-pkg",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# Packages: the flagship UPDATABLE-packages gate. Boots //products:qemu-x64-pkg-update
+# TWICE against the SAME NVMe image with a virtio-net NIC and a host-side plain-HTTP server serving
+# package v2. Boot 1: v1 from the bootfs base index -> DHCP -> download v2 over the network
+# (merkle-verified) -> register in the persistent dynamic index -> v2 from the dynamic index (shadows
+# base) -> verified-exec rejects a lying index entry. Boot 2 (same disk): v2 resolves from the
+# PERSISTENT dynamic index with the host server seeing ZERO requests (not-refetched proof). Direct-
+# kernel sh_test (same shape as pkg-boot); the v2 download payload is assembled from runfiles.
+sh_test(
+    name = "pkg-update-boot",
+    srcs = ["pkg_update_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-pkg-update)",
+        "$(rootpath pkg_update_boot_test.py)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_manifest_json)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_meta_far)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_blob_0)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_blob_1)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_blob_2)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_blob_3)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_signed_entry_json)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_v2_bad_entry_json)",
+        "$(rootpath //src/cerise/pkg_hello_update:pkg_hello_evil_signed_entry_json)",
+    ],
+    data = [
+        "pkg_update_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-pkg-update",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_manifest_json",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_meta_far",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_blob_0",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_blob_1",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_blob_2",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_blob_3",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_signed_entry_json",
+        "//src/cerise/pkg_hello_update:pkg_hello_v2_bad_entry_json",
+        "//src/cerise/pkg_hello_update:pkg_hello_evil_signed_entry_json",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# packages (post-storage app tier): boots //products:qemu-x64-console-pkg with TWO NVMe disks
+# (disk1 = fshost package store; disk2 = the fileserver's own fxfs) + a host server serving the
+# FILESERVER PACKAGE. The 8.5 MB fileserver binary is NOT in bootfs. Proof: console renders ->
+# apptier_fetcher downloads the fileserver package -> #pkg_resolver launches it from disk blobs -> the
+# fileserver shares apptier_fetcher's NIC + mounts fxfs + serves gRPC (a host Write->Read round-trip).
+# This is the offload gate. (2-boot zero-refetch reboot-persistence is a documented next step needing
+# deterministic per-disk claiming)
+sh_test(
+    name = "pkg-apptier-boot",
+    srcs = ["pkg_apptier_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-console-pkg)",
+        "$(rootpath pkg_apptier_boot_test.py)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_manifest_json)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_meta_far)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_blob_0)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_blob_1)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_blob_2)",
+        "$(rootpath //src/cerise/fileserver:fileserver_pkg_blob_3)",
+    ],
+    data = [
+        "pkg_apptier_boot_test.py",
+        "grpc_h2.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-console-pkg",
+        "//src/cerise/fileserver:fileserver_pkg_manifest_json",
+        "//src/cerise/fileserver:fileserver_pkg_meta_far",
+        "//src/cerise/fileserver:fileserver_pkg_blob_0",
+        "//src/cerise/fileserver:fileserver_pkg_blob_1",
+        "//src/cerise/fileserver:fileserver_pkg_blob_2",
+        "//src/cerise/fileserver:fileserver_pkg_blob_3",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# fshost persistence across reboots: boots //products:qemu-x64-storage TWICE against the
+# SAME NVMe image. Boot 1 (blank) provisions + fshost CREATES the data volume; boot 2 (same
+# disk) the provisioner SKIPs and fshost UNLOCKS the existing encrypted data volume via its
+# keybag (asserts no reformat) — proving the fxfs container + data volume + keybag survive a
+# reboot through the fshost mount path. Reuses the fshost_boot.sh wrapper.
+sh_test(
+    name = "fshost-persistence",
+    srcs = ["fshost_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-storage)",
+        "$(rootpath fshost_persistence_test.py)",
+    ],
+    data = [
+        "fshost_persistence_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-storage",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise status-console storage-backed integration live-boot proof: the combined fileserver + console.
+#
+# Boots //products:qemu-x64-console (fileserver + status_console) via the direct-kernel
+# path with an NVMe disk, a virtio-net NIC, a `-device VGA` display, and a QMP channel.
+# The fileserver brings up the network (10.0.2.15) + serves gRPC; the status_console
+# reads fuchsia.net.interfaces.State and paints an ESXi-style status screen. The test
+# waits for CERISE-CONSOLE-RENDERED + CERISE-FILESERVER-LISTENING, drives QMP screendump,
+# saves the PPM as an undeclared output, and asserts on the status screen.
+#
+# The pixel assertion is not "non-blank". The console reports its memory, CPU and storage
+# readings as RAW values on serial, only after the paint that contained them; the harness
+# validates those against things it configured itself (QEMU's -m and -smp, and the exact
+# byte size of the NVMe image it created), formats the expected on-screen text itself, and
+# then finds it on the framebuffer by exact full-cell glyph comparison — anchored to its
+# own label, using the font parsed out of the renderer's font.rs. A metric that could not
+# be read emits -UNAVAILABLE instead of -OK, and those are fail markers, so the gate
+# cannot pass on a panel that had nothing to show.
+sh_test(
+    name = "console-boot",
+    srcs = ["console_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-console)",
+        "$(rootpath console_boot_test.py)",
+        "$(rootpath //src/cerise/status_console:src/font.rs)",
+    ],
+    data = [
+        "console_boot_test.py",
+        "panel_check.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-console",
+        # The renderer's own glyph table, parsed at test time so the matcher cannot
+        # drift from what the console actually draws.
+        "//src/cerise/status_console:src/font.rs",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# fxfs persistence across reboots: boots the SAME OS twice against the SAME NVMe image
+# (boot 1 formats + writes, boot 2 opens-existing + reads back) — proves real
+# durability + the format-if-needed mount path. Reuses the same boot wrapper.
+sh_test(
+    name = "fileserver-persistence",
+    srcs = ["fileserver_grpc_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-fileserver)",
+        "$(rootpath fileserver_persistence_test.py)",
+    ],
+    data = [
+        "fileserver_persistence_test.py",
+        "grpc_h2.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-fileserver",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# Cerise logging bring-up live-boot proof: Archivist ArchiveAccessor query.
+#
+# Boots //products:qemu-x64-diagnostics via the DIRECT-KERNEL path. The guest runs
+# the vendored Archivist as a real CMv2 component; the archivist_reader component
+# logs a known structured record through the Archivist-backed fuchsia.logger.LogSink
+# and reads it back over fuchsia.diagnostics.ArchiveAccessor (routed from the
+# Archivist's diagnostics-accessors dictionary), emitting CERISE-ARCHIVIST-QUERY-OK
+# on a real round-trip. This harness asserts that marker reaches serial.
+sh_test(
+    name = "archivist-query-boot",
+    srcs = ["archivist_query_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-diagnostics)",
+        "$(rootpath archivist_query_boot_test.py)",
+    ],
+    data = [
+        "archivist_query_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-diagnostics",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# the runtime-conformance boot gate. Boots //products:qemu-x64-conformance
+# and asserts the CERISE-CONF-{C,CXX,RUST}-* markers of all three runtime probes as
+# per-probe ordered subsequences (they run concurrently, so markers interleave),
+# each reaching its terminal -DONE, with no FAIL marker and no guest fault. Reuses
+# the generic posix_probe_boot.sh runfiles resolver (qemu, shim, zbi, test).
+sh_test(
+    name = "runtime-conformance",
+    srcs = ["posix_probe_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-conformance)",
+        "$(rootpath runtime_conformance_boot_test.py)",
+    ],
+    data = [
+        "runtime_conformance_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-conformance",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# the plain-C POSIX probe gate. Same qemu-x64-diagnostics boot;
+# asserts CERISE-POSIX-PROBE-IO-OK (plain-C open/read via the runtime
+# libfdio.so, reported straight to serial) AND CERISE-POSIX-PROBE-OK (the
+# probe's printf record — fd1 socket -> LogSink -> Archivist — retrieved over
+# ArchiveAccessor by archivist_reader).
+sh_test(
+    name = "posix-probe-boot",
+    srcs = ["posix_probe_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath //products:qemu-x64-diagnostics)",
+        "$(rootpath posix_probe_boot_test.py)",
+    ],
+    data = [
+        "posix_probe_boot_test.py",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+        "//build/phys:linux_x86_64_boot_shim",
+        "//products:qemu-x64-diagnostics",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        "requires-network",
+    ],
+    timeout = "eternal",
+)
+
+# -----------------------------------------------------------------------------
+# arm64 kernel/phys layer PROVEN by a boot.
+#
+# Boots //products:arm64-smoke on the pinned qemu-system-aarch64 via the
+# DIRECT-KERNEL path (qemu-system-aarch64 -machine virt -kernel <arm64 boot shim>
+# -initrd <product ZBI> -net none) and asserts the four kernel serial markers in
+# goldens/arm64-smoke-markers.json ("welcome to Zircon", "GICv2 detected", "top of
+# bootstrap2()", "starting user space"). This is the first-ever consumer of that
+# golden — before the arm64 kernel was UNPROVEN scaffolding. NOT a UEFI
+# gate: the arm64 path is bare-metal direct-kernel (the boot shim scans RAM for the
+# ZBI and jumps to physload), so no OVMF/firmware and no qemu data dir are needed
+# (-net none avoids the option-ROM dependency). Pure-TCG emulation (no arm64 KVM on
+# an x86 host); the smoke markers appear in the first few seconds.
+sh_test(
+    name = "arm64-smoke-boot",
+    srcs = ["arm64_boot.sh"],
+    args = [
+        "$(rootpath @qemu_aarch64//:qemu-system-aarch64)",
+        "$(rootpath //build/phys/qemu_arm64_boot_shim:arm64_qemu_boot_shim)",
+        "$(rootpath //products:arm64-smoke)",
+        "$(rootpath goldens/arm64-smoke-markers.json)",
+        "$(rootpath arm64_boot_test.py)",
+    ],
+    data = [
+        "arm64_boot_test.py",
+        "goldens/arm64-smoke-markers.json",
+        "@qemu_aarch64//:qemu-system-aarch64",
+        "//build/phys/qemu_arm64_boot_shim:arm64_qemu_boot_shim",
+        "//products:arm64-smoke",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# arm64 USERSPACE boot proof. Same direct-kernel path, //products:arm64-hello
+# (userboot.next=bin/hello-arm64). Asserts the four kernel markers PLUS the
+# hello-arm64 userspace program's own markers ("hello-arm64: userspace booted" and
+# the zx_channel ping/pong IPC round-trip through "hello-arm64: ipc done"), proving
+# arm64 gets from the kernel through userboot to a running user process that makes
+# real syscalls. Golden: goldens/arm64-hello-markers.json.
+sh_test(
+    name = "arm64-hello-boot",
+    srcs = ["arm64_boot.sh"],
+    args = [
+        "$(rootpath @qemu_aarch64//:qemu-system-aarch64)",
+        "$(rootpath //build/phys/qemu_arm64_boot_shim:arm64_qemu_boot_shim)",
+        "$(rootpath //products:arm64-hello)",
+        "$(rootpath goldens/arm64-hello-markers.json)",
+        "$(rootpath arm64_boot_test.py)",
+    ],
+    data = [
+        "arm64_boot_test.py",
+        "goldens/arm64-hello-markers.json",
+        "@qemu_aarch64//:qemu-system-aarch64",
+        "//build/phys/qemu_arm64_boot_shim:arm64_qemu_boot_shim",
+        "//products:arm64-hello",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)

@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Host tool: pack a disk image into a `.cryostore`, admit a scratch overlay to
+# one as a new generation, verify one, describe one.
+#
+# Not tagged `manual`, unlike `//src/cryogen/ingest:vhdx_stats`: this one is a
+# build tool. A build rule runs it on a guest test disk to produce the store a
+# VMM boots from, so it has to be part of an ordinary build.
+rust_binary(
+    name = "cryostore",
+    srcs = ["main.rs"],
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//src/cryogen/format:cryogen_format",
+        "//src/cryogen/hash:cryogen_hash",
+        "//src/cryogen/snapshot:cryogen_snapshot",
+        "//src/cryogen/vhdx:cryogen_vhdx",
+    ],
+)

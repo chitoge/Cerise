@@ -1,0 +1,16 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# Cerise: real lz4 Rust FFI wrapper, vendored for fxfs/platform's
+# delivery_blob. Pinned tree 0f3c21bc890c06e8549431abf9d333fbc581937d.
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "lz4",
+    srcs = ["src/lib.rs"],
+    crate_name = "lz4",
+    edition = "2024",
+    deps = [
+        "@crates//:thiserror",
+        "//src/upstream/fuchsia/third_party/lz4/lib:lz4",
+    ],
+)

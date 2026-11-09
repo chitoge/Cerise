@@ -1,0 +1,10 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "zircon_x64_kernel_config.manifest.json",
+    "zircon_x64_phys_config.manifest.json",
+    "zircon_x86_32_phys_config.manifest.json",
+    "zircon_x64_efi_config.manifest.json",
+    "zircon_x64_user_config.manifest.json",
+    "zircon_arm64_kernel_config.manifest.json",
+])

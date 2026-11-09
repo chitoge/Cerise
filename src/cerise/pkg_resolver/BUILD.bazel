@@ -1,0 +1,53 @@
+# Cerise packages (increment 2): pkg_resolver — a minimal
+# fuchsia.component.resolution.Resolver for fuchsia-pkg://cerise/<name> URLs, backed by the fxfs
+# blob volume. Lets component_manager RESOLVE + LAUNCH a packaged component from disk blobs (not
+# bootfs). Serves an EXECUTABLE package directory (holds a VMEX resource). See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "pkg_resolver",
+    srcs = ["src/main.rs"],
+    crate_name = "pkg_resolver",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fidl_fuchsia_kernel",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fidl_fuchsia_component_resolution",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/package-directory:package-directory",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/lib/mem_util:mem_util",
+        "//src/upstream/fuchsia/src/sys/lib/fidl-fuchsia-component-abi-ext:fidl-fuchsia-component-abi-ext",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust:version-history",
+        "//src/cerise/fxblob_storage:fxblob_storage",
+        "//src/cerise/pkg_index:pkg_index",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        # Real fdio (not the link-time stub) — fuchsia-fs/fuchsia-component FFI into libfdio.so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "pkg_resolver_stripped.fuchsia",
+    src = ":pkg_resolver",
+)

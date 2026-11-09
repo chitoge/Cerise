@@ -1,0 +1,27 @@
+// pkg_fetcher leaf (packages) — the on-target update driver for qemu-x64-pkg-update.
+// Plays pkg_probe's role (provision-gate + fshost blob ingest + launch trigger) AND downloads a NEW
+// package version over the network, merkle-verifies + installs it, and registers it in the persistent
+// dynamic index. See //src/cerise/pkg_fetcher/src/main.rs.
+{
+    program: { runner: "elf", binary: "bin/pkg_fetcher" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        // fshost's exposed subtree: /fshost-fs/blob (BlobCreator, rw) for ingest/install, and
+        // /fshost-fs/data/root for the persistent dynamic index (atomic temp+rename). rw* covers both.
+        { directory: "fshost-fs", rights: ["rw*"], path: "/fshost-fs" },
+        // Gate: read /provisioned/ready before opening /fshost-fs (Lazy-starts fshost).
+        { directory: "provisioned", rights: ["r*"], path: "/provisioned" },
+        // Network stack: discover the NIC via devfs, then netstack3's Installer + socket providers.
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        // The two pkg_hello instances' framework Binders (renamed to distinct paths), bound to
+        // Lazy-start v1 (base index) then v2 (dynamic index).
+        { protocol: "pkg_hello_v1.Binder", path: "/svc/pkg_hello_v1.Binder" },
+        { protocol: "pkg_hello_v2.Binder", path: "/svc/pkg_hello_v2.Binder" },
+        // The resolver's Resolver protocol — for the verified-exec identity NEGATIVE test (resolve a
+        // lying index entry directly and assert it is rejected).
+        { protocol: "fuchsia.component.resolution.Resolver" },
+    ],
+}

@@ -1,0 +1,28 @@
+# Cerise BUILD (authored locally). ACPI client library.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "acpi",
+    srcs = ["client.cc"],
+    hdrs = ["client.h", "object.h", "util.h"],
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = [
+        # NOTE: do NOT depend on //src/upstream/fuchsia/src/devices/lib/driver:driver
+        # here. client.cc makes no DFv1 ABI calls (device_*/get_*_resource); it only
+        # needs the ddk headers, which come from :ddk + ddktl below. :driver is an
+        # all-stub shim (every function returns ZX_ERR_NOT_SUPPORTED) meant for the
+        # driver-host build. Pulling it in statically linked api.o (with its 29 LOCAL
+        # stub DFv1 ABI symbols) into platform-bus-x86.so transitively
+        # (lib/acpi -> board/lib/acpi -> x86); the version script's local:* then made
+        # device_connect_fragment_runtime_protocol a direct LOCAL call, bypassing
+        # compat.so's real implementation -> ZX_ERR_NOT_SUPPORTED at runtime. Dropping
+        # it leaves these symbols UND in x86.so, resolved at dlopen by compat.so (which
+        # exports all 29 DFv1 ABI symbols via compat.ld).
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
+        # acpi FIDL `using fuchsia.mem` (mmio Range) — wire bindings need fuchsia.mem_cpp.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

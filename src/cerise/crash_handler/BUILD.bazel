@@ -1,0 +1,43 @@
+# Cerise crash_handler (userspace post-mortem path): a root-job crash
+# observer built on the task_exceptions primitive. Obtains the root job via the
+# narrowly-routed fuchsia.kernel.RootJob builtin, binds an exception channel, and
+# on each userspace crash logs the fault + emits self-contained symbolizer markup
+# (module/mmap/bt) before releasing the exception unhandled so the process dies.
+# See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "crash_handler_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "crash_handler",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/stubs/task_exceptions:task-exceptions",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fidl_fuchsia_kernel",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        # Real fdio (not the link-time stub) — fuchsia-component FFI into libfdio.so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "crash_handler_bin_stripped.fuchsia",
+    src = ":crash_handler_bin",
+)

@@ -1,0 +1,42 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/phys:efi_rules.bzl", "zircon_efi_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# EFI boot shim entry point: opens a ZBI file from the EFI filesystem,
+# probes ACPI/memory map, appends items, and boots the kernel.
+# DEFAULT_ZBI_FILENAME: "bootx64.zbi" (EFI fallback when argc==0).
+cc_library(
+    name = "efi_boot_shim_main",
+    srcs = ["efi-boot-shim.cc"],
+    defines = ["DEFAULT_ZBI_FILENAME=\\\"bootx64.zbi\\\""],
+    deps = [
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/kernel/phys/efi:efi_file",
+        "//zircon/kernel/phys/efi:efi_main_lib",
+        "//zircon/kernel/phys/efi:efi_phys_headers",
+        "//zircon/kernel/phys/lib/boot-shim:efi_boot_shim_lib",
+    ],
+    alwayslink = True,
+)
+
+# Full EFI boot shim PE/COFF binary.
+zircon_efi_binary(
+    name = "efi-boot-shim",
+    deps = [
+        ":efi_boot_shim_main",
+        "//:efi_lib",
+        "//zircon/kernel/arch/x86:arch_boot_zbi_efi",
+        "//zircon/kernel/arch/x86/phys/efi:efi_arch_setup",
+        "//zircon/kernel/lib/libc:phys_libc",
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/kernel/phys/efi:efi_boot_zbi",
+        "//zircon/kernel/phys/efi:efi_file",
+        "//zircon/kernel/phys/efi:efi_main_lib",
+        "//zircon/kernel/phys/lib/boot-shim:efi_boot_shim_lib",
+        "//zircon/kernel/phys/lib/memalloc:memalloc",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty",
+        "//zircon/system/ulib/uart:uart",
+    ],
+)

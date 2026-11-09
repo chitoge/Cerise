@@ -1,0 +1,90 @@
+# Network-device client gate: netdev_probe — proves the devfs CLIENT path (see main.cc).
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+# Plain (non-driver) CFv2 ELF component: opens /dev/class/network/<instance>, gets a
+# fuchsia.device/Controller, calls ConnectToDeviceFidl to get a
+# fuchsia.hardware.network/Device, calls GetInfo(), then OpenSession + FIFO/VMO
+# dataplane to prove a real frame moves (see main.cc for the full sequence). Emits
+# CERISE-DEVFS-CLIENT-OK then CERISE-NETDEV-FRAME-OK.
+#
+# Link sysroot: same pattern as //src/cerise/echo:echo_server (the Fuchsia CC
+# toolchain can't embed --sysroot in toolchain link args, since the sysroot itself
+# contains libc++.so built by the toolchain — a cycle). Passed per-binary via
+# linkopts + additional_linker_inputs instead.
+cc_binary(
+    name = "netdev_probe",
+    srcs = ["main.cc"],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    # buffer_descriptor.h is #include'd repo-root-relative
+    # ("src/connectivity/lib/network-device/buffer_descriptor/buffer_descriptor.h"),
+    # matching how network-device's own driver code includes it.
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        # syslog/cpp's public headers transitively include
+        # <lib/syslog/cpp/logging_backend_fuchsia_globals.h>, which lives under the
+        # target's include/ dir exposed only via its own (non-propagating) copts. Add
+        # that dir on this consumer's include path — the same repo-root -I approach
+        # used above for buffer_descriptor.
+        "-Isrc/upstream/fuchsia/sdk/lib/syslog/cpp/include",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-lc++",
+        "-lm",
+        "-lzircon",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/network-device/buffer_descriptor:buffer_descriptor",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        # Structured operational logging via LogSink (FX_LOGS). Interest listener is
+        # disabled at init (this component has no async loop), so no dispatcher is
+        # needed at runtime. Boot-gate markers still go to serial via zx_debug_write.
+        "//src/upstream/fuchsia/sdk/lib/syslog/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_epitaph",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        # REAL fdio (not the "-lfdio" link-time stub, whose fdio_open3/
+        # fdio_service_connect unconditionally return an error — confirmed empirically:
+        # even opening "/svc" bare, a namespace entry known-good since LogSink uses it,
+        # fails the same way). Statically link the real vendored fdio implementation
+        # instead, the same way driver .so's already do (fdio was never wrapped in a
+        # real libfdio.so shared library — only this link-time placeholder .so exists, and
+        # plain executables have always dynamically linked it, meaning fdio_open3/
+        # fdio_service_connect have never actually worked for any non-driver Cerise
+        # executable before now). No libfdio.so staging needed for this target.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        # build/fidl/fidl.bzl's fidl_cpp rule alwayslink's every generated FIDL C++
+        # library's driver-transport translation unit (referencing fdf_channel_wait_async,
+        # fdf_token_register/receive/transfer, fdf_channel_cancel_wait, fdf_handle_close,
+        # fdf_dispatcher_get_options), regardless of whether the FIDL library declares any
+        # @transport("Driver") method. Those symbols are normally only provided by a real
+        # driver_runtime (not linked into a plain executable). A link-time
+        # --unresolved-symbols=ignore-all is NOT sufficient here: Cerise's ported musl
+        # dynamic linker does EAGER (not lazy) relocation at process load, so an unresolved
+        # symbol crashes relocation even though this component never calls it (confirmed
+        # empirically). fdf_link_stub provides real (functionally inert) definitions so
+        # relocation succeeds; see its own file comment for the full explanation.
+        "//src/cerise/stubs/fdf_link_stub",
+    ],
+)
+
+# Staged STRIPPED into the boot ZBI (statically-linked FIDL codegen makes these
+# binaries large unstripped — same rationale as driver_manager_rust/cerise_logsink).
+fuchsia_stripped(
+    name = "netdev_probe_stripped.fuchsia",
+    src = ":netdev_probe",
+)

@@ -1,0 +1,12 @@
+// netdev_probe leaf — CFv2 client proving the devfs client path (opens /dev/class/
+// network/... via the `dev` directory).
+{
+    program: {
+        runner: "elf",
+        binary: "bin/netdev_probe",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+    ],
+}

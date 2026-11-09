@@ -1,0 +1,48 @@
+# Copyright 2021 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+import("params.gni")
+
+library_headers("headers") {
+  headers = [ "lib/persistent-debuglog.h" ]
+  public_configs = [ ":config" ]
+}
+
+static_library("persistent-debuglog") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "persistent-debuglog.cc" ]
+  deps = [
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/ktl",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/lazy_init",
+  ]
+}
+
+config("config") {
+  visibility = [ ":*" ]
+  defines =
+      [ "TARGET_PERSISTENT_DEBUGLOG_SIZE=$target_persistent_debuglog_size" ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

@@ -1,0 +1,27 @@
+# Runtime bring-up: stub libfdio.so —, LINK-TIME ONLY.
+#
+# The runtime default and the sysroot's -lfdio are the REAL shared fdio
+# (//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so). This stub survives solely
+# as libfdf.so's dynamic_dep (cc_shared_library requires CcSharedLibraryInfo,
+# which the real cc_binary(-shared) cannot provide); it records the same
+# DT_NEEDED SONAME (libfdio.so), which binds to the staged REAL library at
+# runtime. It is never staged into any image.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fdio_stub",
+    srcs = ["fdio_stub.c"],
+    copts = ["-fno-stack-protector"],
+    tags = ["manual"],
+    alwayslink = True,
+)
+
+cc_shared_library(
+    name = "libfdio_so",
+    shared_lib_name = "libfdio.so",
+    tags = ["manual"],
+    user_link_flags = ["-nostdlib", "-Wl,-soname,libfdio.so"],
+    deps = [":fdio_stub"],
+)

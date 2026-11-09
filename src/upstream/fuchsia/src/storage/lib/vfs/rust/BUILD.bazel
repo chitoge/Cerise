@@ -1,0 +1,169 @@
+# Authored locally for Cerise.
+# Upstream builds vfs as a dylib for fuchsia; we build it as a rust_library (rlib)
+# which is sufficient for static linking into component_manager and namespace crates.
+# storage_trace is used without the "tracing" feature (noop implementation).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# fxfs/platform depends on "vfs_static" specifically (upstream
+# distinguishes a statically-linked variant from the dynamically-linked "vfs" for
+# perf reasons in GN/ELF terms - the +log dep and use_log feature it also carries
+# upstream are unreferenced by any cfg(feature=...) or `log::` call anywhere in this
+# vendored copy of vfs's source, confirmed via grep, so they're a no-op here). Since
+# our "vfs" target is already effectively statically-linked (a plain rust_library
+# rlib, per the comment above), this is a plain alias, not a second real target.
+# LEFT POINTING AT LEVEL-30 ":vfs" - unchanged. pseudo_fs also consumes this alias,
+# and pseudo_fs/elf_runner/component_manager (every already-proven boot marker this
+# whole session) depend on the level-30 shape. Do not retarget this.
+alias(
+    name = "vfs_static",
+    actual = ":vfs",
+    tags = ["manual"],
+)
+
+# fxfs/platform needs vfs's Directory/File/Node traits compiled
+# against fidl_fuchsia_io_head (MutableNodeAttributes' PENDING_ACCESS_TIME_UPDATE bit,
+# allocate(), enable_verity() - see fuchsia.io/BUILD.bazel's fuchsia.io_head comment
+# for why a parallel FIDL binding exists instead of bumping the shared fuchsia.io
+# target).
+#
+# DELIBERATELY built with FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS, NOT the PLATFORM set,
+# and this is final, not a placeholder. PLATFORM was tried and reverted: vfs's own
+# unmodified source gates its NEXT-removed deprecated surface (DeprecatedOpen,
+# NodeInfoDeprecated, DeprecatedClone, send_on_open_, deprecated_open) with
+# `any(at_least="PLATFORM", not(at_least="NEXT"))` - setting PLATFORM=true makes
+# that expression true again, re-including code that references these types. But
+# fidl_fuchsia_io_head was FIDL-compiled at literal `--available HEAD`, and fidlc's
+# own version ordering is HEAD > NEXT (confirmed via fidlc/lib/versioning_types.h),
+# so anything `@available(removed=NEXT)` with no `legacy=true` (DeprecatedOpen,
+# OnOpen, etc. - confirmed via direct fuchsia.io source read) is permanently absent
+# from that binding's codegen. No Rust cfg can resurrect a symbol fidlc never
+# generated - PLATFORM's OR-gate just makes vfs try to reference types that don't
+# exist, producing 26 real compile errors (DeprecatedClone/DeprecatedOpen/
+# NodeInfoDeprecated/SymlinkObject/send_on_open_/deprecated_open, all "not found").
+# A genuine PLATFORM-level FIDL binding (real Fuchsia's actual in-tree compile
+# target, which does keep this surface) would resolve it, but fidlc's own LEGACY
+# reinstatement mechanism is explicitly disabled here (RFC-0232), and no other
+# `--available` value produces a binding with both the HEAD additions and the
+# pre-NEXT removals simultaneously - confirmed by reading fidlc's CLI source, not
+# assumed. DECISION (explicit user call, not a unilateral shortcut): Cerise has
+# no legacy Fuchsia SDK clients needing the deprecated pre-API-27 Open protocol -
+# it's a from-scratch OS, not a real Fuchsia deployment serving old external
+# clients - so this target simply doesn't carry DeprecatedOpen/OnOpen support.
+# Plain HEAD flags make vfs's own existing gate correctly evaluate false (PLATFORM
+# unset, NEXT set), which excludes this code with ZERO source edits to vfs's
+# unmodified copy - the gate was already there, we just needed to stop force-enabling
+# it via an environment that couldn't actually satisfy what it promises.
+# FUCHSIA_API_LEVEL_PLATFORM_RUSTC_FLAGS remains defined in fuchsia_rust_api_level.bzl
+# for a future scenario where a real PLATFORM-level FIDL binding exists; do not
+# reuse it for vfs_platform/pseudo_fs_platform without vendoring that real binding
+# first, or this same 26-error class returns.
+# elf_runner (src/sys/lib/elf_runner/BUILD.bazel) already builds its OWN source with
+# FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS while linking level-30 fidl_fuchsia_io/vfs/
+# pseudo_fs directly - mixed-level linking across crate boundaries is an established,
+# already-working pattern in this tree, not something introduced here.
+# A SEPARATE target (not a retarget of ":vfs"/"vfs_static") so pseudo_fs/elf_runner/
+# component_manager are untouched - zero regression risk by construction. Kept the
+# "_platform" name (not reverted to "_head") since fxfs/platform's own BUILD.bazel
+# already references it under this name, and the name still accurately describes
+# its purpose (fxfs/platform's dependency), even though its rustc_flags are HEAD's.
+rust_library(
+    name = "vfs_platform",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "vfs",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    # Unmodified source says `use fidl_fuchsia_io as fio;` - alias the HEAD-level
+    # binding under that name for this target only (rules_rust `aliases`), rather
+    # than editing 15+ unmodified source files or renaming the shared fuchsia.io_head
+    # target globally (which fxfs/crypto, fxfs core, fxfs/platform also depend on
+    # under its real name).
+    aliases = {
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head": "fidl_fuchsia_io",
+    },
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust/macros:vfs_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/trace:storage_trace",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust/name:name",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:anyhow",
+        "@crates//:bitflags",
+        "@crates//:pin-project",
+        "@crates//:byteorder",
+        "@crates//:futures",
+        "@crates//:itertools",
+        "@crates//:libc",
+        "@crates//:slab",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_library(
+    name = "vfs",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "vfs",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust/macros:vfs_macros",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/trace:storage_trace",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust/name:name",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:anyhow",
+        "@crates//:bitflags",
+        "@crates//:pin-project",
+        "@crates//:byteorder",
+        "@crates//:futures",
+        "@crates//:itertools",
+        "@crates//:libc",
+        "@crates//:slab",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+    ],
+)
+
+# tests excluded (host) - ON-TARGET-ONLY, documented reason:
+# The Cerise host-zx shim (//src/cerise/lib/zx_host) unblocks crates whose zx
+# use is Channel/Socket/Event/Status/cprng-class. vfs is NOT one of them: its
+# File/vmo code creates zx::Vmo + zx::Stream and, crucially, hands VMOs *across
+# the fuchsia.io fidl boundary* as generic handles (GetBackingMemory etc.),
+# performing zx::Vmo <-> fidl-Handle conversions. On host, fidl's Handle IS
+# fuchsia-async's emulated handle, so a standalone shim Vmo can't satisfy those
+# conversions or share the one handle table - the Vmo (and Stream) emulation
+# would have to live *inside* fuchsia-async's emulated backend
+# (src/lib/fuchsia-async/src/handle/emulated/), a full VMO+Stream userspace
+# implementation added to a shared upstream crate. That is a large emulated-
+# backend extension (not test wiring) and is deferred; vfs's own tests belong
+# to a future on-target (zircon-test) product until then. (The real zx crate
+# still can't compile off-Fuchsia: zx-sys gates its syscall extern block on
+# cfg(target_os="fuchsia").)
+
+# A synchronous per-operation zx_debug_write can flood the serial/debuglog and
+# starve driver and network bring-up without producing a build failure or panic.
+# Since this crate's real unit tests cannot run as host tests (see the comment
+# above), use a static source check to keep direct debug writes off VFS hot paths.
+sh_test(
+    name = "no_debug_write_on_hot_path_test",
+    size = "small",
+    srcs = ["no_debug_write_on_hot_path_test.sh"],
+    data = glob(["src/**/*.rs"]),
+)

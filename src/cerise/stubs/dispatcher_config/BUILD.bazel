@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "dispatcher_config",
+    srcs = ["src/lib.rs"],
+    crate_name = "dispatcher_config",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:anyhow",
+    ],
+)

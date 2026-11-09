@@ -1,0 +1,37 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "cerise.vm",
+    srcs = ["vm.fidl"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "cerise.vm_rs",
+    library = ":cerise.vm",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_cerise_vm",
+    srcs = [":cerise.vm_rs"],
+    crate_name = "fidl_cerise_vm",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

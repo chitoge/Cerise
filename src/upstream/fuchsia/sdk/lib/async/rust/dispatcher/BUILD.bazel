@@ -1,0 +1,24 @@
+# Vendored from upstream (faithful port). libasync_dispatcher: Rust async task
+# helpers over the C async runtime. The futures/fuchsia-async test usage is
+# #[cfg(test)]-gated, so the non-test rlib does not need fuchsia-async.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "dispatcher",
+    srcs = [
+        "src/lib.rs",
+        "src/task.rs",
+    ],
+    crate_name = "libasync_dispatcher",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async/rust/sys:sys",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:futures",
+    ],
+)

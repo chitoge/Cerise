@@ -1,0 +1,101 @@
+// Copyright 2023 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
+
+#ifndef ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_PER_CPU_STATE_H_
+#define ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_PER_CPU_STATE_H_
+#include <lib/percpu_writer/buffer.h>
+
+#include <kernel/lockdep.h>
+#include <kernel/mutex.h>
+#include <object/io_buffer_dispatcher.h>
+#include <vm/pinned_vm_object.h>
+
+// These types are internal implementation details to the thread sampler.
+namespace sampler::internal {
+
+// When we start sampling, we assign and pin a VmObject buffer to each CPU for it to write on. We
+// also assign a per cpu timer. When the timer triggers, we mark a thread to write a sample to the
+// buffer. When the thread will at some point in the future when it is safe to do so, write a
+// sample.
+//
+// This creates the main problem: how do we safely clean up when we stop? If we are handling a stop
+// request on one core, it's not safe to immediately clean up the buffers since another core could
+// be writing a sample or could be scheduled to write a sample. To do this safely, we have a three
+// phase shutdown:
+//
+// 1) Disable new writes and new timers
+// 2) Cancel existing timers and wait for any lingering timers to clear out
+// 3) Wait for any in progress writes to stop
+//
+// Now it's safe to destroy our state.
+//
+// So then, each cpu state also contains an atomic variable with 2 bits: a writes enabled bit, and a
+// timer pending bit.
+//
+// The timer callback receives a pointer to the PerCpuState and the timer pending bit ensures that
+// the per cpu state lives longer than the timer callback.
+//
+// Now, when we want to clean up, on each cpu, we reset the writes enabled bit, knowing that no new
+// timers can start. We then wait for the pending timer bit to reset on each cpu. We also wait for
+// any active references to the buffers (tracked via ref count in ThreadSampler) to be released.
+// Only then do we know that no additional writes will occur.
+class PerCpuState {
+ public:
+  constexpr PerCpuState() = default;
+
+  zx::result<> SetUp(const zx_sampler_config_t& config, cpu_num_t cpu_number);
+
+  void EnableWrites();
+  void DisableWrites();
+
+  // True if the kWritesEnabled bit is set
+  bool WritesEnabled() const;
+
+  // True if the kPendingTimer bit is set
+  bool PendingTimer() const;
+
+  // Atomically set a timer if writes are enabled. When the timer goes off, whatever thread is
+  // currently active will be signaled to be sampled.
+  void SetTimer();
+
+  // True if the per cpu timer was canceled before it was scheduled else false
+  bool CancelTimer();
+
+  // Reserve space in the assigned pinned memory. The AllocatedRecord will ensure the underlying
+  // buffers live long enough to write to.
+  zx::result<percpu_writer::Buffer::Reservation> Reserve(uint64_t header) {
+    return writer.Reserve(header);
+  }
+
+  // Reads from the underlying SpscBuffer.
+  template <CopyOutFunction CopyFunc>
+  zx::result<uint32_t> Read(CopyFunc copy_fn, uint32_t len) {
+    return writer.Read(copy_fn, len);
+  }
+
+  size_t BufferSize() const { return writer.Size(); }
+  void Drain() { writer.Drain(); }
+
+ private:
+  percpu_writer::Buffer writer;
+  Timer timer;
+  // Cache the cpu we're intended for so that we can ensure we're only accessed by that specific
+  // CPU.
+  cpu_num_t cpu_number_{INVALID_CPU};
+
+  // The interval on which sampling will occur.
+  zx_duration_mono_t period_{0};
+
+  // Bit-wise AND with |write_state_| to read if a sample is pending via the timer
+  static constexpr uint64_t kPendingTimer = 1ul << 0;
+
+  // Bit-wise AND with |write_state_| to read if writes are enabled
+  static constexpr uint64_t kWritesEnabled = 1ul << 1;
+  ktl::atomic<uint64_t> write_state_{0};
+};
+
+}  // namespace sampler::internal
+#endif  // ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_PER_CPU_STATE_H_

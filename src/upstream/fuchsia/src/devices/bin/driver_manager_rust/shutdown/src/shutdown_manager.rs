@@ -1,0 +1,458 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use crate::node_remover::NodeRemover;
+use fidl::endpoints::ControlHandle;
+use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_sync};
+use fuchsia_component::server::{FidlService, ServiceFs, ServiceObjLocal};
+use fuchsia_async::TimeoutExt;
+use futures::channel::oneshot;
+use futures::prelude::*;
+use log::{error, info, warn};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+use {
+    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_kernel as fkernel,
+    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_system_state as fsystem_state,
+    fuchsia_async as fasync,
+};
+
+const SYSTEM_STATE_TIMEOUT: Duration = Duration::from_secs(2);
+const LOG_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+enum State {
+    Running,
+    PackageStopping,
+    PackageStopped,
+    BootStopping,
+    Stopped,
+}
+
+// Taken from //zircon/system/public/zircon/syscalls/system.h
+const ZX_SYSTEM_POWERCTL_REBOOT: u32 = 5;
+const ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER: u32 = 6;
+const ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY: u32 = 7;
+const ZX_SYSTEM_POWERCTL_SHUTDOWN: u32 = 8;
+const ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT: u32 = 9;
+
+struct LifecycleServer {
+    on_stop: RefCell<Option<oneshot::Sender<oneshot::Sender<zx::Status>>>>,
+    exit_process: bool,
+}
+
+impl LifecycleServer {
+    fn new(
+        on_stop: oneshot::Sender<oneshot::Sender<zx::Status>>,
+        exit_process: bool,
+    ) -> Self {
+        Self { on_stop: RefCell::new(Some(on_stop)), exit_process }
+    }
+
+    async fn serve(
+        self: Rc<Self>,
+        mut stream: flifecycle::LifecycleRequestStream,
+    ) -> Result<(), fidl::Error> {
+        if let Some(request) = stream.try_next().await? {
+            match request {
+                flifecycle::LifecycleRequest::Stop { control_handle } => {
+                    let (tx, rx) = oneshot::channel();
+                    let on_stop = self.on_stop.borrow_mut().take();
+                    if let Some(on_stop) = on_stop {
+                        let _ = on_stop.send(tx);
+                        let status = rx.await.unwrap_or(zx::Status::INTERNAL);
+                        control_handle.shutdown_with_epitaph(status);
+                        if self.exit_process {
+                            if status != zx::Status::OK {
+                                error!("Terminal platform transition failed: {}", status);
+                            }
+                            std::process::exit(if status == zx::Status::OK { 0 } else { 1 });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+struct ShutdownManagerState {
+    state: State,
+    received_boot_shutdown_signal: bool,
+    package_shutdown_complete_callbacks: Vec<oneshot::Sender<zx::Status>>,
+    boot_shutdown_complete_callbacks: Vec<oneshot::Sender<zx::Status>>,
+}
+
+pub struct ShutdownManager {
+    node_remover: Rc<dyn NodeRemover>,
+    power_resource: Option<zx::Resource>,
+    mexec_resource: Option<zx::Resource>,
+    log_flush: Option<fdiagnostics::LogFlusherProxy>,
+    internal_state: RefCell<ShutdownManagerState>,
+    scope: fasync::Scope,
+}
+
+fn get_power_resource() -> Result<zx::Resource, anyhow::Error> {
+    let client = connect_to_protocol_sync::<fkernel::PowerResourceMarker>()?;
+    let resource = client.get(zx::MonotonicInstant::INFINITE)?;
+    Ok(resource)
+}
+
+fn get_mexec_resource() -> Result<zx::Resource, anyhow::Error> {
+    let client = connect_to_protocol_sync::<fkernel::MexecResourceMarker>()?;
+    let resource = client.get(zx::MonotonicInstant::INFINITE)?;
+    Ok(resource)
+}
+
+async fn get_system_power_state() -> Result<fsystem_state::SystemPowerState, zx::Status> {
+    let client = match connect_to_protocol::<fsystem_state::SystemStateTransitionMarker>() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to connect to SystemStateTransition: {}", e);
+            return Err(zx::Status::UNAVAILABLE);
+        }
+    };
+
+    match client
+        .get_termination_system_state()
+        .map(Some)
+        .on_timeout(SYSTEM_STATE_TIMEOUT, || None)
+        .await
+    {
+        Some(Ok(state)) => Ok(state),
+        Some(Err(e)) => {
+            error!("Failed to get termination system state: {}", e);
+            Err(zx::Status::INTERNAL)
+        }
+        None => {
+            error!("Timed out getting termination system state");
+            Err(zx::Status::TIMED_OUT)
+        }
+    }
+}
+
+impl ShutdownManager {
+    pub fn new(node_remover: Rc<dyn NodeRemover>) -> Rc<Self> {
+        let power_resource = get_power_resource()
+            .inspect_err(|e| info!("Terminal power capability unavailable: {}", e))
+            .ok();
+        let mexec_resource = get_mexec_resource()
+            .inspect_err(|e| info!("Terminal mexec capability unavailable: {}", e))
+            .ok();
+        let log_flush = connect_to_protocol::<fdiagnostics::LogFlusherMarker>()
+            .inspect_err(|e| error!("Failed to connect to LogFlusher: {}", e))
+            .ok();
+
+        let shutdown_manager = Rc::new(Self {
+            node_remover: node_remover.clone(),
+            internal_state: RefCell::new(ShutdownManagerState {
+                state: State::Running,
+                received_boot_shutdown_signal: false,
+                package_shutdown_complete_callbacks: Vec::new(),
+                boot_shutdown_complete_callbacks: Vec::new(),
+            }),
+            power_resource,
+            mexec_resource,
+            log_flush,
+            scope: fasync::Scope::new_with_name("shutdown_manager"),
+        });
+
+        shutdown_manager
+    }
+
+    pub fn publish<'a>(self: &Rc<Self>, fs: &mut ServiceFs<ServiceObjLocal<'a, ()>>) {
+        let self_clone = self.clone();
+        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        self.scope.spawn_local(async move {
+            if let Ok(sender) = rx.await {
+                let status = self_clone.signal_package_shutdown().await;
+                let _ = sender.send(status);
+            }
+        });
+        let devfs_with_pkg_lifecycle = Rc::new(LifecycleServer::new(tx, false));
+
+        let scope = self.scope.as_handle().clone();
+        fs.dir("svc").add_service_at(
+            "fuchsia.device.fs.with.pkg.lifecycle.Lifecycle",
+            FidlService::from(move |stream: flifecycle::LifecycleRequestStream| {
+                let devfs_with_pkg_lifecycle = devfs_with_pkg_lifecycle.clone();
+                scope.spawn_local(async move {
+                    devfs_with_pkg_lifecycle.serve(stream).await.unwrap_or_else(|e| {
+                        error!("Failed to serve devfs with pkg lifecycle: {}", e)
+                    });
+                });
+            }),
+        );
+
+        let self_clone = self.clone();
+        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        self.scope.spawn_local(async move {
+            if let Ok(sender) = rx.await {
+                let status = self_clone.signal_boot_shutdown().await;
+                let _ = sender.send(status);
+            }
+        });
+        let devfs_lifecycle = Rc::new(LifecycleServer::new(tx, false));
+
+        let scope = self.scope.as_handle().clone();
+        fs.dir("svc").add_service_at(
+            "fuchsia.device.fs.lifecycle.Lifecycle",
+            FidlService::from(move |stream: flifecycle::LifecycleRequestStream| {
+                let devfs_lifecycle = devfs_lifecycle.clone();
+                scope.spawn_local(async move {
+                    devfs_lifecycle
+                        .serve(stream)
+                        .await
+                        .unwrap_or_else(|e| error!("Failed to serve devfs lifecycle: {}", e));
+                });
+            }),
+        );
+
+        // Bind to process lifecycle
+        let self_clone = self.clone();
+        let (tx, rx) = oneshot::channel::<oneshot::Sender<zx::Status>>();
+        self.scope.spawn_local(async move {
+            if let Ok(sender) = rx.await {
+                let status = self_clone.signal_boot_shutdown().await;
+                let _ = sender.send(status);
+            }
+        });
+        let lifecycle_server = Rc::new(LifecycleServer::new(tx, true));
+
+        if let Some(handle) =
+            fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleType::Lifecycle.into())
+        {
+            let channel = zx::Channel::from(handle);
+            let server_end =
+                fidl::endpoints::ServerEnd::<flifecycle::LifecycleMarker>::new(channel);
+            let stream = server_end.into_stream();
+
+            let self_clone = self.clone();
+            self.scope.spawn_local(async move {
+                if let Err(e) = lifecycle_server.serve(stream).await {
+                    error!("Lifecycle connection got unbound: {}", e);
+                    // Per C++ implementation, we should shut down if this happens.
+                    let _ = self_clone.signal_boot_shutdown().await;
+                }
+            });
+        } else {
+            info!(concat!(
+                "No valid handle found for lifecycle events, assuming test environment ",
+                "and continuing"
+            ));
+        }
+    }
+
+    async fn on_package_shutdown_complete(&self, removal_status: zx::Status) {
+        if removal_status == zx::Status::OK {
+            info!("Package shutdown complete");
+        } else {
+            error!("Package driver shutdown failed: {}", removal_status);
+        }
+        let received_boot_shutdown_signal = {
+            let mut internal_state = self.internal_state.borrow_mut();
+            assert_eq!(internal_state.state, State::PackageStopping);
+            internal_state.state = State::PackageStopped;
+
+            for sender in internal_state.package_shutdown_complete_callbacks.drain(..) {
+                let _ = sender.send(removal_status);
+            }
+
+            if internal_state.received_boot_shutdown_signal {
+                internal_state.state = State::BootStopping;
+                true
+            } else {
+                false
+            }
+        };
+
+        if received_boot_shutdown_signal {
+            let removal_status = self.node_remover.shutdown_all_drivers().await;
+            self.on_boot_shutdown_complete(removal_status).await;
+        }
+    }
+
+    async fn on_boot_shutdown_complete(&self, removal_status: zx::Status) {
+        {
+            let mut internal_state = self.internal_state.borrow_mut();
+            assert_eq!(internal_state.state, State::BootStopping);
+            internal_state.state = State::Stopped;
+        }
+        if removal_status != zx::Status::OK {
+            error!(
+                "Driver teardown failed before the terminal platform transition: {}",
+                removal_status
+            );
+        }
+        // A successful terminal platform call does not return. If it does return,
+        // its status is the authoritative lifecycle failure.
+        let status = self.system_execute().await;
+        let mut internal_state = self.internal_state.borrow_mut();
+        for sender in internal_state.boot_shutdown_complete_callbacks.drain(..) {
+            let _ = sender.send(status);
+        }
+    }
+
+    async fn signal_package_shutdown(&self) -> zx::Status {
+        // TODO: switch logs to debuglog
+
+        // We explicitly drop this before going into the await.
+        #![allow(clippy::await_holding_refcell_ref)]
+        let mut internal_state = self.internal_state.borrow_mut();
+
+        match internal_state.state {
+            State::Running | State::PackageStopping => {
+                let (tx, rx) = oneshot::channel();
+                internal_state.package_shutdown_complete_callbacks.push(tx);
+                if internal_state.state == State::Running {
+                    internal_state.state = State::PackageStopping;
+                    drop(internal_state);
+                    let status = self.node_remover.shutdown_pkg_drivers().await;
+                    self.on_package_shutdown_complete(status).await;
+                } else {
+                    drop(internal_state);
+                }
+                rx.await.unwrap_or(zx::Status::INTERNAL)
+            }
+            _ => zx::Status::OK,
+        }
+    }
+
+    async fn signal_boot_shutdown(&self) -> zx::Status {
+        // We explicitly drop this before going into the await.
+        #![allow(clippy::await_holding_refcell_ref)]
+        let mut internal_state = self.internal_state.borrow_mut();
+
+        if internal_state.state == State::Stopped {
+            return zx::Status::OK;
+        }
+
+        let (tx, rx) = oneshot::channel();
+        internal_state.boot_shutdown_complete_callbacks.push(tx);
+
+        internal_state.received_boot_shutdown_signal = true;
+        let state = internal_state.state;
+        match state {
+            State::Running | State::PackageStopped => {
+                internal_state.state = State::BootStopping;
+                drop(internal_state);
+
+                let status = self.node_remover.shutdown_all_drivers().await;
+                self.on_boot_shutdown_complete(status).await;
+            }
+            State::BootStopping => {
+                error!("SignalBootShutdown() called during shutdown.");
+            }
+            _ => {}
+        }
+        rx.await.unwrap_or(zx::Status::INTERNAL)
+    }
+
+    async fn system_execute(&self) -> zx::Status {
+        let shutdown_system_state = match get_system_power_state().await {
+            Ok(state) => state,
+            Err(status) => return status,
+        };
+        info!("Suspend fallback with flags {:?}", shutdown_system_state);
+        let mut what = "zx_system_powerctl";
+
+        let (Some(mexec_resource), Some(power_resource)) =
+            (&self.mexec_resource, &self.power_resource)
+        else {
+            error!("Terminal platform capability unavailable: missing Power/mexec resources");
+            return zx::Status::NOT_SUPPORTED;
+        };
+
+        info!("Flushing logs.");
+        if let Some(log_flush) = &self.log_flush {
+            match log_flush
+                .wait_until_flushed()
+                .map(Some)
+                .on_timeout(LOG_FLUSH_TIMEOUT, || None)
+                .await
+            {
+                Some(Ok(())) => {}
+                Some(Err(e)) => warn!("Failed to flush logs: {}", e),
+                None => warn!("Timed out flushing logs"),
+            }
+        }
+
+        info!("Executing powerctl.");
+        let status = match shutdown_system_state {
+            fsystem_state::SystemPowerState::Reboot => zx::Status::from_raw(unsafe {
+                zx::sys::zx_system_powerctl(
+                    power_resource.raw_handle(),
+                    ZX_SYSTEM_POWERCTL_REBOOT,
+                    std::ptr::null(),
+                )
+            }),
+            fsystem_state::SystemPowerState::RebootBootloader => zx::Status::from_raw(unsafe {
+                zx::sys::zx_system_powerctl(
+                    power_resource.raw_handle(),
+                    ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER,
+                    std::ptr::null(),
+                )
+            }),
+            fsystem_state::SystemPowerState::RebootRecovery => zx::Status::from_raw(unsafe {
+                zx::sys::zx_system_powerctl(
+                    power_resource.raw_handle(),
+                    ZX_SYSTEM_POWERCTL_REBOOT_RECOVERY,
+                    std::ptr::null(),
+                )
+            }),
+            fsystem_state::SystemPowerState::RebootKernelInitiated => {
+                let status = zx::Status::from_raw(unsafe {
+                    zx::sys::zx_system_powerctl(
+                        power_resource.raw_handle(),
+                        ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT,
+                        std::ptr::null(),
+                    )
+                });
+                if status == zx::Status::OK {
+                    // sleep indefinitely
+                    loop {
+                        fasync::Timer::new(Duration::from_secs(5 * 60)).await;
+                        println!(
+                            "driver_manager: unexpectedly still running after successful reboot syscall"
+                        );
+                    }
+                }
+                status
+            }
+            fsystem_state::SystemPowerState::Poweroff => zx::Status::from_raw(unsafe {
+                zx::sys::zx_system_powerctl(
+                    power_resource.raw_handle(),
+                    ZX_SYSTEM_POWERCTL_SHUTDOWN,
+                    std::ptr::null(),
+                )
+            }),
+
+            fsystem_state::SystemPowerState::Mexec => {
+                info!("About to mexec...");
+                match mexec_boot::mexec_boot(zx::Unowned::new(mexec_resource)) {
+                    Ok(()) => zx::Status::OK,
+                    Err(e) => {
+                        error!("mexec_boot failed: {}", e);
+                        what = "zx_system_mexec";
+                        zx::Status::INTERNAL
+                    }
+                }
+            }
+            fsystem_state::SystemPowerState::FullyOn
+            | fsystem_state::SystemPowerState::SuspendRam => {
+                error!("Unexpected shutdown state requested: {:?}", shutdown_system_state);
+                zx::Status::INVALID_ARGS
+            }
+        };
+
+        if status == zx::Status::OK {
+            error!("{} returned success while the system is still running", what);
+            return zx::Status::INTERNAL;
+        }
+
+        error!("{} failed: {}", what, status);
+        status
+    }
+}

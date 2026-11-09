@@ -1,0 +1,13 @@
+// Verifier component ("test root" behavior): uses cerise.echo.Echo (routed by
+// the realm from the echo_server child) plus LogSink. It calls EchoValue and
+// emits the CERISE-COMPONENT-TEST-OK verdict on success.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/echo_check",
+    },
+    use: [
+        { protocol: "cerise.echo.Echo" },
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

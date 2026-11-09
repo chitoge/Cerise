@@ -1,0 +1,9 @@
+# Was aliased to a previously-undisclosed compatibility stub (src/cerise/stubs/bssl-crypto,
+# a fake Sha256 backed by pure-Rust sha2, never registered in the allowlist).
+# Found and corrected during Fxfs Phase 1 — now points at the real vendored
+# BoringSSL bssl-crypto crate.
+alias(
+    name = "bssl-crypto",
+    actual = "//src/upstream/fuchsia/third_party/boringssl/src/rust/bssl-crypto:bssl-crypto",
+    visibility = ["//visibility:public"],
+)

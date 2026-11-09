@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Positive guest-entry (VMLAUNCH) test, kept as its own kernel-harness suite so
+# it links into the utest kernel only when the hypervisor is enabled. It depends
+# on the hypervisor Guest/Vcpu classes (from //zircon/kernel/arch/x86/hypervisor
+# and //zircon/kernel/hypervisor), which the utest kernel already links under
+# //config:hypervisor_enabled. alwayslink keeps the UNITTEST_START_TESTCASE
+# registration in the kernel ELF.
+cc_library(
+    name = "hypervisor_enter_unittests",
+    srcs = [
+        "guest_enter_test.cc",
+        "hardware_breakpoint_test.cc",
+    ],
+    testonly = True,
+    alwayslink = True,
+    deps = [
+        "//:kernel_cc_headers",
+        # For make_committed_pager_vmo (pager-backed golden -> unidirectional
+        # clone, the shape SNAPSHOT_MODIFIED incremental checkpoint uses).
+        "//zircon/kernel/vm/unittests:vm_test_helper",
+        # For vmexit_priv.h: the snapshot-restore validators are exercised
+        # directly against synthetic machines, not only through the CPU.
+        "//zircon/kernel/arch/x86/hypervisor:hypervisor_x86_test_headers",
+    ],
+)

@@ -1,0 +1,11 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "zx-status-ext",
+    srcs = ["src/lib.rs"],
+    crate_name = "zx_status_ext",
+    edition = "2024",
+    deps = ["//src/upstream/fuchsia/sdk/rust/zx-status:zx-status"],
+)

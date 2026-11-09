@@ -1,0 +1,129 @@
+# Bazel integration for the network-device DFv2 driver ("packet movement"
+# prerequisite — netdev multiplexer sitting between any NIC driver and (future) netstack3).
+#
+# IMPORTANT — DFv2 NATIVE (fdf::DriverBase2), colocated:
+#   Packaged as a DFv2 native .so (exports __fuchsia_driver_registration__). Upstream's
+#   meta/network-device.cml sets program.colocate = "true" — driver_manager loads this
+#   driver into the SAME driver_host process as its parent (virtio-net) instead of
+#   spawning a 2nd driver_host. The realm .cml emits the matching
+#   program.info "colocate" Dictionary entry.
+#
+# BIND — plain (non-composite) direct bind:
+#   meta/network_device.bind is vendored byte-for-byte from upstream (no adaptation
+#   needed): matches fuchsia.BIND_PROTOCOL.IMPL OR the auto-synthesized
+#   fuchsia.hardware.network.driver.Service==DriverTransport bind property that
+#   driver-index attaches from virtio-net's FIDL service offer (same mechanism already
+#   proven for fuchsia.hardware.pci.Service in the PCI composite-bind work).
+#
+# NO fuchsia.driver.compat — network-device uses devfs directly (sdk/lib/driver/devfs/cpp)
+# to publish its discovery child node, unlike virtio-net's compat_server/device_server path.
+#
+# ALWAYSLINK POLICY (mirrors virtio-net/pci_probe/bus-pci):
+#   cc_binary(-shared) only whole-archives DIRECT alwayslink deps (or those reachable
+#   through an intermediate cc_library that is itself linked in, matching virtio-net's
+#   proven-working netdevice_lib pattern). All FIDL cc_library targets containing
+#   out-of-line wire/natural symbols are listed as deps of :network_device_lib below.
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# Bind bytecode target — plain (non-composite) bind.
+driver_bind_rules(
+    name = "network-device-bind",
+    rules = "meta/network_device.bind",
+    output_name = "network_device_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.network:fuchsia.network.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_bindlib_cpp_gen",
+    ],
+    tags = ["manual"],
+)
+
+# FIDL + other alwayslink deps for the .so (all symbols embedded into the binary; they
+# are not provided by any DFv2 runtime .so the linker would expect UND). No
+# fuchsia.driver.compat / fuchsia.mem here — those are PCI/compat-specific (virtio-net
+# only); network-device doesn't touch PCI or the compat shim.
+NETWORK_DEVICE_ALWAYSLINK_DEPS = [
+    # fuchsia.hardware.network.driver (NetworkDeviceImpl/NetworkPort/MacAddr protocols).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
+    # fuchsia.hardware.network (Device protocol, PortStatus/FrameType wire types).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+    # fuchsia.driver.framework (DriverStartArgs, NodeAddArgs, DevfsAddArgs, etc.).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    # fuchsia.device.fs (ConnectionType — devfs_args.connector_supports()).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp",
+    # fuchsia.net (MacAddress — mac/mac_interface.cc).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+    # fuchsia.logger (syslog / structured log chain, via driver/logging/cpp).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    # fuchsia.diagnostics.types (via fuchsia.logger -> fuchsia.diagnostics chain).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+    # fuchsia.component.decl (fdf::Namespace + capabilities).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+    # fuchsia.io (outgoing dir / devfs connector plumbing).
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+]
+
+# network_device_lib — the implementation (compiled as a library so cc_binary can link
+# it as alwayslink). Matches upstream source_set("src") in BUILD.gn.
+cc_library(
+    name = "network_device_lib",
+    srcs = [
+        "network_device.cc",
+    ],
+    hdrs = [
+        "network_device.h",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",  # HEAD API level (DriverBase2)
+    ],
+    tags = ["manual"],
+    deps = NETWORK_DEVICE_ALWAYSLINK_DEPS + [
+        # device_interface (packet multiplexer) — the DRIVER variant.
+        "//src/upstream/fuchsia/src/connectivity/network/drivers/network-device/device:device_driver",
+        # DriverBase2 + FUCHSIA_DRIVER_EXPORT2.
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        # driver_devfs::Connector (devfs child node export — no compat here).
+        "//src/upstream/fuchsia/sdk/lib/driver/devfs/cpp:cpp",
+        # fdf::Logger::SetGlobalInstance etc.
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        # fbl::AllocChecker, fbl::AutoLock.
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+    ],
+)
+
+# network-device.so — the final driver .so loaded by driver_host_dfv2 via dlopen.
+# Colocated with virtio-net (same driver_host process) — see the realm program.info.
+#
+# Linker recipe (mirrors virtio-net/pci_probe/bus-pci policy):
+#   - -shared: dynamic shared object
+#   - --allow-shlib-undefined: FDF/libc/libc++/vDSO symbols are UND (provided at runtime)
+#   - version script: export ONLY __fuchsia_driver_registration__ (keeps dynsym tiny)
+#   - -u __fuchsia_driver_registration__: GC root so linker doesn't strip it
+#   - alwayslink via :network_device_lib (all FIDL wire/natural out-of-line symbols embedded)
+cc_binary(
+    name = "network-device.so",
+    additional_linker_inputs = ["network_device.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,network-device.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # GC-root: keep the registration symbol even without an internal reference.
+        "-Wl,-u,__fuchsia_driver_registration__",
+        # Version script: export ONLY __fuchsia_driver_registration__; hide the rest.
+        "-Wl,--version-script=$(location network_device.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":network_device_lib",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

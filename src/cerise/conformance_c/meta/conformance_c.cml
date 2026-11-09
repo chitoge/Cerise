@@ -1,0 +1,14 @@
+// conformance_c leaf — plain-C runtime-conformance probe. Same shape
+// as posix_probe: default-sysroot ELF; elf_runner's StreamSink default installs
+// PA_FD(1)/(2) LogSink-bound sockets so the final printf marker flows to the
+// Archivist. All pass/fail markers are raw serial (zx_debug_write), so the boot
+// gate does not depend on the log pipeline.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/conformance_c",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

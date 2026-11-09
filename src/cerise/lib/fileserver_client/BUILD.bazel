@@ -1,0 +1,133 @@
+# cerise-fileserver-client: the client half of the Cerise file server's gRPC
+# contract. The tree has had a server since the gRPC stack landed and no client
+# in any language except the hand-rolled HTTP/2 speaker in the validation
+# harness; this is the Rust one, so a component on the target can be the side
+# that asks.
+#
+# It builds for the host as well as the target, and everything except the
+# connect helper is triple-independent — the `hyper`/`tonic` stack in the
+# isolated @grpc universe is the same on both.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_fileserver_client",
+    srcs = [
+        "src/atomic_file.rs",
+        "src/lib.rs",
+        "src/transport.rs",
+        "src/worker.rs",
+        "src/worker_tests.rs",
+    ],
+    crate_name = "cerise_fileserver_client",
+    edition = "2021",
+    deps = [
+        "//src/cerise/lib/range_reader:cerise_range_reader",
+        "//src/cerise/fileserver/proto:fileserver_rust_proto",
+        # Everything here is the isolated @grpc universe, which is the only one
+        # `tonic` and `hyper` exist in. Nothing from @crates appears: no generic
+        # bound in this crate crosses the universe seam, which is the rule
+        # cerise-hyper-rt's header states and the reason that adapter is safe.
+        "@grpc//:bytes",
+        "@grpc//:futures",
+        "@grpc//:futures-timer",
+        "@grpc//:http",
+        "@grpc//:http-body",
+        "@grpc//:hyper",
+        "@grpc//:tonic",
+        "@grpc//:tower",
+        # Pure digest verification only; no async or transport type crosses
+        # from this dependency into the isolated @grpc futures universe.
+        "@crates//:sha2",
+    ],
+)
+
+# Host unit tests, in two layers.
+#
+# `RangeAssembler`: odd chunk boundaries, forward gaps, increasing overlaps,
+# reordering, whole-stream shift, truncation and overrun. Decisions about a byte
+# stream, needing nothing but the byte stream.
+#
+# The driver, against a fake `tower` service standing where the HTTP/2
+# connection would be: the `ReadRequest` the client actually serialises (path,
+# offset, length), a zero-length read sending nothing, split replies, a
+# truncated reply, a reply shifted relative to the request, and a gRPC status
+# arriving partway through a stream. That layer exists because the assembler
+# tests and any consumer-side fake both check a reply against the client's *own*
+# idea of what it asked for — so a client that asks for the wrong thing and then
+# checks the answer against the wrong thing passes both, and only the wire can
+# say otherwise.
+rust_test(
+    name = "fileserver_client_test",
+    crate = ":cerise_fileserver_client",
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@grpc//:http-body-util",
+        "@grpc//:prost",
+    ],
+)
+
+# Opening a connection on the target: the one piece that cannot be
+# triple-independent, because it names `fuchsia_async::net` and the fuchsia_async
+# hyper adapter. Kept as its own target rather than as a `select()`ed module of
+# the library above, so the library stays host-buildable and host-tested with no
+# conditional compilation in it at all.
+rust_library(
+    name = "cerise_fileserver_connect",
+    srcs = ["src/connect.rs"],
+    crate_name = "cerise_fileserver_connect",
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":cerise_fileserver_client",
+        "//src/cerise/fileserver/proto:fileserver_rust_proto",
+        "//src/cerise/lib/hyper_rt:cerise_hyper_rt",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@grpc//:hyper",
+        "@grpc//:tonic",
+    ],
+)
+
+# The proof that the whole client path links for the target.
+#
+# `//src/cerise/lib/hyper_rt:hyper_client_compile_probe` already proves that
+# `hyper::client::conn::http2::handshake` type-checks over the fuchsia_async
+# adapter. That is a strictly weaker claim than this one: it never instantiates
+# `tonic::client::Grpc`, never monomorphizes the generated `FileServerClient`,
+# and never names `tonic::body::BoxBody` — so it says nothing about whether
+# tonic's *client* codegen (a different module from the server's, behind a
+# different feature) builds for this triple, nor whether the transport-free
+# tonic in the @grpc universe carries the client machinery at all.
+#
+# This binary calls the real entry points. Building it is the answer.
+rust_binary(
+    name = "fileserver_client_link_probe",
+    srcs = ["src/link_probe.rs"],
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    crate_name = "fileserver_client_link_probe",
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":cerise_fileserver_client",
+        ":cerise_fileserver_connect",
+        "//src/cerise/lib/range_reader:cerise_range_reader",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@grpc//:futures",
+    ],
+)
+
+fuchsia_stripped(
+    name = "fileserver_client_link_probe_stripped.fuchsia",
+    src = ":fileserver_client_link_probe",
+    tags = ["manual"],
+)

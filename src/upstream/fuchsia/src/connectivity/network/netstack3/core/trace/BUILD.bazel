@@ -1,0 +1,14 @@
+# Authored locally for Cerise. netstack3-trace: trace macros for
+# netstack3-core. The fuchsia_trace integration is gated off (feature "tracing") — that's
+# a runtime closure; core uses the no-op stubs. Base variant only.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-trace",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = ["//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync"],
+)

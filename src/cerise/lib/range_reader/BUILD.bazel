@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# The ranged-read contract belongs below every concrete transport.  Keeping
+# this crate std-only lets storage consumers depend on the operation they need
+# without inheriting a gRPC, HTTP/2, or Fuchsia networking closure.
+rust_library(
+    name = "cerise_range_reader",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_range_reader",
+    edition = "2021",
+)
+
+rust_test(
+    name = "cerise_range_reader_test",
+    crate = ":cerise_range_reader",
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:linux"],
+)

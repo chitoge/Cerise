@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+# Placeholder for arm64 architecture headers.
+# The filegroup uses allow_empty = True so partial toolchains can still build.
+filegroup(
+    name = "headers",
+    srcs = glob(["**/*.h", "**/*.inc"], allow_empty = True),
+)

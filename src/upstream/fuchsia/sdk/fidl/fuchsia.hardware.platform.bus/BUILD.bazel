@@ -1,0 +1,56 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("//build/fidl:fidl.bzl", "fidl_bind_library_cpp", "fidl_cpp", "fidl_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.platform.bus",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",  # whole library is @available(added=HEAD)
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.platform.bus_cpp",
+    library = ":fuchsia.hardware.platform.bus",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+    ],
+)
+
+fidl_bind_library_cpp(
+    name = "fuchsia.hardware.platform.bus_bindlib_cpp_gen",
+    library = ":fuchsia.hardware.platform.bus",
+)
+
+genrule(
+    name = "fuchsia.hardware.platform.bus_bindlib_hdr",
+    srcs = [":fuchsia.hardware.platform.bus_bindlib_cpp_gen"],
+    outs = ["bind/fuchsia/hardware/platform/bus/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+# The intermediate .bind library source (FIDL-derived), for driver_bind_rules
+# `using fuchsia.hardware.platform.bus;` includes.
+filegroup(
+    name = "fuchsia.hardware.platform.bus_bindlib",
+    srcs = [":fuchsia.hardware.platform.bus_bindlib_cpp_gen"],
+    output_group = "bindlib",
+)
+
+cc_library(
+    name = "fuchsia.hardware.platform.bus_bindlib_cpp",
+    hdrs = [":fuchsia.hardware.platform.bus_bindlib_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus",
+)

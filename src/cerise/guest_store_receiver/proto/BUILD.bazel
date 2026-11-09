@@ -1,0 +1,19 @@
+# The guest-store push contract, code-generated the same way the file server's is
+# (proto_library + rust_prost_library through //build/grpc:prost_toolchain, protoc
+# and the protoc-gen-prost / protoc-gen-tonic plugins). The runtime crates come
+# from the isolated @grpc universe.
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "guest_store_proto",
+    srcs = ["guest_store.proto"],
+    strip_import_prefix = "/src/cerise/guest_store_receiver/proto",
+)
+
+rust_prost_library(
+    name = "guest_store_rust_proto",
+    proto = ":guest_store_proto",
+)

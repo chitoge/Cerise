@@ -1,0 +1,36 @@
+# Package-index signing key. The private ed25519 seed is used ONLY on the build
+# side (the pkg_signer host tool derives the public key + signs dynamic-index
+# entries); the device holds only the derived public key, and the resolver falls
+# back to the in-image base index when no public key is present — so signing is
+# an added guarantee, never a correctness dependency. See build/keys/README.md
+# and //src/cerise/tools/pkg_signer.
+#
+# The source-only signing seed (pkg_index_signing_seed.bin) is a non-production
+# example. When absent, the build falls back to a deterministic, throwaway
+# DEVELOPMENT seed below so `bazel build //products:all` and the signing examples
+# still build. A trusted release supplies its own seed (see README.md); neither
+# checked-in value is a trusted key.
+
+package(default_visibility = ["//visibility:public"])
+
+_SOURCE_SEED = glob(["pkg_index_signing_seed.bin"], allow_empty = True)
+
+# Deterministic development fallback seed (public, throwaway): exactly 32 bytes,
+# fixed so the build stays hermetic/cacheable. A trusted release replaces the
+# example from its release environment and must not commit that replacement.
+genrule(
+    name = "dev_signing_seed",
+    outs = ["dev_signing_seed.bin"],
+    cmd = "printf 'cerise-development-signing-seed!' > $@",  # 32 bytes exactly
+    tags = ["manual"],
+)
+
+# The effective source-build seed: the source-only example when present, else
+# the public development fallback. Consumers depend on //build/keys:signing_seed,
+# never on the raw .bin, so a seedless public tree still builds.
+alias(
+    name = "signing_seed",
+    actual = "pkg_index_signing_seed.bin" if _SOURCE_SEED else ":dev_signing_seed",
+)
+
+exports_files(_SOURCE_SEED)

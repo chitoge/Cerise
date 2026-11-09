@@ -1,0 +1,85 @@
+"""Board: qemu-x64 — the first Cerise board (QEMU x86-64 / q35 + OVMF).
+
+Hardware identity for the QEMU x86-64 machine: the full driver stack (platform
+bus, ACPI board driver, PCI bus, and the NIC + block-device drivers QEMU can
+present) as bootfs placements, plus the hardware features those drivers provide.
+
+Driver .so aliases live in //boards/x64-artifacts.  They apply the
+//platforms:x64-fuchsia transition and strip binaries for bootfs before either
+x86-64 board stages them.
+
+Bootfs paths under pkg/driver_host/lib/ are the dlopen-by-soname homes the shared
+driver_host uses; the driver_host package skeleton itself (meta/bin/base libs +
+compat.so) belongs to the driver_framework bundle, so there is no collision.
+"""
+
+load("//assembly:defs.bzl", "cerise_board")
+load(":drivers.bzl", "QEMU_X64_BOOT_DRIVERS")
+
+package(default_visibility = ["//visibility:public"])
+
+cerise_board(
+    name = "qemu-x64",
+    platform = "//platforms:x64-fuchsia",
+    # The boot-driver URLs driver-index resolves + indexes at startup — BOARD
+    # DATA flowing through the product rule into the generated driver-index
+    # .cvf (see drivers.bzl for the list + indexing rationale).
+    boot_drivers = QEMU_X64_BOOT_DRIVERS,
+    provided_features = [
+        "cerise::virtio-net",
+        "cerise::e1000",
+        "cerise::network-device",
+        "cerise::nvme",
+        "cerise::ahci",
+        "cerise::acpi",
+        "cerise::pci",
+        "cerise::block",
+    ],
+    # x64 products set no serial cmdline flag: serial is the emulator default.
+    kernel_cmdline = [],
+    bootfs = {
+        # platform-bus: DFv2-native root driver (started by-URL, not indexed).
+        "pkg/driver_host/lib/platform-bus.so": "//boards/x64-artifacts:platform_bus_so.fuchsia",
+        "pkg/platform_bus/meta/platform-bus.cm": "//src/upstream/fuchsia/src/devices/bus/drivers/platform:platform-bus-manifest",
+        "pkg/platform_bus/meta/bind/platform-bus.bindbc": "//src/upstream/fuchsia/src/devices/bus/drivers/platform:platform-bus-bind",
+        # platform-bus-x86: LEGACY board driver (ACPI + pciroot publisher) via compat.
+        "pkg/driver_host/lib/platform-bus-x86.so": "//boards/x64-artifacts:platform_bus_x86_so_dh.fuchsia",
+        "pkg/platform-bus-x86/meta/platform-bus-x86.cm": "//src/upstream/fuchsia/src/devices/board/drivers/x86:platform-bus-x86-manifest",
+        "pkg/platform-bus-x86/driver/platform-bus-x86.so": "//boards/x64-artifacts:platform_bus_x86_so.fuchsia",
+        "pkg/platform-bus-x86/meta/bind/platform-bus-x64.bindbc": "//src/upstream/fuchsia/src/devices/board/drivers/x86:x64-bind",
+        # bus-pci: LEGACY PCI bus enumerator via compat.
+        "pkg/driver_host/lib/bus-pci.so": "//boards/x64-artifacts:bus_pci_so_dh.fuchsia",
+        "pkg/bus-pci/meta/bus-pci.cm": "//src/upstream/fuchsia/src/devices/bus/drivers/pci:bus-pci-manifest",
+        "pkg/bus-pci/driver/bus-pci.so": "//boards/x64-artifacts:bus_pci_so_pkg.fuchsia",
+        "pkg/bus-pci/meta/bind/pci_bind.bindbc": "//src/upstream/fuchsia/src/devices/bus/drivers/pci:pci_bind",
+        # pci_probe: DFv2-native driver (staged; e1000 supersedes it as active binder).
+        "pkg/driver_host/lib/cerise_pci_probe.so": "//boards/x64-artifacts:cerise_pci_probe_so.fuchsia",
+        "pkg/pci_probe/meta/pci_probe.cm": "//src/cerise/realms:pci_probe_manifest",
+        "pkg/pci_probe/meta/bind/pci_probe.bindbc": "//src/cerise/drivers/pci_probe:pci-probe-bind",
+        # virtio-net: DFv2-native NIC driver (feature cerise::virtio-net).
+        "pkg/driver_host/lib/virtio_netdevice.so": "//boards/x64-artifacts:virtio_netdevice_so.fuchsia",
+        "pkg/virtio_net/meta/virtio_net.cm": "//src/cerise/realms:virtio_net_manifest",
+        "pkg/virtio_net/meta/bind/virtio_ethernet_bind.bindbc": "//src/upstream/fuchsia/src/connectivity/ethernet/drivers/virtio:virtio-net-bind",
+        # network-device: DFv2-native netdev multiplexer (colocated with virtio-net).
+        "pkg/driver_host/lib/network-device.so": "//boards/x64-artifacts:network_device_so.fuchsia",
+        "pkg/network_device/meta/network_device.cm": "//src/cerise/realms:network_device_manifest",
+        "pkg/network_device/meta/bind/network_device_bind.bindbc": "//src/upstream/fuchsia/src/connectivity/network/drivers/network-device:network-device-bind",
+        # e1000: DFv2-native NIC driver (feature cerise::e1000).
+        "pkg/driver_host/lib/e1000.so": "//boards/x64-artifacts:e1000_so.fuchsia",
+        "pkg/e1000/meta/e1000.cm": "//src/cerise/realms:e1000_manifest",
+        "pkg/e1000/meta/bind/e1000_bind.bindbc": "//src/cerise/drivers/e1000:e1000-bind",
+        # display: Cerise native DFv2 display driver (QEMU stdvga 1234:1111). Owns the
+        # framebuffer and serves cerise.display.Service; the status_console is a client.
+        "pkg/driver_host/lib/display.so": "//boards/x64-artifacts:display_so.fuchsia",
+        "pkg/display/meta/display.cm": "//src/cerise/realms:display_manifest",
+        "pkg/display/meta/bind/display_bind.bindbc": "//src/cerise/drivers/display:display-bind",
+        # nvme: real upstream NVMe block driver (features cerise::nvme, cerise::block).
+        "pkg/driver_host/lib/nvme.so": "//boards/x64-artifacts:nvme_so.fuchsia",
+        "pkg/nvme/meta/nvme.cm": "//src/cerise/realms:nvme_manifest",
+        "pkg/nvme/meta/bind/nvme_bind.bindbc": "//src/upstream/fuchsia/src/devices/block/drivers/nvme:nvme-bind",
+        # ahci: real upstream AHCI/SATA block driver (features cerise::ahci, cerise::block).
+        "pkg/driver_host/lib/ahci.so": "//boards/x64-artifacts:ahci_so.fuchsia",
+        "pkg/ahci/meta/ahci.cm": "//src/cerise/realms:ahci_manifest",
+        "pkg/ahci/meta/bind/ahci_bind.bindbc": "//src/upstream/fuchsia/src/devices/block/drivers/ahci:ahci-bind",
+    },
+)

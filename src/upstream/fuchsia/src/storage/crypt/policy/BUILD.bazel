@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# fshost Phase 1: crypt_policy - key policy logic shared by fshost's real Fxfs crypt
+# wiring and zxcrypt. See src/lib.rs's top-of-file comment for the
+# disclosed removal of the TEE/keymint-specific code paths (no TEE hardware exists
+# on any Cerise target).
+rust_library(
+    name = "crypt_policy",
+    srcs = ["src/lib.rs"],
+    crate_name = "crypt_policy",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:anyhow",
+    ],
+)

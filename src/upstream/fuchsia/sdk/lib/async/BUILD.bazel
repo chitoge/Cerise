@@ -1,0 +1,43 @@
+# Bazel integration for this imported target. sdk/lib/async: the
+# async dispatcher API (C `async` = the ops vtable shims; C++ `async-cpp` = the
+# Wait/Task/Trap/etc. helpers). A core runtime component; compiles against the sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "async",
+    srcs = ["ops.c"],
+    hdrs = glob(["include/lib/async/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+cc_library(
+    name = "async-cpp",
+    srcs = [
+        "executor.cc",
+        "irq.cc",
+        "paged_vmo.cc",
+        "receiver.cc",
+        "sequence_checker.cc",
+        "task.cc",
+        "trap.cc",
+        "wait.cc",
+    ],
+    hdrs = glob(["include/lib/async/cpp/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        ":async",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

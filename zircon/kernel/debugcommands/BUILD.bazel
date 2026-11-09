@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "debugcommands",
+    srcs = [
+        "debugcommands.cc",
+        "undefined-behavior.cc",
+    ],
+    alwayslink = True,
+
+    deps = [
+        "//zircon/kernel/lib/thread-stack:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "efi_string",
+    srcs = ["string.cc"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    copts = ["-std=c++20"],
+    deps = [
+        "//:efi_headers",
+        "//src/lib/utf_conversion:utf_conversion",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/public:public",
+    ],
+)
+
+cc_test(
+    name = "efi_string_tests",
+    srcs = ["tests/string_tests.cc"],
+    copts = ["-std=c++20"],
+    linkstatic = True,
+    deps = [
+        ":efi_string",
+        "//sdk/lib/zircon-assert:zircon_assert_libc",
+        "//zircon/system/ulib/fbl:fbl",
+        "@googletest//:gtest_main",
+    ],
+)

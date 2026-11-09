@@ -1,0 +1,61 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "arch_x86_headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)
+
+# x86_32-compatible variant: excludes descriptor-regs.S (uses x86_64-only registers)
+cc_library(
+    name = "arch_x86_no64",
+    srcs = [
+        "boot-cpuid.S",
+        "boot-cpuid.cc",
+        "standard-segments.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "arch_x86",
+    srcs = [
+        "boot-cpuid.S",
+        "boot-cpuid.cc",
+        "descriptor-regs.S",
+        "standard-segments.cc",
+    ],
+    alwayslink = True,
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "boot_cpuid_asm_source",
+    srcs = ["boot-cpuid.S"],
+)
+
+filegroup(
+    name = "boot_cpuid_source",
+    srcs = ["boot-cpuid.cc"],
+)
+
+filegroup(
+    name = "descriptor_regs_source",
+    srcs = ["descriptor-regs.S"],
+)
+
+filegroup(
+    name = "standard_segments_source",
+    srcs = ["standard-segments.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

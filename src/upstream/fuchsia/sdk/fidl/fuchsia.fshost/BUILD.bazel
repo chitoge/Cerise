@@ -1,0 +1,63 @@
+# fshost Admin, Recovery, and StarnixVolumeProvider FIDL protocols. The whole
+# library is @available(added=HEAD), matching fuchsia.storage.block and fuchsia.fxfs.
+# Pairs with the plain level-30 fuchsia.io target, following fuchsia.fxfs's own
+# precedent (the specific fuchsia.io types this library actually references don't
+# diverge between level 30 and HEAD).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.fshost",
+    srcs = ["fshost.fidl"],
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fuchsia.fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.fshost_cpp",
+    library = ":fuchsia.fshost",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.fshost_rs",
+    library = ":fuchsia.fshost",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_fshost",
+    srcs = [":fuchsia.fshost_rs"],
+    crate_name = "fidl_fuchsia_fshost",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.partitions:fidl_fuchsia_storage_partitions",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "guest_memory",
+    srcs = ["lib.rs"],
+    edition = "2021",
+    deps = ["//src/cerise/rt:cerise_rt"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)
+
+# Unit tests run on the build host: the #[cfg(test)] path uses a stack buffer
+# and does not call any Zircon syscalls (no KVM/VMX required).
+rust_test(
+    name = "guest_memory_unit_test",
+    srcs = ["lib.rs"],
+    edition = "2021",
+)

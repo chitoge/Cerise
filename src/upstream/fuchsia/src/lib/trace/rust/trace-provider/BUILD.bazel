@@ -1,0 +1,34 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The C++ shim exposing the `_rust`-suffixed extern "C" entry points this crate's
+# src/lib.rs FFIs into (real upstream `//src/lib/trace/rust:rust-trace-provider`).
+cc_library(
+    name = "rust-trace-provider",
+    srcs = ["trace_provider.cc"],
+    copts = [
+        "-DNTRACE",
+        "-Isrc/upstream/fuchsia",
+        "-std=c++20",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-default",
+        "//src/upstream/fuchsia/zircon/system/ulib/trace-provider",
+    ],
+    alwayslink = True,
+)
+
+rust_library(
+    name = "trace-provider",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_trace_provider",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ":rust-trace-provider",
+    ],
+)

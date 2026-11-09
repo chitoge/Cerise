@@ -1,0 +1,26 @@
+# Bazel integration for this imported target. The upstream
+# BUILD.bazel hand-maintains a narrow header list; for the libc/platform port we
+# expose the full vendored zircon public header surface via a glob (musl and the
+# platform pull many of these, e.g. <zircon/tls.h>, <zircon/syscalls.h>). The
+# `public_curated` target preserves the upstream-listed subset for reference.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Full vendored zircon public header surface.
+cc_library(
+    name = "public",
+    hdrs = glob(
+        [
+            "zircon/**/*.h",
+            "zircon/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = ["."],
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["zircon/**/*.h", "zircon/**/*.inc"], allow_empty = True),
+)

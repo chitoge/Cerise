@@ -1,0 +1,100 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_CONTINUOUS_ATTRIBUTION_TRACKER_H_
+#define ZIRCON_KERNEL_VM_INCLUDE_VM_CONTINUOUS_ATTRIBUTION_TRACKER_H_
+
+#include <assert.h>
+#include <stdint.h>
+
+#include <ktl/algorithm.h>
+#include <ktl/type_traits.h>
+#include <ktl/utility.h>
+
+// Tracks the number of populated slots in the VmCowPages' local page list. If the VmCowPages
+// changes a slot to being populated, or vice versa, that should be reported to
+// ContinuousAttributionTracker.
+//
+// This class is not thread safe and should only be accessed under the lock of the associated
+// VmCowPages.
+class ContinuousAttributionTracker final {
+ public:
+  ContinuousAttributionTracker() = default;
+  ~ContinuousAttributionTracker() = default;
+
+  // Move and move assignment zero the |source|.
+  ContinuousAttributionTracker(ContinuousAttributionTracker&& source);
+  ContinuousAttributionTracker& operator=(ContinuousAttributionTracker&& source);
+  ContinuousAttributionTracker(ContinuousAttributionTracker&) = delete;
+  ContinuousAttributionTracker& operator=(ContinuousAttributionTracker&) = delete;
+
+  // Returns the tracked count of populated slots.
+  uint32_t FetchCurrent() const;
+
+  // Get the greatest number of populated slots since the statistic was last reset.
+  //
+  // Resets the high-water mark.
+  uint32_t FetchHwmAndReset();
+
+  // Increments the count by |by|. This quantity must be strictly positive.
+  void Increment(uint32_t by) {
+    DEBUG_ASSERT(by > 0);
+    [[maybe_unused]] const bool did_overflow = add_overflow(current_slots_, by, &current_slots_);
+    DEBUG_ASSERT(!did_overflow);
+    hwm_slots_ = ktl::max(hwm_slots_, current_slots_);
+  }
+
+  // Decrements the count by |by|. This quantity must be strictly positive.
+  void Decrement(uint32_t by) {
+    DEBUG_ASSERT(by > 0);
+    [[maybe_unused]] const bool did_overflow = sub_overflow(current_slots_, by, &current_slots_);
+    // This overflows when there is untracked addition of content: addition of pages, references, or
+    // parent content markers to the page list of a VmCowPages that is not paired with updates to
+    // this continuous attribution tracker.
+    DEBUG_ASSERT(!did_overflow);
+    DEBUG_ASSERT(hwm_slots_ >= current_slots_);
+  }
+
+ private:
+  // The number of populated slots in the local page list.
+  uint32_t current_slots_ = 0;
+
+  // The greatest number of current_slots_ since the high-water mark value was last reset.
+  //
+  // Always greater than or equal to |current_slots_|.
+  uint32_t hwm_slots_ = 0;
+};
+
+// ContinuousAttributionTracker uses a 32-bit count to represent the number of populated slots in
+// the local page list. Since a ContinuousAttributionTracker is intended to be stored inline in a
+// VmCowPages, reducing its size (by not using a 64-bit count) is a substantial memory saving for
+// the system.
+static_assert(sizeof(ContinuousAttributionTracker) == 8);
+
+// The stub continuous attribution tracker. This object stores no data. Intended to be used in place
+// of the regular continuous attribution tracker, unless users opt-in to its existence.
+class StubContinuousAttributionTracker final {
+ public:
+  StubContinuousAttributionTracker() = default;
+  ~StubContinuousAttributionTracker() = default;
+
+  StubContinuousAttributionTracker(StubContinuousAttributionTracker&& source) = default;
+  StubContinuousAttributionTracker& operator=(StubContinuousAttributionTracker&& source) = default;
+  StubContinuousAttributionTracker(StubContinuousAttributionTracker&) = delete;
+  StubContinuousAttributionTracker& operator=(StubContinuousAttributionTracker&) = delete;
+
+  // Unconditionally panics.
+  uint32_t FetchCurrent() const { PANIC("stub"); }
+
+  // Unconditionally panics.
+  uint32_t FetchHwmAndReset() { PANIC("stub"); }
+
+  void Increment(uint32_t by) {}
+  void Decrement(uint32_t by) {}
+};
+
+// The continuous attribution tracker supports an empty "stubbed out" state.
+static_assert(ktl::is_empty_v<StubContinuousAttributionTracker>);
+
+#endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_CONTINUOUS_ATTRIBUTION_TRACKER_H_

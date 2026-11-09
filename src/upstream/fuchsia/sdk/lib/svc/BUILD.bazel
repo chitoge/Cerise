@@ -1,0 +1,17 @@
+# Cerise BUILD (authored locally). Light C svc directory helper (lib/svc/dir.h).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "svc",
+    srcs = ["dir.cc"],
+    hdrs = glob(["include/**/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

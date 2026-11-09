@@ -1,0 +1,30 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "config_client",
+    srcs = [
+        "src/cpp.rs",
+        "src/fidl.rs",
+        "src/lib.rs",
+        "src/rust.rs",
+    ],
+    crate_name = "config_client",
+    edition = "2024",
+    compile_data = glob(["templates/*.hbs"]),
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust",
+        "@crates//:handlebars",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:syn",
+        "@crates//:thiserror",
+    ],
+)

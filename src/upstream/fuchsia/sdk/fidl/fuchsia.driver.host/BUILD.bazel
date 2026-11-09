@@ -1,0 +1,46 @@
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.driver.host",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.loader:fuchsia.driver.loader",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.driver.host_rs",
+    library = ":fuchsia.driver.host",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_driver_host",
+    srcs = [":fuchsia.driver.host_rs"],
+    crate_name = "fidl_fuchsia_driver_host",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.loader:fidl_fuchsia_driver_loader",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fidl_fuchsia_ldsvc",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fidl_fuchsia_url",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

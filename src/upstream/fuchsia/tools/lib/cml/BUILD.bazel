@@ -1,0 +1,57 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cml",
+    srcs = [
+        "src/error.rs",
+        "src/features.rs",
+        "src/lib.rs",
+        "src/load.rs",
+        "src/one_or_many.rs",
+        "src/translate.rs",
+        "src/types/capability.rs",
+        "src/types/capability_id.rs",
+        "src/types/child.rs",
+        "src/types/collection.rs",
+        "src/types/common.rs",
+        "src/types/document.rs",
+        "src/types/environment.rs",
+        "src/types/expose.rs",
+        "src/types/mod.rs",
+        "src/types/offer.rs",
+        "src/types/program.rs",
+        "src/types/right.rs",
+        "src/types/use.rs",
+        "src/validate.rs",
+    ],
+    crate_name = "cml",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/tools/lib/cml/macro:cml_macro",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/lib/directed_graph:directed_graph",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/tools/lib/config_value_file:config_value_file",
+        "//src/upstream/fuchsia/tools/lib/reference_doc:reference_doc",
+        "@crates//:indexmap",
+        "@crates//:itertools",
+        "@crates//:json5format",
+        "@crates//:maplit",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_json5",
+        "@crates//:sha2",
+    ],
+)

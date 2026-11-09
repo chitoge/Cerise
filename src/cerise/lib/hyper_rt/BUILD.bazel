@@ -1,0 +1,93 @@
+# cerise-hyper-rt: hyper 1.x runtime adapter over fuchsia_async.
+# FasyncExec (hyper::rt::Executor -> fuchsia_async::Task::local)
+# and FasyncIo (hyper::rt::{Read,Write} over fuchsia_async::net::TcpStream's
+# futures::io traits). Consumed by the fileserver component.
+#
+# hyper comes from the isolated @grpc universe; futures comes from @crates (the
+# SAME futures fuchsia-async is built against, so TcpStream's AsyncRead/AsyncWrite
+# impls line up — see lib.rs's seam note).
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_hyper_rt",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_hyper_rt",
+    edition = "2021",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:futures",
+        "@grpc//:hyper",
+    ],
+)
+
+# Compile-only proof of the open question: does hyper::rt::{Read,Write,Executor} actually
+# compose over fuchsia_async on the fuchsia triple). This binary references the
+# adapter types through hyper's own trait bounds, forcing the trait impls to be
+# type-checked and monomorphized for x86_64-unknown-fuchsia. `bazel build` of the
+# fuchsia_stripped output proves the adapter compiles + links for the target
+# WITHOUT needing a boot.
+rust_binary(
+    name = "hyper_rt_compile_probe",
+    srcs = ["src/compile_probe.rs"],
+    crate_name = "hyper_rt_compile_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":cerise_hyper_rt",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@grpc//:hyper",
+    ],
+)
+
+fuchsia_stripped(
+    name = "hyper_rt_compile_probe_stripped.fuchsia",
+    src = ":hyper_rt_compile_probe",
+    tags = ["manual"],
+)
+
+# The same proof for the OTHER direction: hyper's HTTP/2 **client** over the
+# same adapter. `hyper::client::conn::http2` is a different code path behind a
+# different cargo feature from the server, so the server probe above says
+# nothing about it — and it is the one real build unknown on the way to a
+# `GrpcPageSource` (a cerise-side gRPC *client*, which
+# this tree has never had). Building
+# `:hyper_client_compile_probe_stripped.fuchsia` for the fuchsia platform is the
+# answer.
+rust_binary(
+    name = "hyper_client_compile_probe",
+    srcs = ["src/client_compile_probe.rs"],
+    crate_name = "hyper_client_compile_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":cerise_hyper_rt",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@grpc//:bytes",
+        "@grpc//:http-body-util",
+        "@grpc//:hyper",
+    ],
+)
+
+fuchsia_stripped(
+    name = "hyper_client_compile_probe_stripped.fuchsia",
+    src = ":hyper_client_compile_probe",
+    tags = ["manual"],
+)

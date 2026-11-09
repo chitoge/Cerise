@@ -1,0 +1,14 @@
+# Bazel integration for this imported target. cmdline: arg parser
+# used by fidlc. Upstream BUILD used zx_library (not available); plain cc_library.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cmdline",
+    srcs = ["args_parser.cc"],
+    hdrs = glob(["include/lib/cmdline/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = ["//sdk/lib/fit:fit"],
+)

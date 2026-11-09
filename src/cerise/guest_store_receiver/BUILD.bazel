@@ -1,0 +1,211 @@
+# guest_store_receiver — the appliance side of pushing a guest image onto the
+# raw guest-image partition over gRPC.
+#
+# WHY A COMPONENT OF ITS OWN, rather than an RPC on the gRPC file server.
+#
+# The file server's `Write` puts bytes into a mounted Fxfs filesystem
+# (`//src/cerise/fileserver/src/fs.rs`). The VMM's guest store is read from a RAW
+# GPT partition at byte offsets, with no filesystem at all, because fshost cannot
+# mount Fxfs inside a partition here — see
+# `//src/cerise/lib/guest_store_locate`. So a push through the file server
+# reaches the wrong destination entirely; this is not a routing detail that could
+# be configured away.
+#
+# Given that a new writer is needed, it is a new *component* because:
+#
+#   * the file server holds an open block session for its Fxfs mount for the
+#     process's lifetime, and the tree already records that a second block
+#     session immediately after a first is not reliably granted
+#     (`//src/cerise/ota_updater/src/main.rs`, `run()`);
+#   * a raw-partition writer is the destructive path in this design, and the file
+#     server is the component with the most gates riding on it. Putting the two
+#     in one process makes every file-server gate a hostage of the writer;
+#   * the writer is small enough to read in one sitting, which is the only reason
+#     to believe anything about what it will and will not overwrite.
+#
+# WHAT THE ROUTING ACTUALLY GRANTS, stated plainly because it is weaker than it
+# sounds. There is no per-partition capability in this system: no GPT driver, no
+# partition block devices, and the only routable thing is the AGGREGATED
+# `fuchsia.hardware.block.volume.Service`, one instance per whole physical disk
+# with anonymized names. So this component is handed EVERY disk and narrows to
+# one partition IN CODE, by parsing the table itself. That makes an out-of-range
+# write absent, not impossible, and the containment argument rests on the size of
+# this component rather than on the capability system.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:component.bzl", "cerise_component")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/guest_store_receiver.cml"])
+
+# ------------------------------------------------------------------------------------
+# WHETHER the pushed bytes may be written — the one security decision on this path,
+# split out as a pure library so it can be host-tested against payloads a live push
+# could never conveniently be made to produce. The component depends on this crate
+# rather than re-`mod`ing the source, so there is one compilation of the logic.
+#
+# WHERE the write lands is the other half, and it is NOT re-implemented here: it is
+# `//src/cerise/lib/guest_store_locate`, unchanged, shared with the VMM that reads
+# the partition back. The writer and the reader cannot be allowed to disagree about
+# which partition is the guest image.
+# ------------------------------------------------------------------------------------
+rust_library(
+    name = "guest_store_admit",
+    srcs = ["src/admit.rs"],
+    crate_name = "guest_store_admit",
+    crate_root = "src/admit.rs",
+    edition = "2021",
+    deps = [
+        # The same ed25519 primitive the signed package index and the OS-image OTA
+        # manifest use, under a THIRD domain tag so no signature can cross contexts.
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        # The partition-fit rule, from the crate the reader applies it with.
+        "//src/cerise/lib/guest_store_locate:guest_store_locate",
+        # The `.cryostore` header, so "is this even a store" is answered by the
+        # format's own decoder rather than by a magic-number check written here.
+        "//src/cryogen/format:cryogen_format",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+# Host unit tests. What they cover, and why each is not a restatement of the code:
+#
+#   * a genuine store is accepted, and accepted with a partition both larger than
+#     and exactly equal to it — so the instrument can go green, and the
+#     "partition is bigger than its store" case that exact equality would have
+#     broken is covered;
+#   * a missing key REFUSES (fail closed), unlike pkg_resolver's safe degradation;
+#   * a pusher who signs their own payload with their own keypair is refused,
+#     which is the case the signature exists for and the one a digest alone
+#     cannot express;
+#   * a one-character signature corruption — the exact payload the tamper gate
+#     pushes — is refused;
+#   * every signed field is shown to be covered by moving it;
+#   * a substituted payload is refused on size, and when padded to the signed
+#     length, on the digest;
+#   * bytes that are NOT a store but carry a genuine signature over themselves
+#     are refused BY THE HEADER — the signature cannot be what rejects them, so
+#     this is what proves the header check is a check;
+#   * a truncated store re-signed for its truncation, and a padded store re-signed
+#     for its padding, are both refused: steps 1-4 pass by construction, and only
+#     the store's own declared length catches them;
+#   * a store larger than its partition is refused;
+#   * a malformed digest is refused on SHAPE, re-signed so the signature is not
+#     what rejects it;
+#   * a signature made under the OS-image or package-index domain does not check
+#     out here.
+rust_test(
+    name = "guest_store_admit_test",
+    crate = ":guest_store_admit",
+    edition = "2021",
+)
+
+# ------------------------------------------------------------------------------------
+# HOST/build-time signer. Sibling of //src/cerise/ota_updater:ota_signer and
+# //src/cerise/tools/pkg_signer, deliberately the same shape (same cerise_signing
+# primitive, same "pubkey | sign | --tamper" surface, same key provenance caveat) so
+# the three trust chains are one design and not three.
+#
+# --tamper emits the negative payload the refusal gate pushes: byte-identical to the
+# genuine manifest except for one hex character of the signature. A guard that cannot
+# be made to fire is not a guard.
+#
+# KEY PROVENANCE. The device receives only the public key derived from the build's
+# configured signing seed. The strength of the resulting authenticity guarantee is
+# therefore the strength of that build-time configuration; this package does not
+# make a stronger provenance claim.
+# ------------------------------------------------------------------------------------
+rust_binary(
+    name = "guest_store_signer",
+    srcs = ["src/bin/guest_store_signer.rs"],
+    crate_root = "src/bin/guest_store_signer.rs",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        ":guest_store_admit",
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "@crates//:anyhow",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+    ],
+)
+
+# The ed25519 PUBLIC key staged into the receiver's own package at
+# /pkg/keys/guest_store_pub.ed25519, derived at build time from the seed under
+# //build/keys. The private seed stays on the build side; the device only checks.
+genrule(
+    name = "guest_store_pubkey",
+    srcs = ["//build/keys:signing_seed"],
+    outs = ["guest_store_pub.ed25519"],
+    cmd = "$(location :guest_store_signer) pubkey --seed $(location //build/keys:signing_seed) --out $@",
+    tags = ["manual"],
+    tools = [":guest_store_signer"],
+)
+
+rust_binary(
+    name = "guest_store_receiver_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "guest_store_receiver",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    # TWO futures universes live in this binary and they are NOT interchangeable;
+    # the file server's BUILD.bazel explains why at length. `futures` is @grpc's,
+    # which hyper/tonic are built against; the FIDL bindings and fuchsia-async are
+    # built against @crates//:futures.
+    aliases = {"@crates//:futures": "fx_futures"},
+    proc_macro_deps = ["@crates//:async-trait"],
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":guest_store_admit",
+        "//src/cerise/guest_store_receiver/proto:guest_store_rust_proto",
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "//src/cerise/lib/guest_store_locate:guest_store_locate",
+        "//src/cerise/lib/hyper_rt:cerise_hyper_rt",
+        # The guest-image type GUID, from the same crate the reader takes it from
+        # and the provisioner would write it with.
+        "//src/cerise/fxfs_provisioner:boot_layout",
+        "//src/cryogen/format:cryogen_format",
+        "@grpc//:futures",
+        "@grpc//:hyper",
+        "@grpc//:hyper-util",
+        "@grpc//:tonic",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:serde_json",
+        "@crates//:sha2",
+        # Real fdio (statically linked) — fuchsia_fs namespace opens + fuchsia_async::net.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "guest_store_receiver_bin_stripped.fuchsia",
+    src = ":guest_store_receiver_bin",
+    tags = ["manual"],
+)
+
+cerise_component(
+    name = "guest_store_receiver",
+    binary = ":guest_store_receiver_bin_stripped.fuchsia",
+    manifest = "meta/guest_store_receiver.cml",
+)

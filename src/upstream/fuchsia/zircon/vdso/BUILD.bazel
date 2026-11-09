@@ -1,0 +1,17 @@
+# Bazel integration for this imported target. The zx FIDL library
+# for BINDINGS is a curated subset (overview/rights/zx_common — types, handles,
+# Rights/ObjType), NOT the full vdso syscall .fidl (those are for vDSO codegen).
+# Mirrors zircon/vdso/zx/BUILD.gn's fidl("zx") sources.
+load("//build/fidl:fidl.bzl", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "zx",
+    srcs = [
+        "overview.fidl",
+        "rights.fidl",
+        "zx_common.fidl",
+    ],
+    tags = ["manual"],
+)

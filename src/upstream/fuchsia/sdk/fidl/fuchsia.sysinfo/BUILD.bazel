@@ -1,0 +1,27 @@
+# Authored locally for Cerise (C7 Step 4). fuchsia.sysinfo FIDL + C++ bindings.
+# Used by platform-bus (PlatformBus::GetBoardName/GetBoardRevision/etc.).
+# Compiled at HEAD because SERIAL_NUMBER_LEN + GetSerialNumber are @available(added=HEAD).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.sysinfo",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.sysinfo_cpp",
+    library = ":fuchsia.sysinfo",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

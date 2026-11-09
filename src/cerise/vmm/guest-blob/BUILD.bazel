@@ -1,0 +1,26 @@
+package(default_visibility = ["//visibility:public"])
+
+# Step 1: assemble + link to a relocatable ELF at text base 0x1000.
+# The guest is loaded at guest physical 0x1000 by the VMM.
+genrule(
+    name = "guest_blob_elf",
+    srcs = ["guest.S"],
+    outs = ["guest.elf"],
+    cmd = """
+        $(execpath //toolchain:linux_x86_64/bin/clang.prebuilt) \
+            --target=x86_64-unknown-elf \
+            -nostdlib -ffreestanding -static -fPIC \
+            -Wl,--Ttext=0x1000 -Wl,--no-dynamic-linker \
+            -o $@ $(SRCS)
+    """,
+    tools = ["//toolchain:linux_x86_64/bin/clang.prebuilt"],
+)
+
+# Step 2: extract the raw .text section as a flat binary.
+genrule(
+    name = "guest_blob",
+    srcs = [":guest_blob_elf"],
+    outs = ["guest.bin"],
+    cmd = "$(execpath //toolchain:llvm_objcopy) -O binary --only-section=.text $< $@",
+    tools = ["//toolchain:llvm_objcopy"],
+)

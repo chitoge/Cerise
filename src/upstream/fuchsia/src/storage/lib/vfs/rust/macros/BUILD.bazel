@@ -1,0 +1,18 @@
+# Authored locally for Cerise.
+# vfs proc-macro crate: generates pseudo_directory! and serve_read_only helpers.
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "vfs_macros",
+    srcs = ["src/lib.rs"],
+    crate_name = "vfs_macros",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)

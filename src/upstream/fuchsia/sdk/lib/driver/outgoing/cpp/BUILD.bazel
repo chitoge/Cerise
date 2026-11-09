@@ -1,0 +1,20 @@
+# Cerise BUILD for sdk/lib/driver/outgoing/cpp (DFv2 driver OutgoingDirectory),
+# authored locally. Used by ddktl/metadata_server.h.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = ["outgoing_directory.cc"],
+    hdrs = [
+        "handlers.h",
+        "outgoing_directory.h",
+    ],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+    ],
+)

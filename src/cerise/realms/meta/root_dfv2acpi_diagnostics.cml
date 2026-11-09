@@ -1,0 +1,146 @@
+// root_dfv2acpi_diagnostics — component_manager root for qemu-x64-diagnostics
+// (logging bring-up). Base driver stack (SHARD A, as in
+// root_dfv2acpi_console_spike) PLUS the Archivist and the archivist_reader query
+// proof, with fuchsia.logger.LogSink for the userspace probes rerouted from the
+// Archivist instead of cerise_logsink.
+//
+// LogSink routing (deliverable 2): the Archivist is the real structured-log sink.
+//   * cerise_logsink stays the LogSink for the EARLY/CORE stack (driver_index,
+//     driver_manager_rust) — those come up before Archivist and their serial
+//     bridge is the early-boot safety net.
+//   * Archivist provides LogSink to the userspace probes that emit component logs
+//     (netdev_probe, archivist_reader). When such a probe connects LogSink,
+//     component_manager delivers a `capability_requested` event (routed to
+//     Archivist below) carrying the probe's moniker + the server end, and the
+//     Archivist ingests the structured records — replacing cerise_logsink's
+//     serial dead-end for those components.
+//
+// Query proof (deliverable 3): archivist_reader logs a known record via that
+// Archivist-backed LogSink and reads it back over fuchsia.diagnostics.
+// ArchiveAccessor, which is routed out of the Archivist's `diagnostics-accessors`
+// dictionary into the reader.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "netdev_probe",
+            url: "fuchsia-boot:///netdev_probe#meta/netdev_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "archivist",
+            url: "fuchsia-boot:///archivist#meta/archivist.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "archivist_reader",
+            url: "fuchsia-boot:///archivist_reader#meta/archivist_reader.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+
+        // plain-C POSIX probe (default sysroot only, runtime
+        // libfdio.so). Its printf goes out elf_runner's fd1 socket into the
+        // Archivist-backed LogSink; archivist_reader queries it back and emits
+        // CERISE-POSIX-PROBE-OK.
+        {
+            name: "posix_probe",
+            url: "fuchsia-boot:///posix_probe#meta/posix_probe.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        // The real structured-log sink: Archivist provides LogSink to the userspace
+        // probes whose component logs we want queryable.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#archivist",
+            to: ["#netdev_probe", "#archivist_reader", "#posix_probe"],
+        },
+
+        // Archivist intercepts LogSink connections via the capability_requested
+        // event stream (builtin, provided to the root by component_manager). Its
+        // common.shard.cml filters this to fuchsia.logger.LogSink and
+        // fuchsia.inspect.InspectSink.
+        {
+            event_stream: "capability_requested",
+            from: "parent",
+            to: "#archivist",
+        },
+
+        // The Archivist's config_capabilities.shard.cml `use`s these six config
+        // capabilities (optional) to allow product-level overrides of the matching
+        // structured-config fields. We ship no overrides — offering them from `void`
+        // makes routing return None, so component_manager keeps the packaged
+        // meta/archivist.cvf default for each field (the alternative, leaving them
+        // unoffered, is a hard structured-config routing error at start, since an
+        // absent optional config capability is not the same as a void one).
+        {
+            config: [
+                "fuchsia.diagnostics.AllowSerialLogs",
+                "fuchsia.diagnostics.BindServices",
+                "fuchsia.diagnostics.ComponentInitialInterests",
+                "fuchsia.diagnostics.DenySerialLogs",
+                "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
+                "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
+            ],
+            from: "void",
+            to: "#archivist",
+            availability: "optional",
+        },
+
+        // The query surface: route fuchsia.diagnostics.ArchiveAccessor out of the
+        // Archivist's exposed diagnostics-accessors dictionary to the reader.
+        {
+            protocol: "fuchsia.diagnostics.ArchiveAccessor",
+            from: "#archivist/diagnostics-accessors",
+            to: "#archivist_reader",
+        },
+
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: [
+                "#netdev_probe",
+                "#archivist",
+                "#archivist_reader",
+                "#posix_probe",
+            ],
+        },
+
+
+        {
+            directory: "dev",
+            from: "#driver_manager_rust",
+            to: "#netdev_probe",
+            rights: ["r*"],
+        },
+    ],
+}

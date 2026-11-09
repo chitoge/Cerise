@@ -1,0 +1,52 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.net.debug",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # overview.fidl declares the whole library `@available(added=HEAD)` — at the
+    # default level 30 fidlc drops every declaration (confirmed: empty IR, zero
+    # struct/enum/protocol declarations). No other real consumer besides
+    # netstack3-bindings exists for this library, so it's safe to compile the
+    # whole thing at HEAD directly rather than a parallel target.
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ebpf:fuchsia.ebpf",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.debug_rs",
+    library = ":fuchsia.net.debug",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_debug",
+    srcs = [":fuchsia.net.debug_rs"],
+    crate_name = "fidl_fuchsia_net_debug",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ebpf:fidl_fuchsia_ebpf",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

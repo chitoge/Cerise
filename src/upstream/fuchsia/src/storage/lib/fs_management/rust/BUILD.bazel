@@ -1,0 +1,52 @@
+# Vendored for Cerise fshost Phase 1. Real upstream
+# src/storage/lib/fs_management/rust (crate "fs_management" per its own real
+# BUILD.gn — the Rust variant fshost's own Rust code calls).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fs_management",
+    srcs = [
+        "src/error.rs",
+        "src/filesystem.rs",
+        "src/format.rs",
+        "src/format/constants.rs",
+        "src/lib.rs",
+        "src/partition.rs",
+    ],
+    crate_name = "fs_management",
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fidl_fuchsia_device",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs:fidl_fuchsia_fs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.partitions:fidl_fuchsia_storage_partitions",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs.startup:fidl_fuchsia_fs_startup",
+        "//src/upstream/fuchsia/sdk/rust/zx",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/client",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:thiserror",
+    ],
+)
+
+# tests excluded (host) - ON-TARGET-ONLY, documented reason:
+# fs_management's own zx use is Channel/Status-class (shimmable), but it
+# depends on fdio, fuchsia-component/client, fuchsia-runtime, and block_client -
+# Fuchsia component/runtime plumbing (fdio for fd<->fidl, fuchsia-component for
+# the incoming namespace, fuchsia-runtime for startup handles, block_client for
+# the block FIFO). None are host-portable and the Cerise host-zx shim
+# (//src/cerise/lib/zx_host) does not address them. Belongs to a future
+# on-target (zircon-test) product.

@@ -1,0 +1,48 @@
+# Cerise posix_probe: a PLAIN C component linking only the default
+# sysroot — NO static //src/upstream/fuchsia/sdk/lib/fdio:fdio. Its POSIX
+# surface (open/read/close, printf's writev) comes entirely from the loaded
+# runtime libfdio.so, proving real fdio is the runtime default.
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["data/probe.txt", "meta/posix_probe.cml"])
+
+# The plain-C ELF. Linked exactly the way a third-party C author would: the
+# clang Fuchsia driver + --sysroot supply Scrt1.o, -lc, PT_INTERP ld.so.1 and
+# the compiler-rt builtins; we add only -lzircon (zx_debug_write) and -lfdio
+# (the REAL shared fdio in the sysroot). The resulting DT_NEEDED closure is
+# libfdio.so + libc.so + libzircon.so (+ libfdio's own libc++.so.1).
+cc_binary(
+    name = "posix_probe_bin",
+    srcs = ["src/posix_probe.c"],
+    additional_linker_inputs = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    linkopts = [
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        # Redirect clang's resource dir into the sysroot so it finds
+        # libclang_rt.builtins.a for x86_64-unknown-fuchsia (same as the other
+        # fuchsia-target links in this tree).
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-lzircon",
+        "-lfdio",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "posix_probe_stripped.fuchsia",
+    src = ":posix_probe_bin",
+)
+
+# The component: cmc-compiled manifest (:posix_probe_manifest) + the binary.
+cerise_component(
+    name = "posix_probe",
+    manifest = "meta/posix_probe.cml",
+    binary = ":posix_probe_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)

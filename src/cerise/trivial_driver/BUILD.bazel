@@ -1,0 +1,15 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# trivial driver: a cc_library that driver_host2 links against.
+# Provides cerise_driver_start() which prints CERISE-DRIVER-OK.
+# Real DFv2 drivers implement fuchsia.driver.framework.Driver via fdf channels.
+cc_library(
+    name = "trivial_driver",
+    srcs = ["trivial_driver.cc"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

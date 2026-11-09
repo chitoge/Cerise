@@ -1,0 +1,46 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Ingest: walk a virtual disk's logical pages into the content-addressed store,
+# keyed by SHA-256 so identical pages (above all, empty space) are stored once.
+rust_library(
+    name = "cryogen_ingest",
+    srcs = ["lib.rs"],
+    crate_name = "cryogen_ingest",
+    edition = "2021",
+    deps = [
+        "//src/cryogen/hash:cryogen_hash",
+        "//src/cryogen/store:cryogen_store",
+        "//src/cryogen/vhdx:cryogen_vhdx",
+    ],
+)
+
+# Host unit tests for the ingest accounting: an empty disk collapsing to a single
+# blob, repeated content deduplicating across blocks, and distinct content being
+# counted once each.
+rust_test(
+    name = "cryogen_ingest_test",
+    crate = ":cryogen_ingest",
+    edition = "2021",
+)
+
+# Host tool: ingest a given VHDX through the real store and report what it cost,
+# in both content and index, then read the disk back out to confirm the store
+# reproduces it.
+#
+# Tagged manual because it takes an image path on the command line; images are
+# large and live outside the repo, so this is not part of the automatic build.
+#   bazel run //src/cryogen/ingest:vhdx_stats -- /path/to/disk.vhdx
+rust_binary(
+    name = "vhdx_stats",
+    srcs = ["vhdx_stats.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        ":cryogen_ingest",
+        "//src/cryogen/hash:cryogen_hash",
+        "//src/cryogen/store:cryogen_store",
+        "//src/cryogen/vhdx:cryogen_vhdx",
+    ],
+)

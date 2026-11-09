@@ -1,0 +1,58 @@
+# Bazel integration for this imported target. Generated FIDL
+# library + C++/Rust bindings. This is the modern unified client-facing block
+# protocol (block_server_cc/block_server's Rust half both depend on it) — real
+# NVMe/AHCI block read/write/readback routes through fuchsia.storage.block, not
+# the legacy fuchsia.hardware.block (which does not exist at this pinned commit;
+# confirmed via the upstream sdk/fidl/ directory listing).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.storage.block",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.storage.block_cpp",
+    library = ":fuchsia.storage.block",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fuchsia.unknown_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.storage.block_rs",
+    library = ":fuchsia.storage.block",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_storage_block",
+    srcs = [":fuchsia.storage.block_rs"],
+    crate_name = "fidl_fuchsia_storage_block",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fidl_fuchsia_unknown",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

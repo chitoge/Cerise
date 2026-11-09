@@ -1,0 +1,21 @@
+// Subject component: serves cerise.echo.Echo and exposes it so the realm can
+// route it to the verifier. Uses LogSink (offered by the realm from
+// cerise_logsink) like every CFv2 component here.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/echo_server",
+    },
+    capabilities: [
+        { protocol: "cerise.echo.Echo" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        {
+            protocol: "cerise.echo.Echo",
+            from: "self",
+        },
+    ],
+}

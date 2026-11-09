@@ -1,0 +1,43 @@
+# Bazel integration for this imported target. Slim fxl: the strings/
+# memory/icu utilities fidlc needs (split_string, utf_codecs, ...). Upstream BUILD
+# pulls //src/lib/files + //sdk/lib/syslog (CLI/logging) which fidlc doesn't use,
+# so this exposes only the self-contained pieces. Repo-root-relative includes.
+#
+# synchronization/thread_annotations.h added for fshost Phase 1 — real
+# upstream src/lib/uuid/uuid.cc and fs_management/cpp/format.cc both need it
+# (clang thread-safety attribute macros); header-only, no new .cc/deps.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fxl",
+    srcs = [
+        "memory/weak_ptr_internal.cc",
+        "strings/ascii.cc",
+        "strings/concatenate.cc",
+        "strings/split_string.cc",
+        "strings/string_number_conversions.cc",
+        "strings/string_printf.cc",
+        "strings/substitute.cc",
+        "strings/trim.cc",
+        "strings/utf_codecs.cc",
+        "third_party/icu/icu_utf.cc",
+    ],
+    hdrs = glob(
+        [
+            "*.h",
+            "strings/*.h",
+            "memory/*.h",
+            "synchronization/*.h",
+            "third_party/icu/*.h",
+        ],
+        allow_empty = True,
+    ),
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/zircon-assert:headers",
+    ],
+)

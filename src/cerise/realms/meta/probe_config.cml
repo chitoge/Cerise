@@ -1,0 +1,30 @@
+// probe: does cmc accept inline config CAPABILITIES (value baked into the
+// .cm, NOT a config: {} schema + cvf)? These 4 caps mirror driver_manager's.
+{
+    capabilities: [
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceNames",
+            type: "vector",
+            element: { type: "string", max_size: 100 },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceIds",
+            type: "vector",
+            element: { type: "uint32" },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.driver.UseHardwareIommu",
+            type: "bool",
+            value: false,
+        },
+    ],
+}

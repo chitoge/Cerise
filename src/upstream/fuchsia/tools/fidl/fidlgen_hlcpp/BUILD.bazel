@@ -1,0 +1,13 @@
+# Authored locally for Cerise. fidlgen_hlcpp: FIDL IR -> high-level C++ (HLCPP)
+# bindings (Go host tool). Reuses lib/fidlgen_cpp (shared with fidlgen_cpp).
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+go_binary(
+    name = "fidlgen_hlcpp",
+    srcs = ["main.go"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/fidlgen_hlcpp/codegen:codegen",
+        "//src/upstream/fuchsia/tools/fidl/fidlgen_hlcpp/coding_tables:coding_tables",
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen_cpp:fidlgen_cpp",
+    ],
+)

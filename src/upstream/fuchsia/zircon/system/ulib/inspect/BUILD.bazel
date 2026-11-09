@@ -1,0 +1,29 @@
+# Cerise BUILD for zircon/system/ulib/inspect (Inspect C++ core: VMO heap + reader),
+# authored locally; upstream is GN (zx_library). Provides <lib/inspect/cpp/...>.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "inspect",
+    srcs = [
+        "bounded_list_node.cc",
+        "health.cc",
+        "hierarchy.cc",
+        "inspector.cc",
+        "reader.cc",
+        "vmo/heap.cc",
+        "vmo/scanner.cc",
+        "vmo/snapshot.cc",
+        "vmo/state.cc",
+        "vmo/types.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

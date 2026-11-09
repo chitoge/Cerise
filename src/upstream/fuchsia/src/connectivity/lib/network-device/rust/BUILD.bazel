@@ -1,0 +1,38 @@
+# Authored locally for Cerise. netdevice_client: the real
+# fuchsia.hardware.network client crate. Replaces this project's hand-rolled
+# FIFO/session client code (nvme_probe/ahci_probe-style) with the real
+# upstream implementation, as needed by netstack3-bindings' common_deps.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "network-device-rust",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "netdevice_client",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit:explicit",
+        "//src/upstream/fuchsia/src/lib/async-utils:async-utils",
+        "//src/upstream/fuchsia/src/lib/const-unwrap:const-unwrap",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl_table_validation:fidl_table_validation",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/lib/network/packet:packet",
+        "@crates//:arrayvec",
+        "@crates//:event-listener",
+        "@crates//:futures",
+        "@crates//:scopeguard",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)

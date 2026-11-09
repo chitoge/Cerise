@@ -1,0 +1,39 @@
+// Cerise demonstrator component: proves the real cmc-native .cml -> .cm pipeline
+// and structured-config DELIVERY (schema here -> .cm; values in BUILD.bazel ->
+// .cvf; delivered as the config VMO at runtime) end to end. This is the
+// replacement for hand-built fidl_fuchsia_component_decl literals and for
+// fshost/driver-index's hardcoded `Config` literals.
+//
+// Deliberately self-contained (no include shards) to keep the first cmc-compiled
+// Cerise manifest minimal and its failure surface small; use/expose demonstrate the
+// shape a real component declares.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/hello_cml",
+        forward_stdout_to: "log",
+        forward_stderr_to: "log",
+    },
+
+    // Structured-config SCHEMA. cmc lowers this into the .cm's ConfigSchema
+    // (fields + checksum + value_source=PackagePath("meta/hello_cml.cvf")). The
+    // matching VALUES are delivered via meta/hello_cml.cvf (see BUILD.bazel).
+    config: {
+        greeting: {
+            type: "string",
+            max_size: 64,
+        },
+        max_len: { type: "uint32" },
+    },
+
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+
+    expose: [
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

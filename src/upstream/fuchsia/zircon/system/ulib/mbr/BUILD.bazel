@@ -1,0 +1,13 @@
+# Vendored for Cerise fshost Phase 1. Real upstream zircon/system/ulib/mbr.
+# Header-only (mbr.h is all-inline); no .cc sources exist upstream.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "mbr",
+    hdrs = ["include/mbr/mbr.h"],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)

@@ -1,0 +1,16 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Virtio-net device model (VMM side, draft stub).
+rust_library(
+    name = "virtio_net_dev",
+    srcs = ["lib.rs"],
+    edition = "2021",
+    deps = ["//src/cerise/rt:cerise_rt"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)

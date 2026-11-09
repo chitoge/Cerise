@@ -1,0 +1,122 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = [
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//:kernel_cc_headers",
+    ],
+)
+
+cc_library(
+    name = "vm",
+    srcs = [
+        "vm_priv.h",
+        "anonymous_page_request.cc",
+        "compression.cc",
+        "compressor.cc",
+        "continuous_attribution_tracker.cc",
+        "debug_compressor.cc",
+        "discardable_vmo_tracker.cc",
+        "evictor.cc",
+        "kstack.cc",
+        "lz4_compressor.cc",
+        "mem_command.cc",
+        "memory_stats.cc",
+        "page.cc",
+        "page_queues.cc",
+        "page_source.cc",
+        "page_state.cc",
+        "physical_page_borrowing_config.cc",
+        "physical_page_provider.cc",
+        "pinned_vm_object.cc",
+        "pmm.cc",
+        "pmm_arena.cc",
+        "pmm_checker.cc",
+        "pmm_node.cc",
+        "ppb_command.cc",
+        "scanner.cc",
+        "slot_page_storage.cc",
+        "stream_size_manager.cc",
+        "vm.cc",
+        "vm_address_region.cc",
+        "vm_address_region_or_mapping.cc",
+        "vm_aspace.cc",
+        "vm_cow_pages.cc",
+        "vm_mapping.cc",
+        "vm_object.cc",
+        "vm_object_paged.cc",
+        "vm_object_physical.cc",
+        "vm_page_list.cc",
+        "vmm.cc",
+    ],
+    deps = [
+        ":headers",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/thread-stack:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["include/**/*.h"], allow_empty = True) + [
+        "//zircon/kernel/vm/phys:headers",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True) + [
+        "//zircon/kernel/vm/phys:source_snapshot",
+        "//zircon/kernel/vm/unittests:source_snapshot",
+    ],
+)
+
+filegroup(
+    name = "vm_sources",
+    srcs = [
+        "anonymous_page_request.cc",
+        "compression.cc",
+        "compressor.cc",
+        "continuous_attribution_tracker.cc",
+        "debug_compressor.cc",
+        "discardable_vmo_tracker.cc",
+        "evictor.cc",
+        "kstack.cc",
+        "lz4_compressor.cc",
+        "mem_command.cc",
+        "memory_stats.cc",
+        "page.cc",
+        "page_queues.cc",
+        "page_source.cc",
+        "page_state.cc",
+        "physical_page_borrowing_config.cc",
+        "physical_page_provider.cc",
+        "pinned_vm_object.cc",
+        "pmm.cc",
+        "pmm_arena.cc",
+        "pmm_checker.cc",
+        "pmm_node.cc",
+        "ppb_command.cc",
+        "scanner.cc",
+        "slot_page_storage.cc",
+        "stream_size_manager.cc",
+        "vm.cc",
+        "vm_address_region.cc",
+        "vm_address_region_or_mapping.cc",
+        "vm_aspace.cc",
+        "vm_cow_pages.cc",
+        "vm_mapping.cc",
+        "vm_object.cc",
+        "vm_object_paged.cc",
+        "vm_object_physical.cc",
+        "vm_page_list.cc",
+        "vmm.cc",
+    ],
+)

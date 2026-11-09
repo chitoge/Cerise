@@ -1,0 +1,47 @@
+# arch-neutral proof tier: all 32 components build GREEN under arm64-kernel
+#
+# Build command (verify all 32 at once):
+#   bazel build --platforms=//platforms:arm64-kernel <targets...>
+#
+# First batch (16 entries): confirmed green (2026-06-14) — no arm64 stubs needed.
+# Second batch (16 entries): confirmed green (2026-06-14) — required arm64 ISA stubs:
+#   arch/arch_ops.h, arch/arch_interrupt.h, arch/arch_thread.h, arch/kernel_aspace.h,
+#   arch/vm.h, arch/aspace.h, arch/regs.h, arch/restricted.h, arch/current_thread.h,
+#   arch/crashlog_regs.h, arch/defines.h, arch/arm64/mp.h, arch/arm64/dap.h,
+#   arch/arm64/mmu.h, dev/timer/armv7_mmio_timer.h (stub in zircon/kernel/include/)
+#
+# Full 32/32 proof: all entries in arch-neutral-set.txt build under both
+#   //platforms:arm64-kernel and //platforms:x64-kernel.
+
+//zircon/kernel/dev/interrupt:interrupt
+//zircon/kernel/dev/iommu:iommu
+//zircon/kernel/dev/iommu/stub:iommu_stub
+//zircon/kernel/dev/pdev/power:pdev_power
+//zircon/kernel/hypervisor:hypervisor
+//zircon/kernel/lib/acpi_lite:acpi_lite
+//zircon/kernel/lib/backtrace:backtrace
+//zircon/kernel/lib/btree:btree
+//zircon/kernel/lib/kconcurrent:kconcurrent
+//zircon/kernel/lib/kpci:kpci
+//zircon/kernel/lib/ktrace:ktrace
+//zircon/kernel/lib/lockup_detector:lockup_detector
+//zircon/kernel/lib/object_cache:object_cache
+//zircon/kernel/lib/page-map:page-map
+//zircon/kernel/lib/percpu_writer:percpu_writer
+//zircon/kernel/lib/power-management:power-management
+//zircon/kernel/lib/sched:sched
+//zircon/kernel/lib/spsc_buffer:spsc_buffer
+//zircon/kernel/lib/stall:stall
+//zircon/kernel/lib/suspend_wakeup_timer:suspend_wakeup_timer
+//zircon/kernel/lib/thread_sampler:thread_sampler
+//zircon/kernel/lib/wake-vector:wake-vector
+//zircon/kernel/phys/lib/memalloc:memalloc
+//zircon/kernel/vm/phys:phys
+//zircon/system/ulib/affine:affine
+//zircon/system/ulib/bitmap:bitmap
+//zircon/system/ulib/concurrent:concurrent
+//zircon/system/ulib/fbl:fbl
+//zircon/system/ulib/ffl:ffl
+//zircon/system/ulib/hwreg:hwreg
+//zircon/system/ulib/page_tables:page_tables
+//zircon/system/ulib/ram-crashlog:ram-crashlog

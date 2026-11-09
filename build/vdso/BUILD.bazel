@@ -1,0 +1,130 @@
+load("//build/vdso:vdso.bzl", "userboot_payload", "zircon_vdso", "zircon_vdso_arm64")
+
+package(default_visibility = ["//visibility:public"])
+
+userboot_payload(
+    name = "userboot",
+    cxx_srcs = [
+        "//:userboot_payload_cxx_sources",
+        "//zircon/kernel/lib/userabi:userboot_payload_sources",
+        "//src/lib/zbitl:userboot_payload_sources",
+        "//zircon/kernel/lib/boot-options:sources",
+        "//zircon/system/ulib/fbl:sources",
+    ],
+    c_srcs = [
+        "//:userboot_payload_c_sources",
+        "//zircon/kernel/lib/libc:userboot_payload_c_sources",
+    ],
+    asm_srcs = [
+        "//:userboot_payload_asm_sources",
+    ],
+    linker_script = "//zircon/kernel/phys:phys_elf_module_linker_script",
+    hdrs = [
+        # kernel_snapshot covers all kernel + ulib + upstream headers
+        "//:kernel_snapshot",
+        # Support snapshot: fidl, fidl_base, ld, zstd, ldmsg
+        "//:userboot_payload_support_snapshot",
+        # elfldltl: include/ and test/ headers (not in kernel_snapshot globs)
+        "//:elfldltl_headers",
+        "//:elfldltl_test_headers",
+        # zx/include headers (zx has no BUILD.bazel, not in kernel_snapshot glob)
+        "//:userboot_payload_zx_headers",
+        # userabi source_snapshot for private headers (bootfs.h, etc.)
+        "//zircon/kernel/lib/userabi:source_snapshot",
+        # phys headers not in kernel_snapshot
+        "//zircon/kernel/phys/include:all_headers",
+        "//zircon/kernel/phys/lib/memalloc:headers",
+        # fasttime headers
+        "//zircon/kernel/lib/fasttime:headers",
+        # zbitl include headers
+        "//src/lib/zbitl:headers",
+        # sdk headers not covered by userboot_payload_support_snapshot
+        "//sdk/lib/fit:headers",
+        "//sdk/lib/zbi-format:headers",
+        "//sdk/lib/stdcompat:headers",
+        # zircon/system/public is a separate package, not in kernel_snapshot
+        "//zircon/system/public:headers",
+        # zircon/src/zircon/lib/zircon public headers
+        "//src/zircon/lib/zircon:public_headers",
+        # zircon-internal headers (separate package)
+        "//zircon/system/ulib/zircon-internal:headers",
+        # fbl headers (separate package)
+        "//zircon/system/ulib/fbl:headers",
+        # boot-options headers (separate package)
+        "//zircon/kernel/lib/boot-options:headers",
+        # instrumentation headers (separate package)
+        "//zircon/kernel/lib/instrumentation:headers",
+        # arch/x86 full source snapshot (glob in kernel_snapshot is excluded by package boundary)
+        "//zircon/kernel/arch/x86:source_snapshot",
+        # arch include headers (separate packages)
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/arch/x86/include:headers",
+        # crypto headers (separate package)
+        "//zircon/kernel/lib/crypto:headers",
+        # hwreg, mmio-ptr, uart headers (separate packages for uart deps)
+        "//zircon/system/ulib/hwreg:headers",
+        "//zircon/system/ulib/mmio-ptr:headers",
+        "//zircon/system/ulib/uart:headers",
+    ],
+)
+
+zircon_vdso(
+    name = "libzircon",
+    cxx_srcs = [
+        "//zircon/kernel/lib/userabi:vdso_elf_cxx_sources",
+        "//zircon/system/ulib/affine:sources",
+        "//zircon/system/ulib/concurrent:sources",
+    ],
+    asm_srcs = [
+        "//zircon/kernel/lib/userabi:vdso_elf_asm_sources",
+    ],
+    linker_script = "//zircon/kernel/lib/userabi:vdso_elf_linker_scripts",
+    syscall_headers = "//abi:zx_syscall_headers_generated",
+    hdrs = [
+        # Workspace-relative include dirs — declare their headers so Bazel
+        # symlinks them into the sandbox at their source-tree paths.
+        # vdso/ private headers (syscall-entry.h, private.h, etc.)
+        "//zircon/kernel/lib/userabi:source_snapshot",
+        "//zircon/kernel/lib/userabi:headers",
+        "//zircon/kernel/lib/arch:headers",
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/arch/x86/include:headers",
+        "//zircon/kernel/lib/fasttime:headers",
+        "//zircon/system/ulib/affine:headers",
+        "//zircon/system/ulib/concurrent:headers",
+        "//zircon/system/public:headers",
+        "//src/zircon/lib/zircon:public_headers",
+        "//zircon/kernel/arch/x86/include:headers",
+        "//sdk/lib/stdcompat:headers",
+        "//tools/fidl:compat_header_files",
+    ],
+)
+
+zircon_vdso_arm64(
+    name = "arm64_libzircon",
+    cxx_srcs = [
+        "//zircon/kernel/lib/userabi:vdso_elf_cxx_sources",
+        "//zircon/system/ulib/affine:sources",
+        "//zircon/system/ulib/concurrent:sources",
+    ],
+    asm_srcs = [
+        "//zircon/kernel/lib/userabi:vdso_elf_asm_sources_arm64",
+    ],
+    linker_script = "//zircon/kernel/lib/userabi:vdso_elf_linker_scripts",
+    syscall_headers = "//abi:zx_syscall_headers_generated",
+    hdrs = [
+        "//zircon/kernel/lib/userabi:source_snapshot",
+        "//zircon/kernel/lib/userabi:headers",
+        "//zircon/kernel/lib/arch:headers",
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/arch/arm64/include:headers",
+        "//zircon/kernel/lib/fasttime:headers",
+        "//zircon/system/ulib/affine:headers",
+        "//zircon/system/ulib/concurrent:headers",
+        "//zircon/system/public:headers",
+        "//src/zircon/lib/zircon:public_headers",
+        "//zircon/kernel/arch/arm64/include:headers",
+        "//sdk/lib/stdcompat:headers",
+        "//tools/fidl:compat_header_files",
+    ],
+)

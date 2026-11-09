@@ -1,0 +1,19 @@
+// driver_host_dfv2 leaf — the DFv2 driver host (bin/driver_host_dfv2, environ
+// LDSVC_KEEP=1). Spawned dynamically into the driver-hosts collection. Serves
+// fuchsia.driver.host.DriverHost.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/driver_host_dfv2",
+        environ: ["LDSVC_KEEP=1"],
+    },
+    capabilities: [
+        { protocol: "fuchsia.driver.host.DriverHost" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.driver.host.DriverHost", from: "self" },
+    ],
+}

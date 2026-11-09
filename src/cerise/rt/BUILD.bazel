@@ -1,0 +1,24 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+# Cerise userland runtime: panic handler, global allocator, _start entry.
+# All syscalls are raw vDSO extern "C" bindings; no libc dependency.
+rust_library(
+    name = "cerise_rt",
+    srcs = [
+        "src/alloc.rs",
+        "src/entry.rs",
+        "src/lib.rs",
+        "src/panic.rs",
+        "src/zx.rs",
+    ],
+    edition = "2021",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)

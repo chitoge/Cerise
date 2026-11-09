@@ -1,0 +1,33 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "errors",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "errors",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.sys2:fidl_fuchsia_sys2",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/error/clonable_error:clonable_error",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/sys/component_manager/lib/router_error:router_error",
+        "//src/upstream/fuchsia/src/sys/component_manager/lib/serve_processargs:serve_processargs",
+        "//src/upstream/fuchsia/src/sys/lib/cm_config:cm_config",
+        "//src/upstream/fuchsia/src/sys/lib/config_encoder:config_encoder",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/src/sys/lib/component_id_index:component_id_index",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "//src/upstream/fuchsia/src/sys/lib/routing:routing",
+        "//src/upstream/fuchsia/src/sys/lib/runtime_capabilities:runtime_capabilities",
+        "@crates//:anyhow",
+        "@crates//:thiserror",
+    ],
+)

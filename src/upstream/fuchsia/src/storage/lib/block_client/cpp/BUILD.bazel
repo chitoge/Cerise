@@ -1,0 +1,59 @@
+# Vendored for Cerise fshost Phase 1. Real upstream
+# src/storage/lib/block_client/cpp — adapted directly from upstream's own real
+# BUILD.bazel (this dir ships one, unlike most GN-only dirs vendored this
+# session) with target paths rewritten to this project's //src/upstream/fuchsia
+# convention. `remote_rebindable_block_device.{cc,h}` is real upstream source but
+# only referenced by gpt's own test/ (not vendored) — not built here, matching
+# upstream's own real BUILD.bazel which also excludes it from these two targets.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "interface",
+    srcs = [
+        "block_device.cc",
+        "reader_writer.cc",
+    ],
+    hdrs = [
+        "block_device.h",
+        "reader_writer.h",
+    ],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/src/storage/lib/block_protocol:block_fifo",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl",
+        "//src/upstream/fuchsia/zircon/system/ulib/storage/buffer",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/safemath",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+    ],
+)
+
+cc_library(
+    name = "cpp",
+    srcs = [
+        "block_group_registry.cc",
+        "client.cc",
+        "remote_block_device.cc",
+    ],
+    hdrs = [
+        "block_group_registry.h",
+        "client.h",
+        "pass_through_read_only_device.h",
+        "remote_block_device.h",
+    ],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        ":interface",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/src/storage/lib/block_protocol:block_fifo",
+        "//src/upstream/fuchsia/zircon/system/ulib/storage/buffer",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/safemath",
+    ],
+)

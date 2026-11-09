@@ -1,0 +1,13 @@
+// cerise_logsink leaf — the bootstrap LogSink provider (bridges to DLOG).
+{
+    program: {
+        runner: "elf",
+        binary: "bin/cerise_logsink",
+    },
+    capabilities: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.logger.LogSink", from: "self" },
+    ],
+}

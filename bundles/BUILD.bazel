@@ -1,0 +1,288 @@
+"""Assembly input bundles: reusable component/package sets composed into products.
+
+Core bundles:
+  * component_framework — component_manager + elf_runner + logsink + the base
+    (top-level) shared lib/ closure. Contributes the boot cmdline. Requires nothing.
+  * driver_framework    — driver_manager + driver_index + driver_host (skeleton +
+    compat.so) + devfs-driver + netdev_probe. Requires nothing.
+  * netstack3           — the network stack. This is software-only and supports
+    loopback without a NIC.
+  * netstack3_probe     — the discovery/HTTP-echo validation client for an
+    explicit netstack3 validation product.
+  * network_uplink      — declares that a consumer needs a staged network-device
+    implementation for external connectivity.
+  * storage_fxfs        — fxfs + fshost + crypt. Requires cerise::block.
+  * storage_fxfs_block_probes / storage_fxfs_fshost_probe — storage validation
+    clients selected only by products whose root realm launches them.
+
+Component/package artifacts live in //bundles/artifacts, which applies the
+//platforms:x64-fuchsia transition before reusable bundles stage them.
+"""
+
+load("//assembly:defs.bzl", "cerise_assembly_input_bundle")
+load(":config_defaults.bzl", "DRIVER_INDEX_CONFIG_VALUES", "DRIVER_MANAGER_CONFIG_VALUES", "FSHOST_CONFIG_VALUES", "NETSTACK3_CONFIG_VALUES")
+
+package(default_visibility = ["//visibility:public"])
+
+# ---------------------------------------------------------------------------
+# component_framework: the CFv2 core + the base (top-level) shared lib/ closure.
+# ---------------------------------------------------------------------------
+cerise_assembly_input_bundle(
+    name = "component_framework",
+    # The boot cmdline: launch component_manager as userboot.next, force the
+    # next-vDSO. x64 boards add no serial flag.
+    cmdline = [
+        "userboot.next=bin/component_manager+--boot",
+        "kernel.vdso.always_use_next=true",
+    ],
+    bootfs = {
+        "bin/component_manager": "//bundles/artifacts:component_manager_stripped.fuchsia",
+        "config/component_manager": "//src/cerise/cm_config:config/component_manager",
+        "config/build_info/minimum_utc_stamp": "//src/cerise/cm_config:config_build_info/minimum_utc_stamp",
+        "pkg/elf_runner/meta/elf_runner.cm": "//src/cerise/realms:elf_runner_manifest",
+        "pkg/cerise_logsink/meta/cerise_logsink.cm": "//src/cerise/realms:cerise_logsink_manifest",
+        "pkg/cerise_logsink/bin/cerise_logsink": "//bundles/artifacts:cerise_logsink_stripped.fuchsia",
+        "pkg/cerise_logsink/lib/ld.so.1": "//bundles/artifacts:libc_so_logsink_pkg.fuchsia",
+        "pkg/cerise_logsink/lib/libm.so": "//bundles/artifacts:libm_so_cerise_logsink_pkg.fuchsia",
+        "pkg/cerise_logsink/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_logsink_pkg.fuchsia",
+        "pkg/cerise_logsink/lib/libfdio.so": "//bundles/artifacts:libfdio_so_logsink_pkg.fuchsia",
+        # Base (top-level) shared libraries — the loader's default /boot/lib closure.
+        "lib/ld.so.1": "//bundles/artifacts:libc_so.fuchsia",
+        "lib/libc++.so.1": "//bundles/artifacts:libcxx_so.fuchsia",
+        "lib/libfdio.so": "//bundles/artifacts:libfdio_so.fuchsia",
+    },
+)
+
+# Minimal component-manager bootstrap for roots that intentionally do not run
+# the logging service (for example crash and PMU validation realms).
+cerise_assembly_input_bundle(
+    name = "component_framework_minimal",
+    cmdline = [
+        "userboot.next=bin/component_manager+--boot",
+        "kernel.vdso.always_use_next=true",
+    ],
+    bootfs = {
+        "bin/component_manager": "//bundles/artifacts:component_manager_stripped.fuchsia",
+        "config/component_manager": "//src/cerise/cm_config:config/component_manager",
+        "config/build_info/minimum_utc_stamp": "//src/cerise/cm_config:config_build_info/minimum_utc_stamp",
+        # The builtin ELF runner still has a bootfs manifest so roots can
+        # resolve its runner declaration; its implementation lives in
+        # component_manager rather than in a package binary.
+        "pkg/elf_runner/meta/elf_runner.cm": "//src/cerise/realms:elf_runner_manifest",
+        "lib/ld.so.1": "//bundles/artifacts:libc_so.fuchsia",
+        "lib/libc++.so.1": "//bundles/artifacts:libcxx_so.fuchsia",
+        "lib/libfdio.so": "//bundles/artifacts:libfdio_so.fuchsia",
+    },
+)
+
+# ---------------------------------------------------------------------------
+# driver_framework: DFv2 manager/index/host skeleton + devfs.
+# ---------------------------------------------------------------------------
+cerise_assembly_input_bundle(
+    name = "driver_framework",
+    configs = {
+        # driver_manager structured config: the bundle carries the
+        # schema (the compiled realm manifest) + default values; cerise_product
+        # generates + stages the .cvf. cvf_dest is explicit because the package
+        # dir (driver_manager_rust_dfv2platbus) differs from the manifest name.
+        "driver_manager_rust_dfv2acpi": {
+            "cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_manifest",
+            "values": DRIVER_MANAGER_CONFIG_VALUES,
+            "cvf_dest": "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi.cvf",
+        },
+        # driver_index structured config: the values here carry every
+        # field EXCEPT boot_drivers — that one is BOARD data, injected by the
+        # product rule from cerise_board.boot_drivers (boot_drivers_field).
+        "driver_index": {
+            "cm": "//src/cerise/realms:driver_index_acpi_manifest",
+            "values": DRIVER_INDEX_CONFIG_VALUES,
+            "boot_drivers_field": "boot_drivers",
+        },
+    },
+    bootfs = {
+        # driver_manager_rust (dfv2platbus binary, acpi manifest routing kernel resources).
+        # Declared as a real .cml (cmc via cerise_component). See //src/cerise/realms.
+        "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi.cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_manifest",
+        "pkg/driver_manager_rust_dfv2platbus/bin/driver_manager_rust_dfv2platbus": "//bundles/artifacts:driver_manager_rust_dfv2platbus_stripped.fuchsia",
+        "pkg/driver_manager_rust_dfv2platbus/lib/ld.so.1": "//bundles/artifacts:libc_so_driver_manager_pkg.fuchsia",
+        "pkg/driver_manager_rust_dfv2platbus/lib/libm.so": "//bundles/artifacts:libm_so_driver_manager_rust_dfv2platbus_pkg.fuchsia",
+        "pkg/driver_manager_rust_dfv2platbus/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_driver_manager_pkg.fuchsia",
+        "pkg/driver_manager_rust_dfv2platbus/lib/libfdio.so": "//bundles/artifacts:libfdio_so_driver_manager_pkg.fuchsia",
+        # driver_index (single binary; boot_drivers arrive via the generated .cvf).
+        "pkg/driver_index/meta/driver_index.cm": "//src/cerise/realms:driver_index_acpi_manifest",
+        "pkg/driver_index/bin/driver_index": "//bundles/artifacts:driver_index_stripped.fuchsia",
+        "pkg/driver_index/lib/ld.so.1": "//bundles/artifacts:libc_so_di_pci_pkg.fuchsia",
+        "pkg/driver_index/lib/libm.so": "//bundles/artifacts:libm_so_driver_index_pkg.fuchsia",
+        "pkg/driver_index/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_di_pci_pkg.fuchsia",
+        "pkg/driver_index/lib/libfdio.so": "//bundles/artifacts:libfdio_so_di_pci_pkg.fuchsia",
+        # driver_host skeleton: binary + base libs + compat.so. The board layers
+        # the individual driver .so files into this same pkg/driver_host/lib/.
+        "pkg/driver_host/meta/driver_host.cm": "//src/cerise/realms:driver_host_dfv2_manifest",
+        "pkg/driver_host/bin/driver_host_dfv2": "//src/cerise/driver_host:driver_host_dfv2.fuchsia",
+        "pkg/driver_host/lib/ld.so.1": "//bundles/artifacts:libc_so_dhxhost_pkg.fuchsia",
+        "pkg/driver_host/lib/libm.so": "//bundles/artifacts:libm_so_driver_host_pkg.fuchsia",
+        "pkg/driver_host/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_dhxhost_pkg.fuchsia",
+        "pkg/driver_host/lib/libfdio.so": "//bundles/artifacts:libfdio_so_dhxhost_pkg.fuchsia",
+        "pkg/driver_host/lib/compat.so": "//bundles/artifacts:compat_so.fuchsia",
+        # devfs-driver: synthetic placeholder devfs attaches to (manifest-only).
+        "pkg/devfs-driver/meta/devfs-driver.cm": "//src/cerise/realms:devfs-driver_manifest",
+    },
+)
+
+# netdev_probe: validation client proving the devfs client path. It is kept
+# separate from the production driver framework so products only stage it when
+# their selected root realm launches it.
+cerise_assembly_input_bundle(
+    name = "network_device_probe",
+    validation = True,
+    bootfs = {
+        "pkg/netdev_probe/meta/netdev_probe.cm": "//src/cerise/realms:netdev_probe_manifest",
+        "pkg/netdev_probe/bin/netdev_probe": "//src/cerise/netdev_probe:netdev_probe_stripped.fuchsia",
+        "pkg/netdev_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_netdev_probe_pkg.fuchsia",
+        "pkg/netdev_probe/lib/libm.so": "//bundles/artifacts:libm_so_netdev_probe_pkg.fuchsia",
+        "pkg/netdev_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_netdev_probe_pkg.fuchsia",
+    },
+)
+
+# ---------------------------------------------------------------------------
+# netstack3: the real Fuchsia network stack. It is software-only: loopback
+# operation does not need a board NIC.
+# ---------------------------------------------------------------------------
+cerise_assembly_input_bundle(
+    name = "netstack3",
+    configs = {
+        # netstack3 structured config: schema in the realm manifest,
+        # values here; cerise_product stages pkg/netstack3/meta/netstack3.cvf.
+        "netstack3": {
+            "cm": "//src/cerise/realms:netstack3_manifest",
+            "values": NETSTACK3_CONFIG_VALUES,
+        },
+    },
+    bootfs = {
+        "pkg/netstack3/meta/netstack3.cm": "//src/cerise/realms:netstack3_manifest",
+        "pkg/netstack3/bin/netstack3": "//src/upstream/fuchsia/src/connectivity/network/netstack3:netstack3_stripped.fuchsia",
+        "pkg/netstack3/lib/ld.so.1": "//bundles/artifacts:libc_so_fxfs_bin_pkg.fuchsia",
+        "pkg/netstack3/lib/libm.so": "//bundles/artifacts:libm_so_netstack3_pkg.fuchsia",
+        "pkg/netstack3/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fxfs_bin_pkg.fuchsia",
+    },
+)
+
+# netstack3_probe: discovery/HTTP-echo validation client. Production network
+# products carry only the stack; a realm that launches this client must opt in.
+cerise_assembly_input_bundle(
+    name = "netstack3_probe",
+    bootfs = {
+        "pkg/netstack3_probe/meta/netstack3_probe.cm": "//src/cerise/realms:netstack3_probe_manifest",
+        "pkg/netstack3_probe/bin/netstack3_probe": "//src/cerise/netstack3_probe:netstack3_probe_stripped.fuchsia",
+        "pkg/netstack3_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_netstack3_probe_pkg.fuchsia",
+        "pkg/netstack3_probe/lib/libm.so": "//bundles/artifacts:libm_so_netstack3_probe_pkg.fuchsia",
+        "pkg/netstack3_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_netstack3_probe_pkg.fuchsia",
+    },
+)
+
+# ---------------------------------------------------------------------------
+# network_uplink: a declaration-only bundle for consumers that require an
+# externally usable interface. Boards satisfy it by staging the netdevice
+# framework plus a concrete NIC implementation (for example e1000 or
+# virtio-net); it deliberately does not name either implementation.
+# ---------------------------------------------------------------------------
+cerise_assembly_input_bundle(
+    name = "network_uplink",
+    requires_features = ["cerise::network-device"],
+)
+
+# ---------------------------------------------------------------------------
+# storage_fxfs: Fxfs + fshost + crypt.
+# ---------------------------------------------------------------------------
+cerise_assembly_input_bundle(
+    name = "storage_fxfs",
+    requires_features = ["cerise::block"],
+    configs = {
+        # fshost structured config: schema in the realm manifest,
+        # values here; cerise_product stages pkg/fshost/meta/fshost.cvf.
+        "fshost": {
+            "cm": "//src/cerise/realms:fshost_manifest",
+            "values": FSHOST_CONFIG_VALUES,
+        },
+    },
+    bootfs = {
+        # crypt_fxfs: the Crypt service (fuchsia.fxfs/{Crypt,CryptManagement}).
+        "pkg/crypt_fxfs/meta/crypt_fxfs.cm": "//src/cerise/realms:crypt_fxfs_manifest",
+        "pkg/crypt_fxfs/bin/fxfs_crypt": "//src/upstream/fuchsia/src/storage/crypt/fxfs:fxfs_crypt_stripped.fuchsia",
+        "pkg/crypt_fxfs/lib/ld.so.1": "//bundles/artifacts:libc_so_crypt_fxfs_pkg.fuchsia",
+        "pkg/crypt_fxfs/lib/libm.so": "//bundles/artifacts:libm_so_crypt_fxfs_pkg.fuchsia",
+        "pkg/crypt_fxfs/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_crypt_fxfs_pkg.fuchsia",
+        # fxfs_provisioner: the first-boot Fxfs genesis component the fshost realm
+        # runs (format + "blob" volume, then release the disk + serve the readiness gate).
+        "pkg/fxfs_provisioner/meta/fxfs_provisioner.cm": "//src/cerise/realms:fxfs_provisioner_manifest",
+        "pkg/fxfs_provisioner/bin/fxfs_provisioner": "//src/cerise/fxfs_provisioner:fxfs_provisioner_stripped.fuchsia",
+        "pkg/fxfs_provisioner/lib/ld.so.1": "//bundles/artifacts:libc_so_fxfs_provisioner_pkg.fuchsia",
+        "pkg/fxfs_provisioner/lib/libm.so": "//bundles/artifacts:libm_so_fxfs_provisioner_pkg.fuchsia",
+        "pkg/fxfs_provisioner/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fxfs_provisioner_pkg.fuchsia",
+        # fshost: real filesystem lifecycle manager (auto-discovery + auto-mount).
+        "pkg/fshost/meta/fshost.cm": "//src/cerise/realms:fshost_manifest",
+        "pkg/fshost/bin/fshost": "//src/upstream/fuchsia/src/storage/fshost:fshost_stripped.fuchsia",
+        "pkg/fshost/lib/ld.so.1": "//bundles/artifacts:libc_so_fshost_pkg.fuchsia",
+        "pkg/fshost/lib/libm.so": "//bundles/artifacts:libm_so_fshost_pkg.fuchsia",
+        "pkg/fshost/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fshost_pkg.fuchsia",
+        # fxfs: the real Fxfs server component (static #fxfs child of fshost).
+        "pkg/fxfs/meta/fxfs.cm": "//src/cerise/realms:fxfs_manifest",
+        "pkg/fxfs/bin/fxfs_bin": "//src/upstream/fuchsia/src/storage/fxfs/bin:fxfs_bin_stripped.fuchsia",
+        "pkg/fxfs/lib/ld.so.1": "//bundles/artifacts:libc_so_fxfs_bin_pkg.fuchsia",
+        "pkg/fxfs/lib/libm.so": "//bundles/artifacts:libm_so_fxfs_pkg.fuchsia",
+        "pkg/fxfs/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fxfs_bin_pkg.fuchsia",
+    },
+)
+
+# Core crypt service for realms that do not run fshost or its provisioner.
+# Fileserver embeds Fxfs in-process, so this bundle must not stage a dormant
+# standalone fxfs executable.
+cerise_assembly_input_bundle(
+    name = "storage_fxfs_core",
+    requires_features = ["cerise::block"],
+    bootfs = {
+        "pkg/crypt_fxfs/meta/crypt_fxfs.cm": "//src/cerise/realms:crypt_fxfs_manifest",
+        "pkg/crypt_fxfs/bin/fxfs_crypt": "//src/upstream/fuchsia/src/storage/crypt/fxfs:fxfs_crypt_stripped.fuchsia",
+        "pkg/crypt_fxfs/lib/ld.so.1": "//bundles/artifacts:libc_so_crypt_fxfs_pkg.fuchsia",
+        "pkg/crypt_fxfs/lib/libm.so": "//bundles/artifacts:libm_so_crypt_fxfs_pkg.fuchsia",
+        "pkg/crypt_fxfs/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_crypt_fxfs_pkg.fuchsia",
+    },
+)
+
+# storage_fxfs_block_probes: direct NVMe, AHCI, and Fxfs validation clients.
+# Only the base storage-validation realm launches these clients.
+cerise_assembly_input_bundle(
+    name = "storage_fxfs_block_probes",
+    requires_features = ["cerise::block"],
+    bootfs = {
+        "pkg/nvme_probe/meta/nvme_probe.cm": "//src/cerise/realms:nvme_probe_manifest",
+        "pkg/nvme_probe/bin/nvme_probe": "//src/cerise/nvme_probe:nvme_probe_stripped.fuchsia",
+        "pkg/nvme_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_nvme_probe_pkg.fuchsia",
+        "pkg/nvme_probe/lib/libm.so": "//bundles/artifacts:libm_so_nvme_probe_pkg.fuchsia",
+        "pkg/nvme_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_nvme_probe_pkg.fuchsia",
+        "pkg/ahci_probe/meta/ahci_probe.cm": "//src/cerise/realms:ahci_probe_manifest",
+        "pkg/ahci_probe/bin/ahci_probe": "//src/cerise/ahci_probe:ahci_probe_stripped.fuchsia",
+        "pkg/ahci_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_ahci_probe_pkg.fuchsia",
+        "pkg/ahci_probe/lib/libm.so": "//bundles/artifacts:libm_so_ahci_probe_pkg.fuchsia",
+        "pkg/ahci_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_ahci_probe_pkg.fuchsia",
+        "pkg/fxfs_probe/meta/fxfs_probe.cm": "//src/cerise/realms:fxfs_probe_manifest",
+        "pkg/fxfs_probe/bin/fxfs_probe": "//src/cerise/fxfs_probe:fxfs_probe_stripped.fuchsia",
+        "pkg/fxfs_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_fxfs_probe_pkg.fuchsia",
+        "pkg/fxfs_probe/lib/libm.so": "//bundles/artifacts:libm_so_fxfs_probe_pkg.fuchsia",
+        "pkg/fxfs_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fxfs_probe_pkg.fuchsia",
+    },
+)
+
+# storage_fxfs_fshost_probe: validation client for fshost's automatic mount
+# path. It stays out of products whose realm uses fshost without this client.
+cerise_assembly_input_bundle(
+    name = "storage_fxfs_fshost_probe",
+    requires_features = ["cerise::block"],
+    bootfs = {
+        "pkg/fshost_probe/meta/fshost_probe.cm": "//src/cerise/realms:fshost_probe_manifest",
+        "pkg/fshost_probe/bin/fshost_probe": "//src/cerise/fshost_probe:fshost_probe_stripped.fuchsia",
+        "pkg/fshost_probe/lib/ld.so.1": "//bundles/artifacts:libc_so_fshost_probe_pkg.fuchsia",
+        "pkg/fshost_probe/lib/libm.so": "//bundles/artifacts:libm_so_fshost_probe_pkg.fuchsia",
+        "pkg/fshost_probe/lib/libc++.so.1": "//bundles/artifacts:libcxx_so_fshost_probe_pkg.fuchsia",
+    },
+)

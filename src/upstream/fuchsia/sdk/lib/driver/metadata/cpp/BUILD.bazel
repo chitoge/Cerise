@@ -1,0 +1,22 @@
+# Cerise BUILD (authored locally) — DFv2 metadata C++ helpers.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*", "*unittest*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        # metadata_server.h includes <lib/driver/platform-device/cpp/pdev.h>
+        "//src/upstream/fuchsia/sdk/lib/driver/platform-device/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

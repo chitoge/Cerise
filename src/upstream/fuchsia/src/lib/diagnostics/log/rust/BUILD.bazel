@@ -1,0 +1,80 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "diagnostics_log",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_log",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = select({
+        "@platforms//os:fuchsia": ["@crates//:paste"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/types:diagnostics_log_types",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:log",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/diagnostics/log/encoding/rust:diagnostics_log_encoding",
+            "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+            "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+            "//src/upstream/fuchsia/src/lib/fuchsia-component/client:client",
+            "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+            "@crates//:futures",
+        ],
+        "//conditions:default": [
+            "@crates//:chrono",
+        ],
+    }),
+)
+
+# on host, lib.rs's `#[cfg(not(target_os =
+# "fuchsia"))] mod portable;` is the only implementation module compiled in
+# (the `fuchsia`/`fuchsia_28` modules are target-only and need the real `zx`
+# crate - see FUCHSIA_SRCS in fuchsia-async's BUILD.bazel for the analogous
+# split). src/portable/mod.rs's #[cfg(test)] mod does `use regex::Regex;`.
+# srcs/crate_root are restated (instead of the `crate = ":diagnostics_log"`
+# shorthand) because that shorthand takes crate_name from the wrapped
+# target's CrateInfo unconditionally (rust_test's own `crate_name` attr is
+# only consulted when `crate` is unset - see rust.bzl's _rust_test_impl) and
+# this target needs a different one: see the crate_name comment below.
+rust_test(
+    name = "diagnostics_log_test",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    # Upstream's GN target renames the test binary's crate to
+    # `diagnostics_log_lib_test` (`rustc_test("...") { name =
+    # "diagnostics_log_lib_test" ... }`), and portable::tests::
+    # supports_module_path/full_logging hardcode that name in their expected
+    # regex (`Metatag::Target` embeds `module_path!()`, which is rooted at
+    # the compiled crate name). Matching it here is what upstream's own GN
+    # wiring does, not a Cerise-specific rename.
+    crate_name = "diagnostics_log_lib_test",
+    edition = "2024",
+    # portable::tests's 4 tests share one process-global `static LOGGER:
+    # LazyLock<TestLogger>` (LOGGER.replace(...) - not thread_local!) with no
+    # per-test serialization, so they race under the default multi-threaded
+    # test harness (2 of 4 flake depending on scheduling). Not a Cerise
+    # BUILD/stub issue - the upstream test module itself assumes serial
+    # execution.
+    args = ["--test-threads=1"],
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/types:diagnostics_log_types",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:chrono",
+        "@crates//:log",
+        "@crates//:regex",
+        "@crates//:thiserror",
+    ],
+)

@@ -1,0 +1,49 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# fshost Phase 1: key-bag - on-disk key-bag file format (wraps per-volume Fxfs/zxcrypt
+# keys with a user-provided wrapping key, AES-GCM-SIV).
+rust_library(
+    name = "key-bag",
+    srcs = ["src/lib.rs"],
+    crate_name = "key_bag",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "@crates//:aes-gcm-siv",
+        "@crates//:hex",
+        "@crates//:itertools",
+        "@crates//:openat",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ] + select({
+        # On host the real zx crate can't compile (zx-sys syscall extern block
+        # is Fuchsia-gated); key-bag only touches zx::Status + zx::cprng_draw,
+        # both of which the Cerise host-zx shim provides. See
+        # //src/cerise/lib/zx_host.
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": ["//src/cerise/lib/zx_host:zx_host"],
+    }),
+)
+
+# Host-runnable unit tests via the Cerise host-zx shim:
+# key-bag's tests exercise only zx::Status and zx::cprng_draw, no handles.
+rust_test(
+    name = "key-bag_test",
+    crate = ":key-bag",
+    # `from_testdata` loads `/pkg/data/key_bag.json`, a Fuchsia component
+    # package resource that only exists inside a running component's namespace;
+    # it exercises package-data loading, not key-bag/zx logic. Skipped on host;
+    # it belongs to a future on-target (zircon-test) product. All other tests
+    # run.
+    args = [
+        "--skip",
+        "from_testdata",
+    ],
+    deps = [
+        "@crates//:assert_matches",
+        "@crates//:tempfile",
+    ],
+)

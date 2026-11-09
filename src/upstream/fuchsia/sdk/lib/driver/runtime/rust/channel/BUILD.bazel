@@ -1,0 +1,28 @@
+# Vendored from upstream (faithful port). fdf_channel: arena/channel/message
+# bindings for the fuchsia driver framework C runtime. test_utils.rs is a non-
+# test module (std-only). futures/fuchsia-async usage is #[cfg(test)]-gated, so
+# the non-test rlib does not need them. Compile-only rlib.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "channel",
+    srcs = [
+        "src/arena.rs",
+        "src/channel.rs",
+        "src/futures.rs",
+        "src/lib.rs",
+        "src/message.rs",
+        "src/test_utils.rs",
+    ],
+    crate_name = "fdf_channel",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust/core:core",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust/fdf_sys:fdf_sys",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+    ],
+)

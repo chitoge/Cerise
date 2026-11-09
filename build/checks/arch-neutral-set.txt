@@ -1,0 +1,62 @@
+# Mechanical arch-neutral component set — updated from build/partition/components.json
+#
+# Inclusion rule: components with non-empty `environments` list AND
+#   NOT under arch/<cpu>/ (arch-specific)
+#   NOT zircon/kernel/lib/libc (arch-aware: has arm64 asm under string/arch/arm64/)
+#   NOT host-tools or cerise-specific packages
+#
+# reclassifications (proof working):
+#   arch-specific (moved out):
+#     zircon/kernel/dev/hw_rng — intel-rng.cc includes arch/x86/feature.h unconditionally
+#   arch-aware (moved to arch-aware tier):
+#     zircon/kernel/vm — transitive dep on hw_rng via lib/crypto; own pmm.cc guards with #ifdef
+#   BUILD-issue (excluded from proof set):
+#     src/zircon/lib/zircon — depends on //:vdso which is not yet defined in root BUILD.bazel
+#   target-name fixes (generator bug):
+#     iommu/stub:stub → iommu/stub:iommu_stub
+#     pdev/power:power → pdev/power:pdev_power
+#
+# proof result: 16 of 32 entries build GREEN under arm64-kernel (proven tier);
+# 16 are deferred pending arm64 arch infrastructure import.
+# See arch-proven-set.txt for the first green tier; both files updated together.
+#
+# Three-way partition summary (updated):
+#   arch-specific (excluded):
+#     zircon/kernel/arch/x86/hypervisor, zircon/kernel/lib/arch/x86, zircon/kernel/dev/hw_rng
+#   arch-aware (excluded):
+#     zircon/kernel/lib/libc, zircon/kernel/vm
+#   BUILD-issue (excluded): src/zircon/lib/zircon (//:vdso missing)
+#   arch-neutral (this file, 32): all other components below
+
+//zircon/kernel/dev/interrupt:interrupt
+//zircon/kernel/dev/iommu:iommu
+//zircon/kernel/dev/iommu/stub:iommu_stub
+//zircon/kernel/dev/pdev/power:pdev_power
+//zircon/kernel/hypervisor:hypervisor
+//zircon/kernel/lib/acpi_lite:acpi_lite
+//zircon/kernel/lib/backtrace:backtrace
+//zircon/kernel/lib/btree:btree
+//zircon/kernel/lib/kconcurrent:kconcurrent
+//zircon/kernel/lib/kpci:kpci
+//zircon/kernel/lib/ktrace:ktrace
+//zircon/kernel/lib/lockup_detector:lockup_detector
+//zircon/kernel/lib/object_cache:object_cache
+//zircon/kernel/lib/page-map:page-map
+//zircon/kernel/lib/percpu_writer:percpu_writer
+//zircon/kernel/lib/power-management:power-management
+//zircon/kernel/lib/sched:sched
+//zircon/kernel/lib/spsc_buffer:spsc_buffer
+//zircon/kernel/lib/stall:stall
+//zircon/kernel/lib/suspend_wakeup_timer:suspend_wakeup_timer
+//zircon/kernel/lib/thread_sampler:thread_sampler
+//zircon/kernel/lib/wake-vector:wake-vector
+//zircon/kernel/phys/lib/memalloc:memalloc
+//zircon/kernel/vm/phys:phys
+//zircon/system/ulib/affine:affine
+//zircon/system/ulib/bitmap:bitmap
+//zircon/system/ulib/concurrent:concurrent
+//zircon/system/ulib/fbl:fbl
+//zircon/system/ulib/ffl:ffl
+//zircon/system/ulib/hwreg:hwreg
+//zircon/system/ulib/page_tables:page_tables
+//zircon/system/ulib/ram-crashlog:ram-crashlog

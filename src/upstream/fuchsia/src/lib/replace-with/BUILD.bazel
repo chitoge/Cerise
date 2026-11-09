@@ -1,0 +1,12 @@
+# Bazel integration for this imported target. replace-with: a
+# small dependency-free utility crate used by the packet library.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "replace-with",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+)

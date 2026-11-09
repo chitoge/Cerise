@@ -1,0 +1,56 @@
+# Cerise-original FIDL: cerise.display — a minimal framebuffer protocol served by the
+# native DFv2 display driver and consumed by the status_console client. Mirrors the
+# codegen wiring of an upstream FIDL library (e.g. sdk/fidl/fuchsia.kernel): fidl_library
+# (IR) -> fidl_cpp (driver's C++ wire+natural bindings) + fidl_rust -> rust_library
+# (console's client bindings). In-tree library, codegen only — no MODULE.bazel changes.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "cerise.display",
+    srcs = ["display.fidl"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+# C++ wire+natural bindings for the display driver (Service::InstanceHandler, the
+# Framebuffer server, Info/PixelFormat natural types).
+fidl_cpp(
+    name = "cerise.display_cpp",
+    library = ":cerise.display",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "cerise.display_rs",
+    library = ":cerise.display",
+    tags = ["manual"],
+)
+
+# Rust client bindings for the status_console (ServiceMarker, FramebufferProxy, Info).
+rust_library(
+    name = "fidl_cerise_display",
+    srcs = [":cerise.display_rs"],
+    crate_name = "fidl_cerise_display",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

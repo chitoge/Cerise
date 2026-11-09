@@ -1,0 +1,63 @@
+# Cerise BUILD for scudo standalone (LLVM compiler-rt allocator), vendored from the
+# @llvm-project overlay. Built into libc.so as the malloc family, replacing the interim
+# src/cerise/libc-malloc bump allocator. scudo is a production allocator: it returns
+# freed memory to the OS (no per-process arena held at peak) and has strong hardening.
+#
+# Cerise simplifications for the first cut:
+#   - gwp_asan disabled (GWP_ASAN_HOOKS=0): scudo's sampling debugger is optional.
+#   - Custom Fuchsia config (SizeClassAllocator64 + shared TSD) via SCUDO_USE_CUSTOM_CONFIG.
+#   - TSD slot lives in musl's struct pthread (SCUDO_HAS_PLATFORM_TLS_SLOT) — already
+#     present (threads_impl.h: uintptr_t scudo_tsd), so no libc surgery needed.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "scudo",
+    srcs = [
+        "checksum.cpp",
+        "common.cpp",
+        "crc32_hw.cpp",
+        "flags.cpp",
+        "flags_parser.cpp",
+        "fuchsia.cpp",
+        "mem_map.cpp",
+        "mem_map_fuchsia.cpp",
+        "release.cpp",
+        "report.cpp",
+        "string_utils.cpp",
+        "timing.cpp",
+        "wrappers_c.cpp",
+    ],
+    hdrs = glob(["*.h", "include/**/*.h"], allow_empty = False),
+    textual_hdrs = glob(["*.inc", "*.def"], allow_empty = False),
+    copts = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-stack-protector",
+        "-fno-sanitize=safe-stack",
+        # scudo standalone requires C++17+; the custom config uses C++17 features.
+        "-std=c++20",
+    ],
+    local_defines = [
+        "SCUDO_USE_CUSTOM_CONFIG=1",
+        "SCUDO_HAS_PLATFORM_TLS_SLOT=1",
+        # First cut: no gwp_asan sampler, no malloc hooks. NOTE: these features are gated
+        # with #ifdef, so they must be left UNDEFINED (not =0) to disable them.
+    ],
+    includes = [".", "include"],
+    # wrappers_c.cpp defines plain malloc/free/... — force them in even though nothing
+    # inside libc.so references the scudo object directly at link time.
+    alwayslink = True,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/c/scudo:scudo_fuchsia_config",
+        "//src/upstream/fuchsia/sdk/lib/c/scudo:scudo_tls_slot",
+        # The musl/llvm-libc hybrid shared header (zircon headers' gen __llvm-libc-common.h
+        # forwards to it); same dep libc_common uses.
+        "//src/upstream/fuchsia/third_party/llvm-libc:llvm_libc_common_header",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

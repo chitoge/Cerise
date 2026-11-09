@@ -1,0 +1,64 @@
+# Bazel integration for this imported target. Generated FIDL
+# library + C++/Rust bindings. Used by NVMe (namespace.h) for partition-volume
+# metadata, and by nvme_probe (Rust) to get the Service marker for locating a
+# driver's dynamically-published fuchsia.hardware.block.volume.Service instance.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.block.volume",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.block.volume_cpp",
+    library = ":fuchsia.hardware.block.volume",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.hardware.block.volume_rs",
+    library = ":fuchsia.hardware.block.volume",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_hardware_block_volume",
+    srcs = [":fuchsia.hardware.block.volume_rs"],
+    crate_name = "fidl_fuchsia_hardware_block_volume",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fidl_fuchsia_driver_token",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.inlineencryption:fidl_fuchsia_hardware_inlineencryption",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,6 @@
+#ifndef TOOLCHAIN_TESTS_LAYERING_PROBE_GOOD_H_
+#define TOOLCHAIN_TESTS_LAYERING_PROBE_GOOD_H_
+
+int layering_probe_good_value(void);
+
+#endif  // TOOLCHAIN_TESTS_LAYERING_PROBE_GOOD_H_

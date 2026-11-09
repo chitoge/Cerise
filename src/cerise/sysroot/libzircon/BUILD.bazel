@@ -1,0 +1,40 @@
+# Cerise libc sysroot — libzircon.so link stub.
+#
+# Anything linked for the fuchsia target needs `-lzircon` (the zx_* syscall ABI;
+# the real implementation is the vDSO loaded by the kernel at runtime). This
+# generates a link-time stub libzircon.so from the authoritative ABI interface
+# src/zircon/lib/zircon/zircon.ifs (SoName libzircon.so, 442 zx_*/_zx_* symbols):
+# the stub exports those symbols (empty) so the linker is satisfied; at runtime
+# the loader binds them to the vDSO. This is the anchor that lets the libc/ldso
+# and Rust fuchsia binaries link.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Generate empty stub definitions for every exported symbol in zircon.ifs.
+genrule(
+    name = "libzircon_stub_src",
+    srcs = ["//src/zircon/lib/zircon:zircon.ifs"],
+    outs = ["libzircon_stub.c"],
+    cmd = ("grep -oE 'Name: +_?zx_[a-z0-9_]+' $(location //src/zircon/lib/zircon:zircon.ifs) | " +
+           "awk '{print \"void \"$$2\"(void) {}\"}' > $@"),
+)
+
+cc_library(
+    name = "libzircon_stub",
+    srcs = [":libzircon_stub_src"],
+    # Freestanding stub; no libc/sysroot needed to compile empty functions.
+    tags = ["manual"],
+)
+
+# The link-time libzircon.so (SONAME libzircon.so).
+cc_shared_library(
+    name = "libzircon",
+    shared_lib_name = "libzircon.so",
+    tags = ["manual"],
+    user_link_flags = [
+        "-nostdlib",
+        "-Wl,-soname,libzircon.so",
+    ],
+    deps = [":libzircon_stub"],
+)

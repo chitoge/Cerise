@@ -1,0 +1,341 @@
+// Cerise file server gRPC contract.
+//
+// Paths are relative to the served root; the service rejects ".." components
+// and absolute paths with INVALID_ARGUMENT. Errors map centrally:
+// NOT_FOUND / ALREADY_EXISTS / PERMISSION_DENIED / RESOURCE_EXHAUSTED(ENOSPC)
+// / INTERNAL.
+syntax = "proto3";
+
+package cerise.fileserver.v1;
+
+// File kind reported by Stat and List.
+enum FileType {
+  FILE_TYPE_UNKNOWN = 0;
+  FILE_TYPE_FILE = 1;
+  FILE_TYPE_DIRECTORY = 2;
+  FILE_TYPE_SYMLINK = 3;
+}
+
+message StatRequest {
+  string path = 1;
+}
+
+message StatResponse {
+  FileType type = 1;
+  uint64 size = 2;
+  int64 mtime_unix_nanos = 3;
+  uint32 mode = 4;
+}
+
+message ListRequest {
+  string path = 1;
+  // Zero preserves the original unbounded listing contract. A nonzero value
+  // requires the server to fail with RESOURCE_EXHAUSTED rather than return
+  // more than this many entries.
+  uint64 max_entries = 2;
+}
+
+// One entry streamed back by List.
+message DirEntry {
+  string name = 1;
+  FileType type = 2;
+  uint64 size = 3;
+}
+
+message ReadRequest {
+  string path = 1;
+  uint64 offset = 2;
+  // Must be nonzero and no larger than the server's operational range limit.
+  // Callers read larger files through consecutive ranges.
+  uint64 length = 3;
+}
+
+// One chunk streamed back by Read.
+message ReadChunk {
+  bytes data = 1;
+  uint64 offset = 2;
+}
+
+// Write is deliberately UNARY (bytes + offset, chunked client-side) to avoid
+// client-stream flow-control complexity.
+message WriteRequest {
+  string path = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+  bool create = 4;
+  bool truncate = 5;
+  // UNSPECIFIED preserves the original contract: the reply is a filesystem
+  // durability barrier. LAZY is accepted only for reconstructible managed
+  // staging paths; callers must use Flush before publication.
+  WriteDurability durability = 6;
+  // Optional durable mutation-source binding. Omission preserves the legacy
+  // contract until the server's explicit legacy-admission seal is installed.
+  MutationContext mutation_context = 7;
+}
+
+message WriteResponse {
+  uint64 bytes_written = 1;
+}
+
+enum WriteDurability {
+  WRITE_DURABILITY_UNSPECIFIED = 0;
+  WRITE_DURABILITY_LAZY = 1;
+}
+
+message FlushRequest {
+  MutationContext mutation_context = 1;
+}
+message FlushResponse {}
+
+message GetUsageRequest {}
+message GetUsageResponse {
+  uint64 total_bytes = 1;
+  uint64 used_bytes = 2;
+  uint64 free_bytes = 3;
+  uint64 protected_reserve_bytes = 4;
+  uint64 reserved_bytes = 5;
+  uint64 image_bytes = 6;
+  uint64 artifact_bytes = 7;
+  uint64 spill_bytes = 8;
+  uint64 control_bytes = 9;
+  uint64 staging_bytes = 10;
+  uint64 other_allocated_bytes = 11;
+  // Bytes another managed image import may reserve after the control-plane
+  // reserve and all active import reservations.
+  uint64 image_push_capacity_bytes = 12;
+}
+
+message DeleteRequest {
+  string path = 1;
+  bool recursive = 2;
+  MutationContext mutation_context = 3;
+}
+
+message DeleteResponse {}
+
+message MkdirRequest {
+  string path = 1;
+  bool parents = 2;
+  MutationContext mutation_context = 3;
+}
+
+message MkdirResponse {}
+
+message RenameRequest {
+  string from = 1;
+  string to = 2;
+  MutationContext mutation_context = 3;
+}
+
+message RenameResponse {}
+
+// Durable identity of one mutation-producing execution. The file server does
+// not interpret these fields as filesystem paths or authentication secrets;
+// it binds their exact canonical tuple to admission and drain state.
+message MutationSourceIdentity {
+  string authority_domain_id = 1;
+  uint64 boot_id = 2;
+  uint64 generation = 3;
+  string principal_id = 4;
+}
+
+// Explicit mutation attribution. Controller attribution is accepted only on
+// the controller listener. A missing context is the legacy wire contract.
+message MutationContext {
+  oneof actor {
+    MutationSourceIdentity source = 1;
+    bool controller = 2;
+  }
+}
+
+enum MutationSourcePhase {
+  MUTATION_SOURCE_PHASE_UNSPECIFIED = 0;
+  MUTATION_SOURCE_PHASE_OPEN = 1;
+  MUTATION_SOURCE_PHASE_DRAINING = 2;
+  MUTATION_SOURCE_PHASE_DRAINED = 3;
+  // No exact source entry is retained. The identity may never have existed,
+  // but the closed-generation floor proves that it is permanently closed.
+  MUTATION_SOURCE_PHASE_RETIRED = 4;
+}
+
+message MutationSourceReceipt {
+  MutationSourceIdentity source = 1;
+  string open_request_id = 2;
+  string drain_request_id = 3;
+  MutationSourcePhase phase = 4;
+  // Present only for DRAINED. It binds the exact source and request IDs.
+  string receipt_sha256 = 5;
+  uint64 ledger_revision = 6;
+  // Echoes the exact Open, Drain, or Get request identity answered here.
+  string request_id = 7;
+  // Present only for RETIRED and always covers source.generation.
+  uint64 closed_generation_floor = 8;
+}
+
+message OpenMutationSourceRequest {
+  MutationSourceIdentity source = 1;
+  string request_id = 2;
+}
+
+message OpenMutationSourceResponse {
+  MutationSourceReceipt receipt = 1;
+}
+
+message DrainMutationSourceRequest {
+  MutationSourceIdentity source = 1;
+  string request_id = 2;
+}
+
+message DrainMutationSourceResponse {
+  MutationSourceReceipt receipt = 1;
+}
+
+message GetMutationSourceRequest {
+  MutationSourceIdentity source = 1;
+  // Must match the retained open or drain request identity.
+  string request_id = 2;
+}
+
+message GetMutationSourceResponse {
+  MutationSourceReceipt receipt = 1;
+}
+
+message CompactMutationSourcesRequest {
+  string authority_domain_id = 1;
+  // Advances a closed-generation floor. Explicitly retained lower-generation
+  // OPEN sources remain valid exceptions; the floor is not a universal proof
+  // that every lower generation has drained.
+  uint64 closed_through_generation = 2;
+  string request_id = 3;
+}
+
+message CompactMutationSourcesResponse {
+  uint64 closed_through_generation = 1;
+  uint64 ledger_revision = 2;
+  string authority_domain_id = 3;
+  string request_id = 4;
+}
+
+message SealLegacyMutationAdmissionRequest {
+  string request_id = 1;
+}
+
+message SealLegacyMutationAdmissionResponse {
+  uint64 ledger_revision = 1;
+  string request_id = 2;
+}
+
+service FileServer {
+  rpc Stat(StatRequest) returns (StatResponse);
+  rpc List(ListRequest) returns (stream DirEntry);
+  rpc Read(ReadRequest) returns (stream ReadChunk);
+  rpc Write(WriteRequest) returns (WriteResponse);
+  // Checkpoints all preceding accepted lazy writes. This is a durability
+  // checkpoint, not publication; immutable image publication uses
+  // CommitImageImport.
+  rpc Flush(FlushRequest) returns (FlushResponse);
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Mkdir(MkdirRequest) returns (MkdirResponse);
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  // Source lifecycle is controller-only. Drain is terminal: there is no
+  // corresponding reopen operation for an existing source identity.
+  rpc OpenMutationSource(OpenMutationSourceRequest)
+      returns (OpenMutationSourceResponse);
+  rpc DrainMutationSource(DrainMutationSourceRequest)
+      returns (DrainMutationSourceResponse);
+  rpc GetMutationSource(GetMutationSourceRequest)
+      returns (GetMutationSourceResponse);
+  rpc CompactMutationSources(CompactMutationSourcesRequest)
+      returns (CompactMutationSourcesResponse);
+  rpc SealLegacyMutationAdmission(SealLegacyMutationAdmissionRequest)
+      returns (SealLegacyMutationAdmissionResponse);
+
+  // Resumable, sequential import into the managed immutable-image namespace.
+  // The server chooses all paths; ordinary Write cannot mutate vm-images/v1.
+  rpc BeginImageImport(BeginImageImportRequest)
+      returns (BeginImageImportResponse);
+  rpc WriteImageImport(WriteImageImportRequest)
+      returns (WriteImageImportResponse);
+  rpc FlushImageImport(FlushImageImportRequest)
+      returns (FlushImageImportResponse);
+  rpc CommitImageImport(CommitImageImportRequest)
+      returns (CommitImageImportResponse);
+  rpc AbortImageImport(AbortImageImportRequest)
+      returns (AbortImageImportResponse);
+  // Releases only the bounded terminal idempotency record. The immutable image
+  // remains published. Requiring its digest makes this an explicit
+  // compare-and-delete operation rather than an unqualified metadata purge.
+  rpc ForgetImageImportReceipt(ForgetImageImportReceiptRequest)
+      returns (ForgetImageImportReceiptResponse);
+}
+
+message BeginImageImportRequest {
+  // Caller-stable idempotency key. ASCII letters, digits, dot, dash and
+  // underscore only.
+  string import_id = 1;
+  // Optional when the caller does not already know the container digest. An
+  // omitted digest is supplied to CommitImageImport after it has been
+  // accumulated while streaming the source. A previously completed import may
+  // also be resumed without resupplying its digest.
+  string expected_sha256 = 2;
+  uint64 expected_size = 3;
+}
+
+message BeginImageImportResponse {
+  string import_id = 1;
+  // Bytes already accepted by the current server incarnation. A client may
+  // continue at this offset, but must retain its own pending state until the
+  // separately reported durability boundary reaches it.
+  uint64 accepted_offset = 2;
+  // Prefix guaranteed durable across a host restart.
+  uint64 durable_offset = 3;
+}
+
+message WriteImageImportRequest {
+  string import_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+}
+
+message WriteImageImportResponse {
+  uint64 accepted_offset = 1;
+}
+
+message FlushImageImportRequest {
+  string import_id = 1;
+}
+
+message FlushImageImportResponse {
+  uint64 durable_offset = 1;
+}
+
+message CommitImageImportRequest {
+  string import_id = 1;
+  // Required here when BeginImageImport did not bind the import to a digest.
+  // Supplying it in both calls is allowed, but the values must match. It may be
+  // omitted when retrying an import that already has a terminal receipt.
+  string expected_sha256 = 2;
+}
+
+message CommitImageImportResponse {
+  string path = 1;
+  string sha256 = 2;
+  uint64 encoded_bytes = 3;
+  string cryostore_root_hash = 4;
+  uint64 guest_disk_bytes = 5;
+  uint32 format_version = 6;
+}
+
+message AbortImageImportRequest {
+  string import_id = 1;
+}
+
+message AbortImageImportResponse {}
+
+message ForgetImageImportReceiptRequest {
+  string import_id = 1;
+  string expected_sha256 = 2;
+}
+
+message ForgetImageImportReceiptResponse {}

@@ -1,0 +1,28 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+composite ahci;
+
+using fuchsia.acpi;
+using fuchsia.hardware.pci;
+using fuchsia.pci;
+using fuchsia.pci.massstorage;
+
+// Cerise change: same fix as nvme.bind
+// — upstream declares the "acpi" parent
+// `optional`, but Cerise's driver-index composite matcher has no ParentType::Optional
+// handling at this pin (unexercised). Verified via a real boot (PCI-NODE-PUBLISHED) that
+// QEMU's AHCI controller reports acpi=1, same as every other PCI device in this
+// environment. Made MANDATORY here, matching e1000/virtio-net/nvme's proven 2-parent
+// shape, rather than exercising the untested `optional` path.
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_CLASS ==  fuchsia.pci.BIND_PCI_CLASS.MASS_STORAGE;
+  fuchsia.BIND_PCI_SUBCLASS ==  fuchsia.pci.massstorage.BIND_PCI_SUBCLASS.SATA;
+  fuchsia.BIND_PCI_INTERFACE ==  0x01;
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+}

@@ -1,0 +1,239 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//assembly:defs.bzl", "cerise_architecture_artifact")
+load("//build/phys:phys_rules.bzl", "phys_build_id_interp", "zircon_arm64_physboot",
+     "zircon_arm64_physload", "zircon_boot_shim_x64",
+     "zircon_boot_shim_x86_32", "zircon_physboot", "zircon_physload")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "efi_rules.bzl",
+    "efi_timestamp_test.py",
+    "efi_timestamp_test_runner.sh",
+])
+
+# Generated assembly headers (static copies, produced once via genrule and
+# checked in; stable for the given hwreg/linuxboot interface).
+cc_library(
+    name = "boot_shim_asm_headers",
+    hdrs = [
+        "include/linuxboot-asm.h",
+        "include/phys32.h",
+    ],
+    includes = ["include"],
+)
+
+# Provides -I build/phys/include for phys cc_library compilations.
+# Includes the zircon/assert.h override that exposes __zx_panic even with
+# _KERNEL defined (phys toolchain sets both _KERNEL and _PHYS).
+cc_library(
+    name = "phys_include_overrides",
+    hdrs = [
+        "include/zircon/assert.h",
+    ],
+    includes = ["include"],
+)
+
+# Phys runtime stubs — provide implementations of symbols that are
+# intentionally absent from the phys environment.
+cc_library(
+    name = "phys_stubs",
+    srcs = [
+        "phys_assert_stubs.cc",
+        "phys_zbitl_decompress_stubs.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//:kernel_cc_headers",
+        "//src/lib/zbitl:phys_zbitl",
+    ],
+)
+
+cc_library(
+    name = "phys_delete_stubs",
+    srcs = ["phys_delete_stubs.cc"],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "phys32_stubs",
+    srcs = ["phys32_builtins.cc"],
+    alwayslink = True,
+)
+
+# Common dep list shared by physload, physboot, and x64 boot shim.
+_PHYS_COMMON_DEPS = [
+    "//zircon/kernel/lib/arch/x86:arch_x86",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//:code_patching",
+    "//zircon/kernel/lib/libc:phys_libc",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/third_party/ulib/cksum:cksum",
+    "//src/lib/zbitl:phys_zbitl",
+    "//:phys_elfldltl",
+    "//zircon/system/ulib/pretty:pretty",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    ":phys_stubs",
+]
+
+# x86_32 boot shim: excludes arch_x86 (has 64-bit-only assembly)
+_PHYS_COMMON_32_DEPS = [
+    "//zircon/kernel/lib/arch/x86:arch_x86_no64",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//:code_patching",
+    "//zircon/kernel/lib/libc:phys_libc",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/third_party/ulib/cksum:cksum",
+    "//src/lib/zbitl:phys_zbitl",
+    "//:phys_elfldltl",
+    "//zircon/system/ulib/pretty:pretty",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    ":phys_stubs",
+]
+
+# ---------- physload -------------------------------------------------------
+
+zircon_physload(
+    name = "physload",
+    deps = [
+        "//zircon/kernel/phys:phys_common_lib",
+        "//zircon/kernel/arch/x86:x86_phys_common_lib",
+    ] + _PHYS_COMMON_DEPS,
+    linker_scripts = [
+        "//zircon/kernel/phys:zbi-header.ld",
+        "//zircon/kernel/phys:phys-end.ld",
+        "//zircon/kernel/phys:phys.ld",
+    ],
+)
+
+cerise_architecture_artifact(
+    name = "physload_artifact",
+    src = ":physload",
+    arch = "x86_64",
+    kind = "physload",
+)
+
+# Interp object embeds physload ELF build-ID in physboot for loader matching.
+phys_build_id_interp(
+    name = "physload_interp",
+    physload = ":physload",
+)
+
+# ---------- physboot -------------------------------------------------------
+
+zircon_physboot(
+    name = "physboot",
+    deps = [
+        "//zircon/kernel/phys:physboot_phys_lib",
+        "//zircon/kernel/phys:physboot_extra_lib",
+        "//zircon/kernel/arch/x86:x86_physboot_base_lib",
+        "//zircon/kernel/arch/x86:x86_physboot_extra_lib",
+        "//zircon/kernel/lib/arch:arch_cpuid",
+        "//zircon/kernel/lib/crypto:physboot_crypto",
+        "//src/lib/zbitl:physboot_zbitl",
+    ] + _PHYS_COMMON_DEPS,
+    interp_objects = [":physload_interp"],
+    linker_scripts = [
+        "//zircon/kernel/phys:phys-elf-module.ld",
+    ],
+)
+
+# ---------- arm64 physload ------------------------------------------------
+
+_ARM64_PHYS_COMMON_DEPS = [
+    "//zircon/kernel/lib/arch/arm64:arch_arm64",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//:code_patching",
+    "//zircon/kernel/lib/libc:phys_libc",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/third_party/ulib/cksum:cksum",
+    "//src/lib/zbitl:phys_zbitl",
+    "//:phys_elfldltl",
+    "//zircon/system/ulib/pretty:pretty",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    ":phys_stubs",
+]
+
+zircon_arm64_physload(
+    name = "arm64-physload",
+    deps = [
+        "//zircon/kernel/phys:phys_common_lib",
+        "//zircon/kernel/arch/arm64/phys:arm64_phys_common_lib",
+    ] + _ARM64_PHYS_COMMON_DEPS,
+    linker_scripts = [
+        "//zircon/kernel/phys:zbi-header.ld",
+        "//zircon/kernel/phys:phys-end.ld",
+        "//zircon/kernel/phys:phys.ld",
+    ],
+)
+
+cerise_architecture_artifact(
+    name = "arm64_physload_artifact",
+    src = ":arm64-physload",
+    arch = "aarch64",
+    kind = "physload",
+)
+
+phys_build_id_interp(
+    name = "arm64-physload_interp",
+    physload = ":arm64-physload",
+    target_triple = "aarch64-unknown-elf",
+)
+
+# ---------- arm64 physboot ------------------------------------------------
+
+zircon_arm64_physboot(
+    name = "arm64-physboot",
+    deps = [
+        "//zircon/kernel/phys:physboot_phys_lib",
+        "//zircon/kernel/phys:physboot_extra_lib",
+        "//zircon/kernel/arch/arm64/phys:arm64_physboot_base_lib",
+        "//zircon/kernel/arch/arm64/phys:arm64_physboot_extra_lib",
+        "//zircon/kernel/lib/arch:arch_cpuid",
+        "//zircon/kernel/lib/crypto:physboot_crypto",
+        "//src/lib/zbitl:physboot_zbitl",
+    ] + _ARM64_PHYS_COMMON_DEPS,
+    interp_objects = [":arm64-physload_interp"],
+    linker_scripts = [
+        "//zircon/kernel/phys:phys-elf-module.ld",
+    ],
+)
+
+# ---------- linux x86-64 boot shim ----------------------------------------
+
+zircon_boot_shim_x64(
+    name = "linux_x86_64_boot_shim",
+    deps = [
+        "//zircon/kernel/phys:phys_boot_shim_lib",
+        "//zircon/kernel/arch/x86:x86_boot_shim_lib",
+        "//zircon/kernel/lib/acpi_lite:boot_shim_acpi",
+        ":phys_delete_stubs",
+    ] + _PHYS_COMMON_DEPS,
+    linker_scripts = [
+        "//zircon/kernel/phys:phys-end.ld",
+        "//zircon/kernel/arch/x86:phys/linuxboot.ld",
+        "//zircon/kernel/phys:phys.ld",
+    ],
+)
+
+# ---------- linux x86-32 boot shim ----------------------------------------
+
+zircon_boot_shim_x86_32(
+    name = "linux_x86_32_boot_shim",
+    deps = [
+        "//zircon/kernel/phys:phys_boot_shim_lib",
+        "//zircon/kernel/arch/x86:x86_boot_shim_x86_32_lib",
+        "//zircon/kernel/lib/acpi_lite:boot_shim_acpi",
+        ":phys_delete_stubs",
+        ":phys32_stubs",
+    ] + _PHYS_COMMON_32_DEPS,
+    linker_scripts = [
+        "//zircon/kernel/phys:phys-end.ld",
+        "//zircon/kernel/arch/x86:phys/linuxboot.ld",
+        "//zircon/kernel/arch/x86:phys/linuxboot32.ld",
+        "//zircon/kernel/phys:phys.ld",
+    ],
+)

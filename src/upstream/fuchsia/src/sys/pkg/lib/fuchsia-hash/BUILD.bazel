@@ -1,0 +1,26 @@
+# Authored locally for Cerise.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-hash",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fuchsia_hash",
+    edition = "2021",
+    deps = [
+        "@crates//:hex",
+        "@crates//:serde",
+        "@crates//:thiserror",
+    ],
+)
+
+# src/lib.rs's #[cfg(test)] mod does
+# `use proptest::prelude::*;`; src/iter.rs's own test mod needs nothing
+# beyond the library's own deps.
+rust_test(
+    name = "fuchsia-hash_test",
+    crate = ":fuchsia-hash",
+    edition = "2021",
+    deps = ["@crates//:proptest"],
+)

@@ -1,0 +1,16 @@
+// crypt_fxfs leaf — the Fxfs Crypt service (bin/fxfs_crypt). Exposes
+// fuchsia.fxfs.{Crypt,CryptManagement}.
+{
+    program: { runner: "elf", binary: "bin/fxfs_crypt" },
+    capabilities: [
+        { protocol: "fuchsia.fxfs.Crypt" },
+        { protocol: "fuchsia.fxfs.CryptManagement" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.fxfs.Crypt", from: "self" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "self" },
+    ],
+}

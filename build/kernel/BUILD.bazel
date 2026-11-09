@@ -1,0 +1,574 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//assembly:defs.bzl", "cerise_architecture_artifact")
+load("//build/kernel:kernel_link.bzl", "zircon_arm64_kernel", "zircon_kernel")
+load("//build/kernel:kernel_package.bzl", "kernel_image", "kernel_package", "kernel_user_copy_patches")
+
+package(default_visibility = ["//visibility:public"])
+
+# Kernel stubs compiled via the kernel toolchain (platform=//platforms:x64-kernel)
+cc_library(
+    name = "kernel_s4_stubs",
+    srcs = ["kernel_s4_stubs.cc"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+# ARM64 kernel stubs (no x86-specific inline asm)
+cc_library(
+    name = "arm64_kernel_s4_stubs",
+    srcs = ["kernel_arm64_s4_stubs.cc"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+# ─── kernel image packaging ───────────────────────────────────────────
+
+kernel_image(
+    name = "vmzircon_image",
+    kernel = ":vmzircon",
+)
+
+kernel_user_copy_patches(
+    name = "vmzircon_user_copy_patches",
+    src = "//zircon/kernel/arch/x86/user-copy:user_copy_asm_source",
+    hdrs = [
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/system/public:headers",
+    ],
+)
+
+genrule(
+    name = "vmzircon_version_string",
+    outs = ["version-string.txt"],
+    cmd = "printf 'bazel-zircon\\n' > $@",
+)
+
+kernel_package(
+    name = "vmzircon_package",
+    kernel_image = ":vmzircon_image",
+    user_copy_patches = ":vmzircon_user_copy_patches",
+    version_string = ":vmzircon_version_string",
+    package_dir = "vmzircon_package",
+)
+
+# ─── kernel storage ZBI assembled from Bazel-native chain ─────────────
+
+genrule(
+    name = "kernel_storage_zbi",
+    srcs = [
+        ":vmzircon_package",
+        "//build/phys:physboot",
+        "//build/vdso:userboot",
+        "//build/vdso:libzircon",
+        "//examples/userboot-smoke:userboot-smoke",
+    ],
+    outs = ["kernel_storage.zbi"],
+    cmd = " && ".join([
+        "set -e",
+        "manifest=$(RULEDIR)/kernel_storage.manifest",
+        ": > $$manifest",
+        # Patch the kernel image.elf PT_INTERP with physboot's build ID.
+        "for f in $(locations :vmzircon_package); do case $$f in *image.elf) orig_image=$$f;; esac; done",
+        "patched_image=$(RULEDIR)/kernel_image_interp.elf",
+        "python3 $(location //tools/zbi:set_elf_interp.py) --input $$orig_image --interp-from $(location //build/phys:physboot) --output $$patched_image",
+        # Build manifest: use patched image.elf; copy other package files verbatim.
+        "for f in $(locations :vmzircon_package); do d=$${f#*vmzircon_package/}; case $$d in zircon/vmzircon/image.elf) printf '%s=%s\\n' \"$$d\" \"$$patched_image\" >> $$manifest;; *) printf '%s=%s\\n' \"$$d\" \"$$f\" >> $$manifest;; esac; done",
+        "printf 'physboot=%s\\n' '$(location //build/phys:physboot)' >> $$manifest",
+        "printf 'zircon/userboot=%s\\n' '$(location //build/vdso:userboot)' >> $$manifest",
+        # libzircon produces .so + header files; filter for the .so
+        "for f in $(locations //build/vdso:libzircon); do case \"$$f\" in *.so) printf 'zircon/vdso=%s\\n' \"$$f\" >> $$manifest ;; esac; done",
+        "bootfs=$(RULEDIR)/kernel_bootfs.manifest",
+        "printf 'bin/userboot-smoke=%s\\n' '$(location //examples/userboot-smoke:userboot-smoke)' > $$bootfs",
+        # kernel.wallclock=pit is the shared base default and stays here: every
+        # x86 product that does not override it has qualified on the PIT
+        # wallclock, and this ZBI is the default kernel storage for all of them.
+        # A board that must not use PIT overrides this with a later CMDLINE item
+        # (last-wins), e.g. //boards/hp-elitedesk-800-g3 appends
+        # kernel.wallclock=auto because PIT starves that unit's AP timers. Do
+        # NOT drop the pin from here to fix one board -- that silently reclocks
+        # every other metal product.
+        "python3 $(location //tools/zbi:simple_zbi.py) --output $@ --cmdline 'kernel.serial=legacy kernel.enable-serial-syscalls=output-only kernel.phys.next=physboot kernel.select=zircon kernel.select.userboot=userboot userboot.next=bin/userboot-smoke userboot.next-is-test=true kernel.wallclock=pit' --storage-kernel-manifest $$manifest --storage-bootfs-manifest $$bootfs",
+    ]),
+    tools = [
+        "//tools/zbi:set_elf_interp.py",
+        "//tools/zbi:simple_zbi.py",
+    ],
+)
+
+cerise_architecture_artifact(
+    name = "kernel_storage_zbi_artifact",
+    src = ":kernel_storage_zbi",
+    arch = "x86_64",
+    kind = "kernel_storage",
+)
+
+# ─── zircon_kernel link ────────────────────────────────────────────────
+
+zircon_kernel(
+    name = "vmzircon",
+    entry = "kZirconAbiSpec",
+    linker_scripts = [
+        "//:kernel_linker_script",
+        ":x64_boot_cpuid_markers.ld",
+    ],
+    deps = [
+        # Arch x86
+        "//zircon/kernel/arch/x86",
+        "//zircon/kernel/arch/x86/cpuid:cpuid",
+    ] + select({
+            "//config:hypervisor_enabled": ["//zircon/kernel/arch/x86/hypervisor:hypervisor_x86"],
+            "//conditions:default": [],
+        }) + [
+        "//zircon/kernel/arch/x86/user-copy:user_copy",
+        # Arch cpuid (CpuidVersionInfo, CpuidLXCacheInformation, ToString)
+        "//zircon/kernel/lib/arch:arch_cpuid",
+        # Perfmon (PerfmonStateBase, perfmon_supported, perfmon_active)
+        "//zircon/kernel/lib/perfmon:perfmon",
+        # Core kernel scheduler/threading
+        "//zircon/kernel/kernel",
+        # Object dispatchers
+        "//zircon/kernel/object",
+        # Platform
+        "//zircon/kernel/platform",
+        "//zircon/kernel/platform/pc",
+        # Top-level init / main / kZirconAbiSpec
+        "//zircon/kernel/top",
+        # VM subsystem
+        "//zircon/kernel/vm",
+        "//zircon/kernel/vm/phys",
+        # Kernel libs with object code
+        "//zircon/kernel/lib/arch/x86:arch_x86",
+        "//zircon/kernel/lib/backtrace",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/btree",
+        "//zircon/kernel/lib/cbuf",
+        "//zircon/kernel/lib/counters",
+        "//zircon/kernel/lib/crashlog",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/lib/cxxabi-dynamic-init:cxxabi_dynamic_init",
+        "//zircon/kernel/lib/fbl",
+        "//zircon/kernel/lib/heap",
+        "//zircon/kernel/lib/instrumentation",
+        "//zircon/kernel/lib/kconcurrent",
+        "//zircon/kernel/lib/kpci",
+        "//zircon/kernel/lib/ktrace",
+        "//zircon/kernel/lib/libc",
+        "//zircon/kernel/lib/lockup_detector",
+        "//zircon/kernel/lib/root_resource_filter",
+        "//zircon/kernel/lib/unittest",
+        "//zircon/kernel/lib/object_cache",
+        "//zircon/kernel/lib/page-map:page-map",
+        "//zircon/kernel/lib/page_cache",
+        "//zircon/kernel/lib/virtual_alloc",
+        "//zircon/kernel/lib/percpu_writer",
+        "//zircon/kernel/lib/power-management:power-management",
+        "//zircon/kernel/lib/sched",
+        "//zircon/kernel/lib/spsc_buffer",
+        "//zircon/kernel/lib/stall",
+        "//zircon/kernel/lib/suspend_wakeup_timer",
+        "//zircon/kernel/lib/syscalls",
+        "//zircon/kernel/lib/thread_sampler",
+        "//zircon/kernel/lib/topology",
+        "//zircon/kernel/lib/userabi",
+        "//zircon/kernel/lib/wake-vector:wake-vector",
+        "//zircon/kernel/debugcommands",
+        # Phys mem alloc
+        "//zircon/kernel/phys/lib/memalloc",
+        # System ulibs
+        "//zircon/system/ulib/affine:affine",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty",
+        "//zircon/system/ulib/bitmap:bitmap",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//zircon/system/ulib/smbios:smbios",
+        # LZ4 compression
+        "//zircon/third_party/lz4/lib:lz4",
+        # Kernel io / console / debuglog
+        "//zircon/kernel/lib/console",
+        "//zircon/kernel/lib/debuglog",
+        "//zircon/kernel/lib/io",
+        "//zircon/kernel/lib/mtrace",
+        "//zircon/kernel/lib/persistent-debuglog",
+        # Dev drivers
+        "//zircon/kernel/dev:dev_init",
+        "//zircon/kernel/dev/hw_rng",
+        "//zircon/kernel/dev/interrupt",
+        "//zircon/kernel/dev/iommu",
+        "//zircon/kernel/dev/iommu/stub:iommu_stub",
+        "//zircon/kernel/dev/pcie",
+        "//zircon/kernel/dev/pdev/power:pdev_power",
+        # Hypervisor (gated: omitted when //config:hypervisor=false)
+    ] + select({
+        "//config:hypervisor_enabled": ["//zircon/kernel/hypervisor:hypervisor_lib"],
+        "//conditions:default": [],
+    }) + [
+        # ACPI
+        "//zircon/kernel/lib/acpi_lite:acpi_lite_lib",
+        # zbitl with kernel source files
+        "//src/lib/zbitl:zbitl",
+        # kernel stubs (hw_watchdog, __dso_handle, etc.)
+        ":kernel_s4_stubs",
+        "//:kernel_cc_headers",
+    ],
+)
+
+# ─── .L: arm64 kernel image packaging ─────────────────────────────────────
+
+kernel_image(
+    name = "arm64_vmzircon_image",
+    kernel = ":arm64-vmzircon",
+)
+
+genrule(
+    name = "arm64_vmzircon_version_string",
+    outs = ["arm64-version-string.txt"],
+    cmd = "printf 'bazel-zircon-arm64\\n' > $@",
+)
+
+kernel_package(
+    name = "arm64_vmzircon_package",
+    kernel_image = ":arm64_vmzircon_image",
+    version_string = ":arm64_vmzircon_version_string",
+    package_dir = "arm64_vmzircon_package",
+)
+
+# ─── .M: arm64 kernel storage ZBI ─────────────────────────────────────────
+
+genrule(
+    name = "arm64_kernel_storage_zbi",
+    srcs = [
+        ":arm64_vmzircon_package",
+        "//build/phys:arm64-physboot",
+        "//build/vdso:arm64_libzircon",
+        "//examples/hello-arm64:hello_arm64_bin",
+    ],
+    outs = ["arm64_kernel_storage.zbi"],
+    cmd = " && ".join([
+        "set -e",
+        "manifest=$(RULEDIR)/arm64_kernel_storage.manifest",
+        ": > $$manifest",
+        # Patch the kernel image.elf PT_INTERP with physboot's build ID.
+        "patched_image=$(RULEDIR)/arm64_kernel_image_interp.elf",
+        "for f in $(locations :arm64_vmzircon_package); do case $$f in *image.elf) orig_image=$$f;; esac; done",
+        "python3 $(location //tools/zbi:set_elf_interp.py) --input $$orig_image --interp-from $(location //build/phys:arm64-physboot) --output $$patched_image",
+        # Build manifest: use patched image.elf for zircon/vmzircon/image.elf; copy other package files verbatim.
+        "for f in $(locations :arm64_vmzircon_package); do d=$${f#*arm64_vmzircon_package/}; case $$d in zircon/vmzircon/image.elf) printf '%s=%s\\n' \"$$d\" \"$$patched_image\" >> $$manifest;; *) printf '%s=%s\\n' \"$$d\" \"$$f\" >> $$manifest;; esac; done",
+        "printf 'physboot=%s\\n' '$(location //build/phys:arm64-physboot)' >> $$manifest",
+        # real arm64 vDSO and real arm64 userland binary.
+        "printf 'zircon/vdso=%s\\n' '$(location //build/vdso:arm64_libzircon)' >> $$manifest",
+        "printf 'zircon/userboot=%s\\n' '$(location //examples/hello-arm64:hello_arm64_bin)' >> $$manifest",
+        # Arch kernel-driver items are arm64 BOARD/build DATA, packed here and passed to
+        # the arch-neutral simple_zbi.py as generic --kernel-driver DRIVER_TYPE=HEXPAYLOAD
+        # (the tool no longer hardcodes ARM constants). The payloads are
+        # byte-identical to the retired --arm-gicv2/--arm-timer packing:
+        #   0x32434947 = ZBI_KERNEL_DRIVER_ARM_GIC_V2 — dw_gic_driver_t
+        #     {mmio_phys=0x8000000, msi_frame_phys=0x8020000, gicd=0, gicc=0x10000,
+        #      gich=0, gicv=0, ipi_base=0, optional/use_msi/reserved=0}
+        #   0x4d495441 = ZBI_KERNEL_DRIVER_ARM_GENERIC_TIMER — {irq_phys=30, irq_virt=27,
+        #      irq_sphys=29, freq_override=0}
+        "python3 $(location //tools/zbi:simple_zbi.py) --output $@ --cmdline 'kernel.serial=qemu kernel.phys.next=physboot kernel.select=zircon kernel.select.userboot=userboot kernel.bypass-debuglog=true' --storage-kernel-manifest $$manifest --kernel-driver '0x32434947=0000000800000000000002080000000000000000000000000000010000000000000000000000000000000000000000000000000000000000' --kernel-driver '0x4d495441=1e0000001b0000001d00000000000000'",
+    ]),
+    tools = [
+        "//tools/zbi:simple_zbi.py",
+        "//tools/zbi:set_elf_interp.py",
+    ],
+)
+
+cerise_architecture_artifact(
+    name = "arm64_kernel_storage_zbi_artifact",
+    src = ":arm64_kernel_storage_zbi",
+    arch = "aarch64",
+    kind = "kernel_storage",
+)
+
+# ─── .K: arm64 kernel link ─────────────────────────────────────────────────
+
+zircon_arm64_kernel(
+    name = "arm64-vmzircon",
+    entry = "kZirconAbiSpec",
+    linker_scripts = [
+        "//:kernel_linker_script",
+    ],
+    deps = [
+        # Arch arm64
+        "//zircon/kernel/arch/arm64:arm64",
+        # ARM64 GIC interrupt controllers
+        "//zircon/kernel/dev/interrupt/gic/common:gic_common",
+        "//zircon/kernel/dev/interrupt/gic/v2:gicv2",
+        "//zircon/kernel/dev/interrupt/gic/v3:gicv3",
+        # PSCI
+        "//zircon/kernel/dev/psci:psci",
+        # ARM generic timer
+        "//zircon/kernel/dev/timer/arm_generic:arm_generic_timer",
+        # Arch lib arm64
+        "//zircon/kernel/lib/arch/arm64:arch_arm64",
+        # Core kernel scheduler/threading
+        "//zircon/kernel/kernel",
+        # Object dispatchers
+        "//zircon/kernel/object",
+        # Platform (arm64 uses generic-arm, not pc)
+        "//zircon/kernel/platform/generic-arm:generic_arm",
+        # Arch-agnostic platform (debug serial, halt, mexec, power; no pc deps)
+        "//zircon/kernel/platform:arm64_platform",
+        # pdev interrupt dispatch layer (replaces platform/pc/interrupts.cc for arm64)
+        "//zircon/kernel/dev/pdev:pdev_interrupt",
+        # Top-level init / main / kZirconAbiSpec
+        "//zircon/kernel/top",
+        # VM subsystem
+        "//zircon/kernel/vm",
+        "//zircon/kernel/vm/phys",
+        # Kernel libs with object code
+        "//zircon/kernel/lib/backtrace",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/btree",
+        "//zircon/kernel/lib/cbuf",
+        "//zircon/kernel/lib/counters",
+        "//zircon/kernel/lib/crashlog",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/lib/cxxabi-dynamic-init:cxxabi_dynamic_init",
+        "//zircon/kernel/lib/fbl",
+        "//zircon/kernel/lib/heap",
+        "//zircon/kernel/lib/instrumentation",
+        "//zircon/kernel/lib/kconcurrent",
+        "//zircon/kernel/lib/kpci",
+        "//zircon/kernel/lib/ktrace",
+        "//zircon/kernel/lib/libc",
+        "//zircon/kernel/lib/lockup_detector",
+        "//zircon/kernel/lib/perfmon:perfmon",
+        "//zircon/kernel/lib/root_resource_filter",
+        "//zircon/kernel/lib/unittest",
+        "//zircon/kernel/lib/object_cache",
+        "//zircon/kernel/lib/page-map:page-map",
+        "//zircon/kernel/lib/page_cache",
+        "//zircon/kernel/lib/virtual_alloc",
+        "//zircon/kernel/lib/percpu_writer",
+        "//zircon/kernel/lib/power-management:power-management",
+        "//zircon/kernel/lib/sched",
+        "//zircon/kernel/lib/spsc_buffer",
+        "//zircon/kernel/lib/stall",
+        "//zircon/kernel/lib/suspend_wakeup_timer",
+        "//zircon/kernel/lib/syscalls",
+        "//zircon/kernel/lib/thread_sampler",
+        "//zircon/kernel/lib/topology",
+        "//zircon/kernel/lib/userabi:userabi_arm64",
+        "//zircon/kernel/lib/wake-vector:wake-vector",
+        "//zircon/kernel/debugcommands",
+        # Phys mem alloc
+        "//zircon/kernel/phys/lib/memalloc",
+        # System ulibs
+        "//zircon/system/ulib/affine:affine",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty",
+        "//zircon/system/ulib/bitmap:bitmap",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        # LZ4 compression
+        "//zircon/third_party/lz4/lib:lz4",
+        # Kernel io / console / debuglog
+        "//zircon/kernel/lib/console",
+        "//zircon/kernel/lib/debuglog",
+        "//zircon/kernel/lib/io",
+        "//zircon/kernel/lib/mtrace",
+        "//zircon/kernel/lib/persistent-debuglog",
+        # Dev drivers
+        "//zircon/kernel/dev:dev_init",
+        "//zircon/kernel/dev/hw_rng",
+        "//zircon/kernel/dev/interrupt",
+        "//zircon/kernel/dev/iommu",
+        "//zircon/kernel/dev/iommu/stub:iommu_stub",
+        "//zircon/kernel/dev/pcie",
+        "//zircon/kernel/dev/pdev/power:pdev_power",
+        # zbitl with kernel source files
+        "//src/lib/zbitl:zbitl",
+        # Hypervisor support (GuestPhysicalAspace, TrapMap, etc.)
+        "//zircon/kernel/hypervisor:hypervisor_lib",
+        # ARM64 kernel stubs (hw_watchdog, __dso_handle, etc.; no x86-specific asm)
+        ":arm64_kernel_s4_stubs",
+        "//:kernel_cc_headers",
+    ],
+)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ON-TARGET KERNEL UNIT-TEST KERNEL (tests/zircon boot gate) — added block.
+#
+# Zircon's own in-kernel unit tests register via `UNITTEST_START_TESTCASE`
+# (alwayslink, compiled INTO the kernel ELF), driven at runtime by the `ut`
+# kernel-shell command. The stock `vmzircon` deliberately links NONE of the
+# `*_tests` libraries (e.g. //zircon/kernel/lib/fbl:fbl compiles only arena.cc;
+# fbl_tests is a separate testonly/manual lib), so `ut all` on the stock kernel
+# runs zero cases. This kernel links the same closure PLUS a curated set of
+# QEMU-safe kernel unit-test suites, so `ut all` runs real Zircon kernel tests.
+#
+# The deps list mirrors `vmzircon` above (kept a duplicate on purpose: the stock
+# production kernel target stays byte-identical, and any drift is visible here).
+# testonly=True throughout because the *_tests libs are testonly.
+#
+# Boot contract (see tests/zircon): the kernel_storage cmdline runs
+#   kernel.shell.script=ut+all;boot-test-success
+# `ut all` returns -1 on any failure (sets lastresult); `boot-test-success` then
+# prints BOOT_TEST_SUCCESS:userspace-started ONLY when lastresult==0. The stock
+# `userboot.next-is-test=true` is intentionally DROPPED here so that marker can
+# only originate from a green `ut all`, never from userboot-smoke's clean exit.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_UTEST_KERNEL_TEST_LIBS = [
+    # Curated kernel unit-test suites that use the in-kernel UNITTEST harness
+    # (UNITTEST_START_TESTCASE, run by `ut`) and link cleanly into the kernel.
+    # NOTE: only libs whose tests use the kernel harness belong here — e.g.
+    # //zircon/kernel/lib/btree:btree_kernel_tests is a HOST-style test (includes
+    # <malloc.h>) and does NOT compile against the kernel toolchain, so it is
+    # intentionally excluded.
+    "//zircon/kernel/lib/fbl:fbl_tests",
+    "//zircon/kernel/lib/cbuf:cbuf_tests",
+    "//zircon/kernel/lib/debuglog:debuglog_tests",
+    "//zircon/kernel/vm/unittests:vm_snapshot_unittests",
+]
+
+_UTEST_KERNEL_DEPS = [
+    # --- mirror of vmzircon deps (keep in sync) ---
+    # Arch x86
+    "//zircon/kernel/arch/x86",
+    "//zircon/kernel/arch/x86/cpuid:cpuid",
+] + select({
+    "//config:hypervisor_enabled": ["//zircon/kernel/arch/x86/hypervisor:hypervisor_x86"],
+    "//conditions:default": [],
+}) + [
+    "//zircon/kernel/arch/x86/user-copy:user_copy",
+    "//zircon/kernel/lib/arch:arch_cpuid",
+    "//zircon/kernel/lib/perfmon:perfmon",
+    "//zircon/kernel/kernel",
+    "//zircon/kernel/object",
+    "//zircon/kernel/platform",
+    "//zircon/kernel/platform/pc",
+    "//zircon/kernel/top",
+    "//zircon/kernel/vm",
+    "//zircon/kernel/vm/phys",
+    "//zircon/kernel/lib/arch/x86:arch_x86",
+    "//zircon/kernel/lib/backtrace",
+    "//zircon/kernel/lib/boot-options:boot_options",
+    "//zircon/kernel/lib/btree",
+    "//zircon/kernel/lib/cbuf",
+    "//zircon/kernel/lib/counters",
+    "//zircon/kernel/lib/crashlog",
+    "//zircon/kernel/lib/crypto",
+    "//zircon/kernel/lib/cxxabi-dynamic-init:cxxabi_dynamic_init",
+    "//zircon/kernel/lib/fbl",
+    "//zircon/kernel/lib/heap",
+    "//zircon/kernel/lib/instrumentation",
+    "//zircon/kernel/lib/kconcurrent",
+    "//zircon/kernel/lib/kpci",
+    "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/lockup_detector",
+    "//zircon/kernel/lib/root_resource_filter",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/kernel/lib/object_cache",
+    "//zircon/kernel/lib/page-map:page-map",
+    "//zircon/kernel/lib/page_cache",
+    "//zircon/kernel/lib/virtual_alloc",
+    "//zircon/kernel/lib/percpu_writer",
+    "//zircon/kernel/lib/power-management:power-management",
+    "//zircon/kernel/lib/sched",
+    "//zircon/kernel/lib/spsc_buffer",
+    "//zircon/kernel/lib/stall",
+    "//zircon/kernel/lib/suspend_wakeup_timer",
+    "//zircon/kernel/lib/syscalls",
+    "//zircon/kernel/lib/thread_sampler",
+    "//zircon/kernel/lib/topology",
+    "//zircon/kernel/lib/userabi",
+    "//zircon/kernel/lib/wake-vector:wake-vector",
+    "//zircon/kernel/debugcommands",
+    "//zircon/kernel/phys/lib/memalloc",
+    "//zircon/system/ulib/affine:affine",
+    "//zircon/system/ulib/fbl:fbl",
+    "//zircon/system/ulib/pretty:pretty",
+    "//zircon/system/ulib/bitmap:bitmap",
+    "//zircon/system/ulib/region-alloc:region-alloc",
+    "//zircon/system/ulib/smbios:smbios",
+    "//zircon/third_party/lz4/lib:lz4",
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/debuglog",
+    "//zircon/kernel/lib/io",
+    "//zircon/kernel/lib/mtrace",
+    "//zircon/kernel/lib/persistent-debuglog",
+    "//zircon/kernel/dev:dev_init",
+    "//zircon/kernel/dev/hw_rng",
+    "//zircon/kernel/dev/interrupt",
+    "//zircon/kernel/dev/iommu",
+    "//zircon/kernel/dev/iommu/stub:iommu_stub",
+    "//zircon/kernel/dev/pcie",
+    "//zircon/kernel/dev/pdev/power:pdev_power",
+] + select({
+    "//config:hypervisor_enabled": [
+        "//zircon/kernel/hypervisor:hypervisor_lib",
+        # Positive guest-entry (VMLAUNCH) test — only meaningful, and only
+        # linkable, when the hypervisor is built in.
+        "//zircon/kernel/arch/x86/hypervisor/unittests:hypervisor_enter_unittests",
+    ],
+    "//conditions:default": [],
+}) + [
+    "//zircon/kernel/lib/acpi_lite:acpi_lite_lib",
+    "//src/lib/zbitl:zbitl",
+    ":kernel_s4_stubs",
+    "//:kernel_cc_headers",
+] + _UTEST_KERNEL_TEST_LIBS
+
+zircon_kernel(
+    name = "vmzircon_utest",
+    testonly = True,
+    entry = "kZirconAbiSpec",
+    linker_scripts = [
+        "//:kernel_linker_script",
+        ":x64_boot_cpuid_markers.ld",
+    ],
+    deps = _UTEST_KERNEL_DEPS,
+)
+
+kernel_image(
+    name = "vmzircon_utest_image",
+    testonly = True,
+    kernel = ":vmzircon_utest",
+)
+
+kernel_package(
+    name = "vmzircon_utest_package",
+    testonly = True,
+    kernel_image = ":vmzircon_utest_image",
+    user_copy_patches = ":vmzircon_user_copy_patches",
+    version_string = ":vmzircon_version_string",
+    package_dir = "vmzircon_utest_package",
+)
+
+# Kernel storage ZBI for the unit-test kernel. Mirrors :kernel_storage_zbi but
+# (1) packages :vmzircon_utest_package and (2) uses a cmdline that runs the
+# in-kernel unit tests at boot and DROPS userboot.next-is-test=true.
+genrule(
+    name = "kernel_storage_utest_zbi",
+    testonly = True,
+    srcs = [
+        ":vmzircon_utest_package",
+        "//build/phys:physboot",
+        "//build/vdso:userboot",
+        "//build/vdso:libzircon",
+        "//examples/userboot-smoke:userboot-smoke",
+    ],
+    outs = ["kernel_storage_utest.zbi"],
+    cmd = " && ".join([
+        "set -e",
+        "manifest=$(RULEDIR)/kernel_storage_utest.manifest",
+        ": > $$manifest",
+        "for f in $(locations :vmzircon_utest_package); do case $$f in *image.elf) orig_image=$$f;; esac; done",
+        "patched_image=$(RULEDIR)/kernel_utest_image_interp.elf",
+        "python3 $(location //tools/zbi:set_elf_interp.py) --input $$orig_image --interp-from $(location //build/phys:physboot) --output $$patched_image",
+        "for f in $(locations :vmzircon_utest_package); do d=$${f#*vmzircon_utest_package/}; case $$d in zircon/vmzircon/image.elf) printf '%s=%s\\n' \"$$d\" \"$$patched_image\" >> $$manifest;; *) printf '%s=%s\\n' \"$$d\" \"$$f\" >> $$manifest;; esac; done",
+        "printf 'physboot=%s\\n' '$(location //build/phys:physboot)' >> $$manifest",
+        "printf 'zircon/userboot=%s\\n' '$(location //build/vdso:userboot)' >> $$manifest",
+        "for f in $(locations //build/vdso:libzircon); do case \"$$f\" in *.so) printf 'zircon/vdso=%s\\n' \"$$f\" >> $$manifest ;; esac; done",
+        "bootfs=$(RULEDIR)/kernel_utest_bootfs.manifest",
+        "printf 'bin/userboot-smoke=%s\\n' '$(location //examples/userboot-smoke:userboot-smoke)' > $$bootfs",
+        "python3 $(location //tools/zbi:simple_zbi.py) --output $@ --cmdline 'kernel.serial=legacy kernel.enable-serial-syscalls=output-only kernel.phys.next=physboot kernel.select=zircon kernel.select.userboot=userboot userboot.next=bin/userboot-smoke kernel.shell.script=ut+all;boot-test-success kernel.wallclock=pit' --storage-kernel-manifest $$manifest --storage-bootfs-manifest $$bootfs",
+    ]),
+    tools = [
+        "//tools/zbi:set_elf_interp.py",
+        "//tools/zbi:simple_zbi.py",
+    ],
+)

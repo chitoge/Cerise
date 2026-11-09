@@ -1,0 +1,48 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# this whole library is @available(added=HEAD) at the library
+# level (overview.fidl) — no numbered-API-level shape, safe to bump straight to
+# HEAD (same precedent as fuchsia.net.multicast.admin above / fuchsia.fxfs).
+fidl_library(
+    name = "fuchsia.net.ndp",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.ndp_rs",
+    library = ":fuchsia.net.ndp",
+    tags = ["manual"],
+)
+
+# retargeted to :fidl_fuchsia_net_head, same reasoning as
+# fuchsia.net.multicast.admin's identical fix in this same phase - no other
+# real consumer of this library besides ndp_ext.
+rust_library(
+    name = "fidl_fuchsia_net_ndp",
+    srcs = [":fuchsia.net.ndp_rs"],
+    crate_name = "fidl_fuchsia_net_ndp",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

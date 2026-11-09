@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+# Pre-generated bindgen output (23.5k lines), included by bssl-sys via
+# BINDGEN_RS_FILE env var (see .../src/rust/bssl-sys/BUILD.bazel), matching
+# upstream's own GN mechanism (rust/BUILD.gn's bssl-sys.config).
+exports_files(["bindgen.rs"])

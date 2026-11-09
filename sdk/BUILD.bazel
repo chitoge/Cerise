@@ -1,0 +1,62 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Zircon syscall API headers (generated from ABI FIDL).
+# This is the canonical cc_library for building Zircon user-space programs.
+cc_library(
+    name = "zircon_api",
+    hdrs = [],
+    deps = ["//abi:zx_syscall_headers"],
+)
+
+alias(
+    name = "libzx_snapshot",
+    actual = "//:libzx_snapshot",
+)
+
+alias(
+    name = "libzx_sources",
+    actual = "//:libzx_sources",
+)
+
+alias(
+    name = "libzx_headers",
+    actual = "//:libzx_headers",
+)
+
+filegroup(
+    name = "userland_core_headers",
+    srcs = [
+        "//abi:zircon_public_header_files",
+        "//abi:zircon_system_public_header_files",
+        ":libzx_headers",
+    ],
+)
+
+filegroup(
+    name = "userland_core_sources",
+    srcs = [
+        ":libzx_sources",
+        ":userland_core_headers",
+        ":metadata",
+    ],
+)
+
+filegroup(
+    name = "metadata",
+    srcs = ["README.md"],
+)
+
+# Root build adaptation: userboot aggregator targets.
+exports_files(["lib/ld/standalone-assert.cc"])
+
+filegroup(
+    name = "userboot_payload_fidl_ld_snapshot",
+    srcs = glob([
+        "lib/fidl/**/*",
+        "lib/fidl_base/**/*",
+        "lib/ld/**/*",
+    ], allow_empty = True),
+    visibility = ["//visibility:public"],
+)

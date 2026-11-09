@@ -1,0 +1,51 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "arch_cpuid",
+    srcs = ["cpuid.cc"],
+    hdrs = ["//zircon/kernel/lib/arch/include:headers"],
+    includes = ["include"],
+    alwayslink = True,
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+# Forward headers from the subpackage (glob can't cross package boundaries).
+filegroup(
+    name = "headers",
+    srcs = ["//zircon/kernel/lib/arch/include:headers"],
+)
+
+filegroup(
+    name = "cpuid_source",
+    srcs = ["cpuid.cc"],
+)
+
+filegroup(
+    name = "gen_x86_cpuid_asm_source",
+    srcs = ["gen-x86-cpuid-asm.cc"],
+)
+
+filegroup(
+    name = "gen_x86_msr_asm_source",
+    srcs = ["gen-x86-msr-asm.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(
+        ["**/*"],
+        allow_empty = True,
+        exclude = [
+            "arm/**",
+            "arm64/**",
+            "riscv64/**",
+            "host/**",
+            "test/**",
+            "testing/**",
+            "x86/**",
+        ],
+    ),
+)

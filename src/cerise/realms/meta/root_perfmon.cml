@@ -1,0 +1,43 @@
+// root_perfmon — component_manager root for qemu-x64-perfmon (the PMU path A
+// profiling gate). Minimal ELF realm: elf_runner plus perfmon (eager, holds the
+// narrowly-routed fuchsia.kernel.DebugResource). No driver/storage/network stack —
+// the gate exercises only the zx_mtrace_control(MTRACE_KIND_PERFMON) syscall path.
+//
+// SECURITY NOTE: the qemu-x64-perfmon product sets kernel.enable-debugging-syscalls=true
+// (products/BUILD.bazel), which unlocks zx_mtrace_control AND other debug syscalls. This
+// is a dev/profiling image ONLY and is kept out of every default/shipping product.
+{
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "perfmon",
+            url: "fuchsia-boot:///perfmon#meta/perfmon.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    environments: [
+        {
+            name: "elf-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "#elf_runner", as: "elf" },
+            ],
+        },
+    ],
+
+    offer: [
+        { protocol: "fuchsia.process.Launcher", from: "parent", to: "#elf_runner" },
+
+        // The narrow privileged grant: the DebugResource to perfmon ONLY. cm_config's
+        // capability_policy allowlists this exact (protocol, moniker) pair; route_check's
+        // permitted_privileged_use permits this exact (component, protocol) pair. Nothing
+        // else may use DebugResource.
+        { protocol: "fuchsia.kernel.DebugResource", from: "parent", to: "#perfmon" },
+    ],
+}

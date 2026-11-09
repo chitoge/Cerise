@@ -1,0 +1,39 @@
+# Driver-host bring-up, Step 3 — MINIMAL LEGACY (DFv1 / ZIRCON_DRIVER) driver .so.
+#
+# Built like the upstream legacy driver .so form (board/drivers/x86's
+# platform-bus-x86-driver: a cc_shared_library over the driver cc_library, with
+# -nostdlib / -soname / --allow-shlib-undefined). The DFv1 ABI symbols the driver
+# references (device_add -> device_add_from_driver) are left UND and resolved at
+# load against compat.so (dlopen'd RTLD_GLOBAL first in the same driver_host). The
+# driver_host loader dlsym's __zircon_driver_note__ / __zircon_driver_rec__ from
+# this .so (both STV_DEFAULT via the ddk __EXPORT) to populate DriverStartArgs.symbols.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "compat_legacy_driver",
+    srcs = ["compat_legacy_driver.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        # device_add references the global __zircon_driver_rec__ data symbol via a
+        # PC32 reloc; a shared object needs PIC/GOT-relative access for that.
+        "-fPIC",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+    ],
+)
+
+cc_shared_library(
+    name = "cerise_compat_legacy.so",
+    shared_lib_name = "cerise_compat_legacy.so",
+    deps = [":compat_legacy_driver"],
+    tags = ["manual"],
+    user_link_flags = [
+        "-nostdlib",
+        "-Wl,-soname,cerise_compat_legacy.so",
+        "-Wl,--allow-shlib-undefined",
+    ],
+)

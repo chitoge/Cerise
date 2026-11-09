@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_blob_download",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_blob_download",
+    edition = "2024",
+    deps = [
+        "//src/cerise/lib/http_download:http_download",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "@crates//:anyhow",
+        "@crates//:futures",
+    ],
+)
+
+rust_test(
+    name = "cerise_blob_download_test",
+    crate = ":cerise_blob_download",
+    edition = "2024",
+)

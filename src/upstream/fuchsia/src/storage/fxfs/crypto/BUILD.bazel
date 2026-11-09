@@ -1,0 +1,45 @@
+# Authored locally for Cerise. fxfs/crypto: real key-wrapping/cipher
+# implementations (AES256-XTS via fxfs's own FxfsCipher, ChaCha20 key wrapping,
+# fscrypt-compatible INO_LBLK32 filename encryption) - not test-only, load-bearing for
+# any Fxfs volume (uses_crypt = true even in upstream's own baseline config). Dep list
+# matches upstream's real BUILD.gn (src/storage/fxfs/crypto/BUILD.gn) at this pin exactly.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "crypto",
+    srcs = [
+        "src/cipher.rs",
+        "src/cipher/fscrypt_ino_lblk32.rs",
+        "src/cipher/fscrypt_test_data.rs",
+        "src/cipher/fxfs.rs",
+        "src/ff1.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fxfs_crypto",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = ["@crates//:async-trait"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/storage/fxfs/trace:fxfs_trace",
+        "//src/upstream/fuchsia/src/storage/fxfs/unicode:unicode",
+        "//src/upstream/fuchsia/src/storage/lib/fscrypt:fscrypt",
+        "//src/upstream/fuchsia/src/storage/type-fprint:fprint",
+        "@crates//:aes",
+        "@crates//:anyhow",
+        "@crates//:arbitrary",
+        "@crates//:byteorder",
+        "@crates//:cbc",
+        "@crates//:chacha20",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:serde",
+        "@crates//:siphasher",
+        "@crates//:static_assertions",
+        "@crates//:zerocopy",
+    ],
+)

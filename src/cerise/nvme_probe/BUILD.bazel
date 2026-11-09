@@ -1,0 +1,48 @@
+# Storage bring-up gate: nvme_probe — proves real NVMe block read/write/readback
+# (see src/main.rs for the full routing/mechanism explanation).
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "nvme_probe",
+    srcs = ["src/main.rs"],
+    crate_name = "nvme_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "@crates//:anyhow",
+        # Structured ops logging via LogSink (init'd by #[fuchsia::main]); markers stay
+        # on serial via zx_debug_write.
+        "@crates//:log",
+        # Real fdio (not the link-time libfdio.so stub — see netdev_probe/BUILD.bazel's
+        # comment for the full history). fuchsia_component::client's Service::open /
+        # fuchsia-fs's open_in_namespace FFI into libfdio.so, resolved at final link
+        # time (see src/lib/fdio/rust/BUILD.bazel's comment) — statically link the
+        # real vendored implementation instead of relying on the always-NOT_SUPPORTED
+        # stub .so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+# Staged STRIPPED into the boot ZBI (statically-linked FIDL codegen makes these
+# binaries large unstripped — same rationale as netdev_probe/driver_manager_rust).
+fuchsia_stripped(
+    name = "nvme_probe_stripped.fuchsia",
+    src = ":nvme_probe",
+)

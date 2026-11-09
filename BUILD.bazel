@@ -1,0 +1,1788 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    ".github/workflows/ci.yml",
+    ".github/workflows/docs.yml",
+    "MODULE.bazel",
+    "MODULE.bazel.lock",
+])
+
+# Primary system image — the new-graph entry point.
+alias(
+    name = "x64-smoke",
+    actual = "//products:x64-smoke",
+)
+
+filegroup(
+    name = "repo_docs",
+    srcs = glob([
+        "*.md",
+        "docs/**/*.md",
+    ]),
+)
+
+filegroup(
+    name = "github_workflows",
+    srcs = glob([
+        ".github/workflows/*.yaml",
+        ".github/workflows/*.yml",
+    ], allow_empty = True),
+)
+
+filegroup(
+    name = "starlark_api",
+    srcs = [
+        "//bazel:providers.bzl",
+        "//toolchain:zircon_toolchain.bzl",
+    ],
+)
+
+# Targets adapted from the upstream root build.
+
+filegroup(
+    name = "kernel_lib_syscalls_dispatch_source",
+    srcs = ["//zircon/kernel/lib/syscalls:dispatch_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_linker_script",
+    srcs = ["zircon/kernel/kernel.ld"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "elfldltl_headers",
+    srcs = glob(["src/lib/elfldltl/include/**/*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "elfldltl_test_headers",
+    srcs = glob(["src/lib/elfldltl/test/*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "stdcompat_headers",
+    srcs = glob(["sdk/lib/stdcompat/include/**/*.h"], allow_empty = True),
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lib_syscalls_impl_sources",
+    srcs = ["//zircon/kernel/lib/syscalls:impl_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "zircon_public_headers",
+    srcs = glob(["zircon/public/**/*"]),
+    visibility = [
+        "//abi:__pkg__",
+        "//kernel:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "zircon_public_header_files",
+    srcs = glob([
+        "zircon/public/**/*.h",
+        "zircon/public/**/*.inc",
+    ], allow_empty = True),
+    visibility = ["//abi:__pkg__"],
+)
+
+filegroup(
+    name = "zircon_system_public_headers",
+    srcs = glob(["zircon/system/public/**/*"], allow_empty = True),
+    visibility = [
+        "//abi:__pkg__",
+        "//kernel:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "zircon_system_public_header_files",
+    srcs = glob([
+        "zircon/system/public/**/*.h",
+        "zircon/system/public/**/*.inc",
+    ], allow_empty = True),
+    visibility = [
+        "//abi:__pkg__",
+        "//tools/fidl:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "zither_sources",
+    srcs = ["//zircon/tools/zither:source_snapshot"],
+    visibility = ["//abi:__pkg__"],
+)
+
+filegroup(
+    name = "vdso_fidl_sources",
+    srcs = glob(["zircon/vdso/**/*"]),
+    visibility = ["//abi:__pkg__"],
+)
+
+filegroup(
+    name = "vdso_fidl_files",
+    srcs = glob(["zircon/vdso/*.fidl"]),
+    visibility = ["//abi:__pkg__"],
+)
+
+filegroup(
+    name = "abi_snapshot",
+    srcs = [
+        ":fidl_compiler_sources",
+        ":zircon_public_headers",
+        ":zircon_system_public_headers",
+        ":zither_sources",
+        ":vdso_fidl_sources",
+    ],
+)
+
+filegroup(
+    name = "kernel_snapshot",
+    srcs = glob([
+        "sdk/lib/stdcompat/**/*",
+        "sdk/lib/zircon-assert/**/*",
+        "src/lib/elfldltl/**/*",
+        "src/lib/symbolizer-markup/**/*",
+        "zircon/kernel/dev/pcie/**/*",
+        "zircon/kernel/arch/x86/**/*",
+        "zircon/kernel/bin/**/*",
+        "zircon/kernel/debugcommands/**/*",
+        "zircon/kernel/include/**/*",
+        "zircon/kernel/kernel/**/*",
+        "zircon/kernel/lib/**/*",
+        "zircon/kernel/object/**/*",
+        "zircon/kernel/platform/**/*",
+        "zircon/kernel/switch/**/*",
+        "zircon/kernel/top/**/*",
+        "zircon/kernel/lib/syscalls/**/*",
+        "zircon/system/ulib/lazy_init/**/*",
+        "zircon/system/ulib/pretty/**/*",
+        "zircon/system/ulib/zircon-internal/**/*",
+        "zircon/system/ulib/zx/**/*",
+        "zircon/third_party/lz4/**/*",
+        "zircon/third_party/ulib/lz4/**/*",
+    ], allow_empty = True) + [
+        ":libcksum_headers",
+        "//sdk/lib/iob:source_snapshot",
+        "//src/lib/zbitl:source_snapshot",
+        "//zircon/kernel/arch/x86/hypervisor:source_snapshot",
+        "//zircon/kernel/dev/hw_rng:source_snapshot",
+        "//zircon/kernel/dev/iommu:source_snapshot",
+        "//zircon/kernel/dev/iommu/stub:source_snapshot",
+        "//zircon/kernel/dev/pdev/power:source_snapshot",
+        "//zircon/kernel/hypervisor:source_snapshot",
+        "//zircon/kernel/lib/acpi_lite:source_snapshot",
+        "//zircon/kernel/lib/arch:source_snapshot",
+        "//zircon/kernel/lib/counters:source_snapshot",
+        "//zircon/kernel/lib/arch/x86:source_snapshot",
+        "//zircon/kernel/lib/backtrace:source_snapshot",
+        "//zircon/kernel/lib/perfmon:source_snapshot",
+        "//zircon/kernel/lib/btree:source_snapshot",
+        "//zircon/kernel/lib/kconcurrent:source_snapshot",
+        "//zircon/kernel/lib/kpci:source_snapshot",
+        "//zircon/kernel/lib/ktrace:source_snapshot",
+        "//zircon/kernel/lib/libc:source_snapshot",
+        "//zircon/kernel/lib/lockup_detector:source_snapshot",
+        "//zircon/kernel/lib/object_cache:source_snapshot",
+        "//zircon/kernel/lib/page-map:source_snapshot",
+        "//zircon/kernel/lib/percpu_writer:source_snapshot",
+        "//zircon/kernel/lib/power-management:source_snapshot",
+        "//zircon/kernel/lib/sched:source_snapshot",
+        "//zircon/kernel/lib/spsc_buffer:source_snapshot",
+        "//zircon/kernel/lib/stall:source_snapshot",
+        "//zircon/kernel/lib/suspend_wakeup_timer:source_snapshot",
+        "//zircon/kernel/lib/thread_sampler:source_snapshot",
+        "//zircon/kernel/lib/wake-vector:source_snapshot",
+        "//zircon/system/ulib/affine:source_snapshot",
+        "//zircon/system/ulib/lazy_init:source_snapshot",
+        "//zircon/kernel/lib/page:source_snapshot",
+        "//zircon/kernel/phys:source_snapshot",
+        "//zircon/kernel/phys/include:source_snapshot",
+        "//zircon/kernel/phys/lib/memalloc:source_snapshot",
+        "//zircon/kernel/vm:source_snapshot",
+        "//zircon/kernel/dev:source_snapshot",
+        "//zircon/kernel/dev/pcie:source_snapshot",
+        "//zircon/kernel/lib/console:source_snapshot",
+        "//zircon/kernel/lib/debuglog:source_snapshot",
+        "//zircon/kernel/lib/io:source_snapshot",
+        "//zircon/kernel/lib/mtrace:source_snapshot",
+        "//zircon/kernel/lib/cbuf:source_snapshot",
+        "//zircon/kernel/lib/page_cache:source_snapshot",
+        "//zircon/kernel/lib/persistent-debuglog:source_snapshot",
+        "//zircon/kernel/lib/topology:source_snapshot",
+        "//zircon/kernel/lib/virtual_alloc:source_snapshot",
+        "//zircon/third_party/lz4/lib:source_snapshot",
+        "//zircon/system/ulib/explicit-memory:source_snapshot",
+        "//zircon/system/ulib/mmio-ptr:source_snapshot",
+        "//zircon/system/ulib/region-alloc:source_snapshot",
+        "//zircon/system/ulib/smbios:source_snapshot",
+        "//zircon/system/ulib/uart:source_snapshot",
+        "//zircon/system/ulib/zircon-internal:source_snapshot",
+        "//zircon/kernel/kernel:source_snapshot",
+        "//zircon/system/ulib/concurrent:source_snapshot",
+        "//zircon/system/ulib/ram-crashlog:source_snapshot",
+        "//zircon/third_party/ulib/cksum:source_snapshot",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "kernel_x86_sources",
+    srcs = [
+        "//zircon/kernel/arch/x86:source_snapshot",
+        "//zircon/kernel/arch/x86/hypervisor:source_snapshot",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_boot_options_headers",
+    srcs = ["//zircon/kernel/lib/boot-options:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_dev_interrupt_headers",
+    srcs = ["//zircon/kernel/dev/interrupt:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_dev_hw_rng_headers",
+    srcs = ["//zircon/kernel/dev/hw_rng:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lib_acpi_lite_headers",
+    srcs = ["//zircon/kernel/lib/acpi_lite:header_files"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lib_devicetree_headers",
+    srcs = glob(["zircon/kernel/lib/devicetree/include/**/*.h"]),
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "sdk_lib_zbi_format_headers",
+    srcs = ["//sdk/lib/zbi-format:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_topology_headers",
+    srcs = ["//zircon/kernel/lib/topology:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_platform_pc_headers",
+    srcs = ["//zircon/kernel/platform/pc:headers"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "kernel_platform_headers",
+    srcs = ["//zircon/kernel/platform:headers"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "zircon_system_ulib_pretty_headers",
+    srcs = ["//zircon/system/ulib/pretty:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_page_headers",
+    srcs = ["//zircon/kernel/lib/page:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_page_cache_headers",
+    srcs = ["//zircon/kernel/lib/page_cache:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_page_map_headers",
+    srcs = ["//zircon/kernel/lib/page-map:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_percpu_writer_headers",
+    srcs = ["//zircon/kernel/lib/percpu_writer:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_spsc_buffer_headers",
+    srcs = ["//zircon/kernel/lib/spsc_buffer:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_kconcurrent_headers",
+    srcs = ["//zircon/kernel/lib/kconcurrent:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_heap_headers",
+    srcs = glob(["zircon/kernel/lib/heap/include/**/*.h"], allow_empty = True),
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_thread_stack_headers",
+    srcs = ["//zircon/kernel/lib/thread-stack:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_backtrace_headers",
+    srcs = ["//zircon/kernel/lib/backtrace:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_cxxabi_dynamic_init_headers",
+    srcs = ["//zircon/kernel/lib/cxxabi-dynamic-init:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_instrumentation_headers",
+    srcs = ["//zircon/kernel/lib/instrumentation:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_libbtree_headers",
+    srcs = ["//zircon/kernel/lib/btree:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_crypto_prng_headers",
+    srcs = ["//zircon/kernel/lib/crypto:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lockup_detector_headers",
+    srcs = ["//zircon/kernel/lib/lockup_detector:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_libfbl_headers",
+    srcs = ["//zircon/kernel/lib/fbl:headers"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "kernel_object_headers",
+    srcs = ["//zircon/kernel/object:headers"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "zx_include_headers",
+    srcs = glob(["zircon/system/ulib/zx/include/**/*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+# Host-compatible cc_library for EFI headers (<efi/types.h>, <efi/boot-services.h>, etc.).
+# Used by host-side EFI unit tests. Root package owns guids.c and the efi/include glob,
+# so we define this here to avoid creating a BUILD.bazel package boundary in lib/efi/.
+cc_library(
+    name = "efi_headers",
+    hdrs = glob(["zircon/kernel/lib/efi/include/**/*.h"]),
+    includes = ["zircon/kernel/lib/efi/include"],
+    deps = ["//zircon/system/public:public"],
+    visibility = ["//visibility:public"],
+)
+
+# EFI GUID constants (compiled from C; works under any toolchain).
+cc_library(
+    name = "efi_lib",
+    srcs = ["zircon/kernel/lib/efi/guids.c"],
+    deps = [":efi_headers"],
+    alwayslink = True,
+    visibility = ["//visibility:public"],
+)
+
+# Host-compatible cc_library for lib/zx/result.h and related zx types.
+# Used by host-side tests that include <lib/zx/result.h>.
+cc_library(
+    name = "zx_result_headers",
+    hdrs = glob(["zircon/system/ulib/zx/include/**/*.h"]),
+    includes = ["zircon/system/ulib/zx/include"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//sdk/lib/stdcompat:stdcompat",
+        "//zircon/system/public:public",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Ambient kernel lib headers for dirs that have no subpackage BUILD.bazel.
+# Mirrors the GN kernel_config ambient include propagation.
+filegroup(
+    name = "kernel_lib_ambient_headers",
+    srcs = glob(
+        [
+            "zircon/kernel/lib/boot-options/include/**/*.h",
+            "zircon/kernel/lib/boot-options/include/**/*.inc",
+            "zircon/kernel/lib/cbuf/include/**/*.h",
+            "zircon/kernel/lib/code-patching/include/**/*.h",
+            "zircon/kernel/lib/code-patching/include/**/*.inc",
+            "zircon/kernel/lib/console/include/**/*.h",
+            "zircon/kernel/lib/control-region/include/**/*.h",
+            "zircon/kernel/lib/crashlog/include/**/*.h",
+            "zircon/kernel/lib/crypto/include/**/*.h",
+            "zircon/kernel/lib/cxxabi-dynamic-init/include/**/*.h",
+            "zircon/kernel/lib/debuglog/include/**/*.h",
+            "zircon/kernel/lib/devicetree/include/**/*.h",
+            "zircon/kernel/lib/dump/include/**/*.h",
+            "zircon/kernel/lib/efi/include/**/*.h",
+            "zircon/kernel/lib/fasttime/include/**/*.h",
+            "zircon/kernel/lib/fixed_point/include/**/*.h",
+            "zircon/kernel/lib/id_allocator/include/**/*.h",
+            "zircon/kernel/lib/init/include/**/*.h",
+            "zircon/kernel/lib/instrumentation/include/**/*.h",
+            "zircon/kernel/lib/io/include/**/*.h",
+            "zircon/kernel/lib/jtrace/include/**/*.h",
+            "zircon/kernel/lib/mmu_rcu/include/**/*.h",
+            "zircon/kernel/lib/mtrace/include/**/*.h",
+            "zircon/kernel/lib/page_cache/include/**/*.h",
+            "zircon/kernel/lib/persistent-debuglog/include/**/*.h",
+            "zircon/kernel/lib/pow2_range_allocator/include/**/*.h",
+            "zircon/kernel/lib/root_resource_filter/include/**/*.h",
+            "zircon/kernel/lib/special-sections/include/**/*.h",
+            "zircon/kernel/lib/thread-stack/include/**/*.h",
+            "zircon/kernel/lib/topology/include/**/*.h",
+            "zircon/kernel/lib/unittest/include/**/*.h",
+            "zircon/kernel/lib/user_copy/include/**/*.h",
+            "zircon/kernel/lib/virtual_alloc/include/**/*.h",
+            "zircon/kernel/dev/pcie/include/**/*.h",
+            "zircon/third_party/ulib/lz4/include/**/*.h",
+            "zircon/third_party/lz4/lib/*.h",
+        ],
+        allow_empty = True,
+    ) + [
+        "//zircon/kernel/arch/x86:page_tables_headers",
+        "//zircon/kernel/arch/x86:phys_headers",
+        "//zircon/kernel/platform:headers",
+        "//zircon/kernel/lib/heap:headers",
+        "//zircon/kernel/lib/heap/cmpctmalloc:headers",
+        "//zircon/kernel/lib/syscalls:headers",
+        "//zircon/kernel/lib/userabi:headers",
+        "//zircon/kernel/dev/iommu:headers",
+        "//zircon/kernel/dev/iommu/stub:headers",
+        "//zircon/kernel/dev/interrupt:headers",
+        # Subpackage-explicit headers (globs above are blocked by BUILD.bazel subpackage boundaries)
+        "//zircon/kernel/lib/boot-options:headers",
+        "//zircon/kernel/lib/cbuf:headers",
+        "//zircon/kernel/lib/console:headers",
+        "//zircon/kernel/lib/crashlog:headers",
+        "//zircon/kernel/lib/crypto:headers",
+        "//zircon/kernel/lib/cxxabi-dynamic-init:headers",
+        "//zircon/kernel/lib/debuglog:headers",
+        "//zircon/kernel/lib/instrumentation:headers",
+        "//zircon/kernel/lib/io:headers",
+        "//zircon/kernel/lib/mtrace:headers",
+        "//zircon/kernel/lib/page_cache:headers",
+        "//zircon/kernel/lib/persistent-debuglog:headers",
+        "//zircon/kernel/lib/root_resource_filter:headers",
+        "//zircon/kernel/lib/topology:headers",
+        "//zircon/kernel/lib/unittest:headers",
+        "//zircon/kernel/lib/virtual_alloc:headers",
+        "//zircon/kernel/dev/pcie:headers",
+        "//zircon/third_party/lz4/lib:headers",
+        "//zircon/kernel/lib/arch:headers",
+        "//zircon/kernel/lib/counters:headers",
+        "//zircon/kernel/lib/perfmon:headers",
+        # fasttime has BUILD.bazel so its glob above is blocked
+        "//zircon/kernel/lib/fasttime:headers",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# cc_library aggregator for kernel ambient headers.
+# The stdlib-resolution closure is now in the toolchain only (8 paths, see toolchain/ambient-includes.json).
+# All component headers are evicted from the toolchain and provided here via CcInfo:
+#   - hdrs: makes header files available as compile action inputs
+#   - includes: registers the search paths in CcInfo (replaces toolchain -isystem)
+# deps = ["//:kernel_cc_headers"] in kernel component BUILD files gets both.
+cc_library(
+    name = "kernel_cc_headers",
+    hdrs = [
+        "//zircon/system/public:headers",
+        "//zircon/kernel/include:headers",
+    ] + select({
+        "@platforms//cpu:aarch64": [
+            "//zircon/kernel/arch/arm64/include:headers",
+            "//zircon/kernel/lib/arch/arm64/include:headers",
+        ],
+        "//conditions:default": [
+            "//zircon/kernel/arch/x86/include:headers",
+            "//zircon/kernel/lib/arch/x86/include:headers",
+        ],
+    }) + [
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/heap/include:headers",
+        "//zircon/kernel/lib/ktl:headers",
+        "//zircon/kernel/lib/libc:headers",
+        "//zircon/kernel/vm:header_files",
+        "//zircon/kernel/vm/phys:headers",
+        "//zircon/kernel/phys/lib/memalloc:range_headers",
+        "//zircon/kernel/phys/include:all_headers",
+        "//zircon/system/ulib/lazy_init:headers",
+        "//zircon/kernel/lib/stall:headers",
+        "//zircon/kernel/lib/kconcurrent:headers",
+        "//zircon/system/ulib/concurrent:headers",
+        "//src/lib/lockdep:headers",
+        "//zircon/kernel/lib/power-management:headers",
+        ":kernel_object_headers",
+        ":zx_include_headers",
+        "//zircon/system/ulib/ffl:headers",
+        "//sdk/lib/fit:headers",
+        "//sdk/lib/stdcompat:headers",
+        "//sdk/lib/zbi-format:headers",
+        "//zircon/kernel/lib/sched:headers",
+        "//zircon/system/ulib/affine:headers",
+        "//zircon/system/ulib/bitmap:headers",
+        "//zircon/system/ulib/fbl:headers",
+        "//zircon/system/ulib/page_tables:headers",
+        "//zircon/system/ulib/pretty:headers",
+        "//zircon/system/ulib/hwreg:headers",
+        "//zircon/system/ulib/ram-crashlog:headers",
+        "//zircon/system/ulib/zircon-internal:headers",
+        "//zircon/kernel/lib/backtrace:headers",
+        "//zircon/kernel/lib/btree:headers",
+        "//zircon/kernel/lib/object_cache:headers",
+        "//zircon/kernel/lib/page:header_files",
+        "//zircon/kernel/lib/lockup_detector:headers",
+        "//zircon/kernel/lib/page-map:headers",
+        "//zircon/kernel/lib/acpi_lite:header_files",
+        "//zircon/kernel/lib/percpu_writer:headers",
+        "//zircon/kernel/lib/spsc_buffer:headers",
+        "//zircon/kernel/lib/suspend_wakeup_timer:headers",
+        "//zircon/kernel/lib/thread_sampler:headers",
+        "//zircon/kernel/lib/wake-vector:headers",
+        ":kernel_libfbl_headers",
+        "//zircon/kernel/hypervisor:header_files",
+        "//zircon/kernel/dev/interrupt:headers",
+        "//zircon/kernel/dev/pdev:headers",
+        "//zircon/kernel/dev/pdev/power:headers",
+    ] + select({
+        "@platforms//cpu:aarch64": ["//zircon/kernel/arch/arm64:arch_phys_headers"],
+        "//conditions:default": [":kernel_platform_pc_headers"],
+    }) + [
+        ":kernel_lib_ambient_headers",
+        ":elfldltl_headers",
+        "//src/lib/zbitl:headers",
+        "//zircon/kernel/phys/lib/memalloc:headers",
+        "//zircon/system/ulib/uart:headers",
+        "//zircon/system/ulib/mmio-ptr:headers",
+    ],
+    # CcInfo includes: all paths evicted from kernel_c_stdlib_flags.
+    # These replace the toolchain -isystem entries for non-stdlib component headers.
+    includes = [
+        # stdlib closure (also in toolchain for -isystem; duplicated here so
+        # deps on :kernel_cc_headers alone are sufficient without toolchain context)
+        "zircon/system/public",
+        "zircon/kernel/include",
+    ] + select({
+        "@platforms//cpu:aarch64": [
+            "zircon/kernel/arch/arm64/include",
+            "zircon/kernel/lib/arch/arm64/include",
+        ],
+        "//conditions:default": [
+            "zircon/kernel/arch/x86/include",
+            "zircon/kernel/arch/x86/page_tables/include",
+            "zircon/kernel/lib/arch/x86/include",
+        ],
+    }) + [
+        "zircon/kernel/lib/arch/include",
+        "zircon/kernel/lib/heap/include",
+        "zircon/kernel/lib/heap/cmpctmalloc/include",
+        "zircon/kernel/lib/ktl/include",
+        "zircon/kernel/lib/libc/include",
+        # Component includes evicted from toolchain
+        "zircon/kernel/vm/include",
+        "zircon/kernel/vm/phys/include",
+        "zircon/kernel/phys/lib/memalloc/include",
+        "zircon/kernel/phys/include",
+    ] + select({
+        "@platforms//cpu:aarch64": ["zircon/kernel/arch/arm64/phys/include"],
+        "//conditions:default": ["zircon/kernel/arch/x86/phys/include"],
+    }) + [
+        "zircon/system/ulib/lazy_init/include",
+        "zircon/kernel/lib/stall/include",
+        "zircon/kernel/lib/kconcurrent/include",
+        "zircon/system/ulib/concurrent/include",
+        "src/lib/lockdep/include",
+        "sdk/lib/zbi-format/include",
+        "sdk/lib/fit/include",
+        "sdk/lib/stdcompat/include",
+        "zircon/system/ulib/zx/include",
+        "zircon/system/ulib/zircon-internal/include",
+        "zircon/kernel/lib/power-management/include",
+        "zircon/kernel/object/include",
+        "zircon/system/ulib/ffl/include",
+        "zircon/kernel/lib/sched/include",
+        "zircon/system/ulib/affine/include",
+        "zircon/system/ulib/bitmap/include",
+        "zircon/system/ulib/fbl/include",
+        "zircon/system/ulib/page_tables/include",
+        "zircon/system/ulib/pretty/include",
+        "zircon/system/ulib/hwreg/include",
+        "zircon/system/ulib/ram-crashlog/include",
+        "zircon/third_party/ulib/lz4/include",
+        "zircon/kernel/lib/backtrace/include",
+        "zircon/kernel/lib/boot-options/include",
+        "zircon/kernel/lib/cbuf/include",
+        "zircon/kernel/lib/code-patching/include",
+        "zircon/kernel/lib/console/include",
+        "zircon/kernel/lib/control-region/include",
+        "zircon/kernel/lib/counters/include",
+        "zircon/kernel/lib/crashlog/include",
+        "zircon/kernel/lib/crypto/include",
+        "zircon/kernel/lib/cxxabi-dynamic-init/include",
+        "zircon/kernel/lib/debuglog/include",
+        "zircon/kernel/lib/devicetree/include",
+        "zircon/kernel/lib/dump/include",
+        "zircon/kernel/lib/efi/include",
+        "zircon/kernel/lib/fasttime/include",
+        "zircon/kernel/lib/fixed_point/include",
+        "zircon/kernel/lib/id_allocator/include",
+        "zircon/kernel/lib/init/include",
+        "zircon/kernel/lib/instrumentation/include",
+        "zircon/kernel/lib/io/include",
+        "zircon/kernel/lib/jtrace/include",
+        "zircon/kernel/lib/mmu_rcu/include",
+        "zircon/kernel/lib/mtrace/include",
+        "zircon/kernel/lib/btree/include",
+        "zircon/kernel/lib/page/include",
+        "zircon/kernel/lib/object_cache/include",
+        "zircon/kernel/lib/page_cache/include",
+        "zircon/kernel/lib/perfmon/include",
+        "zircon/kernel/lib/persistent-debuglog/include",
+        "zircon/kernel/lib/pow2_range_allocator/include",
+        "zircon/kernel/lib/root_resource_filter/include",
+        "zircon/kernel/lib/special-sections/include",
+        "zircon/kernel/lib/syscalls/include",
+        "zircon/kernel/lib/thread-stack/include",
+        "zircon/kernel/lib/topology/include",
+        "zircon/kernel/lib/unittest/include",
+        "zircon/kernel/lib/user_copy/include",
+        "zircon/kernel/lib/userabi/include",
+        "zircon/kernel/lib/virtual_alloc/include",
+        "zircon/kernel/dev/iommu/include",
+        "zircon/kernel/dev/pcie/include",
+        "zircon/kernel/dev/pdev/include",
+        "zircon/kernel/dev/pdev/power/include",
+        "zircon/kernel/dev/interrupt/include",
+        "zircon/kernel/lib/lockup_detector/include",
+        "zircon/kernel/lib/page-map/include",
+        "zircon/kernel/lib/acpi_lite/include",
+        "zircon/kernel/lib/percpu_writer/include",
+        "zircon/kernel/lib/spsc_buffer/include",
+        "zircon/kernel/lib/suspend_wakeup_timer/include",
+        "zircon/kernel/lib/thread_sampler/include",
+        "zircon/kernel/lib/wake-vector/include",
+        "zircon/kernel/lib/fbl/include",
+        "zircon/kernel/hypervisor/include",
+        "zircon/kernel/platform/include",
+    ] + select({
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": ["zircon/kernel/platform/pc/include"],
+    }) + [
+        "zircon/system/ulib/uart/include",
+        "zircon/system/ulib/mmio-ptr/include",
+        "src/lib/elfldltl/include",
+    ],
+    defines = select({
+        "@platforms//cpu:aarch64": ["LIB_ARCH_PAGING_CONFIGURATION=\\\"4k-48bit\\\""],
+        "//conditions:default": ["LIB_ARCH_PAGING_CONFIGURATION=\\\"4level\\\""],
+    }),
+    deps = [
+        # Scoped stubs for libs that have no real counterpart in kernel builds.
+        # Uses strip_include_prefix so only fxt/jitterentropy/llvm-profdata are
+        # exposed; uart/fit/stdcompat/etc. real headers are not shadowed.
+        "//tools/fidl:kernel_compat_stub_headers",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "kernel_object_sources",
+    srcs = ["//zircon/kernel/object:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_libc_headers",
+    srcs = ["//zircon/kernel/lib/libc:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_power_management_headers",
+    srcs = ["//zircon/kernel/lib/power-management:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_sched_headers",
+    srcs = ["//zircon/kernel/lib/sched:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_stall_headers",
+    srcs = ["//zircon/kernel/lib/stall:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_wake_vector_headers",
+    srcs = ["//zircon/kernel/lib/wake-vector:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_code_patching_hermetic_stub_script",
+    srcs = ["zircon/kernel/lib/code-patching/hermetic-stub.py"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_vm_headers",
+    srcs = ["//zircon/kernel/vm:header_files"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_vm_sources",
+    srcs = ["//zircon/kernel/vm:vm_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_feature_source",
+    srcs = ["//zircon/kernel/arch/x86:feature_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_arch_source",
+    srcs = ["//zircon/kernel/arch/x86:arch_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_mmu_source",
+    srcs = ["//zircon/kernel/arch/x86:mmu_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_mmu_mem_types_source",
+    srcs = ["//zircon/kernel/arch/x86:mmu_mem_types_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_lapic_source",
+    srcs = ["//zircon/kernel/arch/x86:lapic_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_mp_source",
+    srcs = ["//zircon/kernel/arch/x86:mp_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_timer_freq_source",
+    srcs = ["//zircon/kernel/arch/x86:timer_freq_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_descriptor_regs_source",
+    srcs = ["//zircon/kernel/lib/arch/x86:descriptor_regs_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_gdt_source",
+    srcs = ["//zircon/kernel/arch/x86:gdt_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_ops_source",
+    srcs = ["//zircon/kernel/arch/x86:ops_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_start_source",
+    srcs = ["//zircon/kernel/arch/x86:start_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_syscall_source",
+    srcs = ["//zircon/kernel/arch/x86:syscall_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_uspace_entry_source",
+    srcs = ["//zircon/kernel/arch/x86:uspace_entry_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_phys_sources",
+    srcs = [
+        "//zircon/kernel/phys:source_snapshot",
+        "//zircon/kernel/phys/include:source_snapshot",
+        "//zircon/kernel/phys/lib/memalloc:source_snapshot",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_core_sources",
+    srcs = glob([
+        "zircon/kernel/bin/**/*",
+        "zircon/kernel/debugcommands/**/*",
+        "zircon/kernel/include/**/*",
+        "zircon/kernel/kernel/**/*",
+        "zircon/kernel/lib/**/*",
+        "zircon/kernel/object/**/*",
+        "zircon/kernel/platform/**/*",
+        "zircon/kernel/switch/**/*",
+        "zircon/kernel/top/**/*",
+    ], allow_empty = True) + [
+        "//zircon/kernel/lib/arch/x86:source_snapshot",
+        "//zircon/kernel/lib/backtrace:source_snapshot",
+        "//zircon/kernel/lib/ktrace:source_snapshot",
+        "//zircon/kernel/lib/libc:source_snapshot",
+        "//zircon/kernel/lib/lockup_detector:source_snapshot",
+        "//zircon/kernel/lib/page-map:source_snapshot",
+        "//zircon/kernel/lib/percpu_writer:source_snapshot",
+        "//zircon/kernel/lib/power-management:source_snapshot",
+        "//zircon/kernel/lib/sched:source_snapshot",
+        "//zircon/kernel/lib/spsc_buffer:source_snapshot",
+        "//zircon/kernel/lib/thread_sampler:source_snapshot",
+        "//zircon/kernel/kernel:source_snapshot",
+        "//zircon/kernel/vm:source_snapshot",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "packaging_snapshot",
+    srcs = glob(
+        [
+            "zircon/tools/zbi/**/*",
+        ],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
+    name = "libzx_sources",
+    srcs = glob([
+        "zircon/system/ulib/zx/*.cc",
+    ]),
+    visibility = ["//sdk:__pkg__"],
+)
+
+filegroup(
+    name = "libzx_headers",
+    srcs = glob([
+        "zircon/system/ulib/zx/include/**/*.h",
+    ]),
+    visibility = [
+        "//kernel:__pkg__",
+        "//sdk:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "libzx_snapshot",
+    srcs = glob([
+        "zircon/system/ulib/zx/**/*",
+    ]),
+    visibility = ["//sdk:__pkg__"],
+)
+
+filegroup(
+    name = "libconcurrent_headers",
+    srcs = ["//zircon/system/ulib/concurrent:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libconcurrent_snapshot",
+    srcs = ["//zircon/system/ulib/concurrent:source_snapshot"],
+)
+
+filegroup(
+    name = "libaffine_headers",
+    srcs = ["//zircon/system/ulib/affine:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libbitmap_headers",
+    srcs = ["//zircon/system/ulib/bitmap:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libbitmap_snapshot",
+    srcs = ["//zircon/system/ulib/bitmap:source_snapshot"],
+)
+
+filegroup(
+    name = "libffl_headers",
+    srcs = ["//zircon/system/ulib/ffl:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libffl_snapshot",
+    srcs = ["//zircon/system/ulib/ffl:source_snapshot"],
+)
+
+filegroup(
+    name = "libhwreg_headers",
+    srcs = ["//zircon/system/ulib/hwreg:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libmmio_ptr_headers",
+    srcs = ["//zircon/system/ulib/mmio-ptr:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libzircon_internal_headers",
+    srcs = ["//zircon/system/ulib/zircon-internal:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libhwreg_snapshot",
+    srcs = ["//zircon/system/ulib/hwreg:source_snapshot"],
+)
+
+filegroup(
+    name = "liblockdep_headers",
+    srcs = ["//src/lib/lockdep:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "liblockdep_snapshot",
+    srcs = ["//src/lib/lockdep:source_snapshot"],
+)
+
+filegroup(
+    name = "libpage_tables_headers",
+    srcs = ["//zircon/system/ulib/page_tables:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libpage_tables_snapshot",
+    srcs = ["//zircon/system/ulib/page_tables:source_snapshot"],
+)
+
+filegroup(
+    name = "libfbl_headers",
+    srcs = ["//zircon/system/ulib/fbl:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libfit_headers",
+    srcs = ["//sdk/lib/fit:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libuart_headers",
+    srcs = ["//zircon/system/ulib/uart:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libfbl_snapshot",
+    srcs = ["//zircon/system/ulib/fbl:source_snapshot"],
+)
+
+filegroup(
+    name = "libzbi_format_headers",
+    srcs = ["//sdk/lib/zbi-format:headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libzbi_format_snapshot",
+    srcs = ["//sdk/lib/zbi-format:source_snapshot"],
+)
+
+filegroup(
+    name = "zircon_lib_zircon_headers",
+    srcs = ["//src/zircon/lib/zircon:public_headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "libcksum_headers",
+    srcs = ["//zircon/third_party/ulib/cksum:include/lib/cksum.h"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_ulib_header_support_snapshot",
+    srcs = [
+        ":libbitmap_snapshot",
+        ":libconcurrent_snapshot",
+        ":libffl_snapshot",
+        ":libfbl_snapshot",
+        ":libhwreg_snapshot",
+        ":libpage_tables_snapshot",
+        ":libzbi_format_snapshot",
+    ],
+)
+
+filegroup(
+    name = "kernel_x64_asm_source",
+    srcs = ["//zircon/kernel/arch/x86:asm_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_cpuid_source",
+    srcs = ["//zircon/kernel/arch/x86:cpuid_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_boot_cpuid_source",
+    srcs = ["//zircon/kernel/lib/arch/x86:boot_cpuid_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_boot_cpuid_asm_source",
+    srcs = ["//zircon/kernel/lib/arch/x86:boot_cpuid_asm_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_cpuid_asm_generator_source",
+    srcs = ["//zircon/kernel/lib/arch:gen_x86_cpuid_asm_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_msr_asm_generator_source",
+    srcs = ["//zircon/kernel/lib/arch:gen_x86_msr_asm_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_standard_segments_source",
+    srcs = ["//zircon/kernel/lib/arch/x86:standard_segments_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_idt_source",
+    srcs = ["//zircon/kernel/arch/x86:idt_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_exceptions_source",
+    srcs = ["//zircon/kernel/arch/x86:exceptions_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_exceptions_c_source",
+    srcs = ["//zircon/kernel/arch/x86:exceptions_c_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_arch_phys_headers",
+    srcs = ["//zircon/kernel/arch/x86:arch_phys_headers"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_cxxabi_dynamic_init_source",
+    srcs = ["//zircon/kernel/lib/cxxabi-dynamic-init:cxxabi_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_registers_source",
+    srcs = ["//zircon/kernel/arch/x86:registers_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_platform_power_source",
+    srcs = ["//zircon/kernel/platform:power_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_platform_pc_power_source",
+    srcs = ["//zircon/kernel/platform/pc:power_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_platform_pc_sources",
+    srcs = ["//zircon/kernel/platform/pc:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lib_acpi_lite_sources",
+    srcs = ["//zircon/kernel/lib/acpi_lite:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_dev_pcie_sources",
+    srcs = [
+        "//zircon/kernel/dev/pcie:pcie_sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_arch_x86_apic_support_sources",
+    srcs = [
+        "//zircon/kernel/arch/x86:apic_support_sources",
+        "//zircon/kernel/lib/perfmon:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_arch_x86_runtime_sources",
+    srcs = ["//zircon/kernel/arch/x86:runtime_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_runtime_sources",
+    srcs = [
+        "//zircon/kernel/kernel:kernel_runtime_sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_memory_support_sources",
+    srcs = [
+        "//zircon/kernel/lib/page_cache:sources",
+        "//zircon/kernel/lib/virtual_alloc:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_logging_support_sources",
+    srcs = [
+        "//zircon/kernel/lib/console:sources",
+        "//zircon/kernel/lib/counters:sources",
+        "//zircon/kernel/lib/debuglog:sources",
+        "//zircon/kernel/lib/io:sources",
+        "//zircon/kernel/lib/libc:snprintf.cc",
+        "//zircon/kernel/lib/libc:string-file.cc",
+        "//zircon/kernel/lib/libc:strtoul.cc",
+        "//zircon/kernel/lib/persistent-debuglog:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_logging_support_c_sources",
+    srcs = [
+        "//zircon/kernel/lib/libc:string/strlcpy.c",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_platform_bringup_sources",
+    srcs = ["//zircon/kernel/platform:bringup_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_crashlog_sources",
+    srcs = ["//zircon/kernel/lib/crashlog:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_root_resource_filter_sources",
+    srcs = ["//zircon/kernel/lib/root_resource_filter:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_top_init_sources",
+    srcs = ["//zircon/kernel/top:init_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_dev_init_sources",
+    srcs = ["//zircon/kernel/dev:init_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lib_cbuf_sources",
+    srcs = ["//zircon/kernel/lib/cbuf:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_boot_options_sources",
+    srcs = ["//zircon/kernel/lib/boot-options:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_dev_hw_rng_sources",
+    srcs = ["//zircon/kernel/dev/hw_rng:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_fbl_arena_sources",
+    srcs = ["//zircon/kernel/lib/fbl:arena_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_crypto_runtime_sources",
+    srcs = ["//zircon/kernel/lib/crypto:runtime_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_retpoline_asm_sources",
+    srcs = ["//zircon/kernel/arch/x86:retpoline_asm_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_vdso_sources",
+    srcs = ["//zircon/kernel/lib/userabi:vdso_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_instrumentation_sources",
+    srcs = ["//zircon/kernel/lib/instrumentation:mapped_vmo_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_instrumentation_data_sources",
+    srcs = ["//zircon/kernel/lib/instrumentation:data_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_userboot_sources",
+    srcs = ["//zircon/kernel/lib/userabi:userboot_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "userboot_payload_support_snapshot",
+    srcs = [
+        "//sdk:userboot_payload_fidl_ld_snapshot",
+    ] + glob([
+        "third_party/zstd/**/*",
+        "zircon/system/ulib/ldmsg/**/*",
+    ], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "userboot_payload_cxx_sources",
+    srcs = [
+        # sdk/lib/ld
+        "//sdk:lib/ld/standalone-assert.cc",
+        # elfldltl
+        "src/lib/elfldltl/leb128.cc",
+        "src/lib/elfldltl/mapped-vmo-file.cc",
+        "src/lib/elfldltl/self.cc",
+        "src/lib/elfldltl/test/fuchsia-static-pie.cc",
+        "src/lib/elfldltl/vmar-loader.cc",
+        # zx
+        "zircon/system/ulib/zx/bti.cc",
+        "zircon/system/ulib/zx/channel.cc",
+        "zircon/system/ulib/zx/counter.cc",
+        "zircon/system/ulib/zx/debuglog.cc",
+        "zircon/system/ulib/zx/event.cc",
+        "zircon/system/ulib/zx/eventpair.cc",
+        "zircon/system/ulib/zx/fifo.cc",
+        "zircon/system/ulib/zx/guest.cc",
+        "zircon/system/ulib/zx/interrupt.cc",
+        "zircon/system/ulib/zx/iob.cc",
+        "zircon/system/ulib/zx/iommu.cc",
+        "zircon/system/ulib/zx/job.cc",
+        "zircon/system/ulib/zx/msi.cc",
+        "zircon/system/ulib/zx/pager.cc",
+        "zircon/system/ulib/zx/port.cc",
+        "zircon/system/ulib/zx/process.cc",
+        "zircon/system/ulib/zx/profile.cc",
+        "zircon/system/ulib/zx/resource.cc",
+        "zircon/system/ulib/zx/socket.cc",
+        "zircon/system/ulib/zx/status_string.cc",
+        "zircon/system/ulib/zx/stream.cc",
+        "zircon/system/ulib/zx/thread.cc",
+        "zircon/system/ulib/zx/time.cc",
+        "zircon/system/ulib/zx/timer.cc",
+        "zircon/system/ulib/zx/vcpu.cc",
+        "zircon/system/ulib/zx/vmar.cc",
+        "zircon/system/ulib/zx/vmo.cc",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "userboot_payload_c_sources",
+    srcs = [
+        # zstd
+        "third_party/zstd/src/lib/common/debug.c",
+        "third_party/zstd/src/lib/common/entropy_common.c",
+        "third_party/zstd/src/lib/common/error_private.c",
+        "third_party/zstd/src/lib/common/fse_decompress.c",
+        "third_party/zstd/src/lib/common/pool.c",
+        "third_party/zstd/src/lib/common/threading.c",
+        "third_party/zstd/src/lib/common/xxhash.c",
+        "third_party/zstd/src/lib/common/zstd_common.c",
+        "third_party/zstd/src/lib/decompress/huf_decompress.c",
+        "third_party/zstd/src/lib/decompress/zstd_ddict.c",
+        "third_party/zstd/src/lib/decompress/zstd_decompress.c",
+        "third_party/zstd/src/lib/decompress/zstd_decompress_block.c",
+        # ldmsg
+        "zircon/system/ulib/ldmsg/ldmsg.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "userboot_payload_asm_sources",
+    srcs = [
+        "third_party/zstd/src/lib/decompress/huf_decompress_amd64.S",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Host (build-time) zstd static library: full compress + decompress, built from
+# the vendored //third_party/zstd sources. Mirrors the GN `zstd` static_library
+# in third_party/zstd/BUILD.gn (sources + defines), minus ZSTD_MULTITHREAD (this
+# build-time tool is single-threaded, so it needs no pthread and threading.c /
+# pool.c compile to no-ops). Consumed by //tools/zstd:zstd_cli. NOTE: this target
+# lives in the root package (not a new third_party/zstd/BUILD.bazel) on purpose —
+# a BUILD file there would carve third_party/zstd into its own package and break
+# the `third_party/zstd/**/*` globs above (userboot_payload_support_snapshot).
+cc_library(
+    name = "zstd_host",
+    srcs = [
+        # common
+        "third_party/zstd/src/lib/common/debug.c",
+        "third_party/zstd/src/lib/common/entropy_common.c",
+        "third_party/zstd/src/lib/common/error_private.c",
+        "third_party/zstd/src/lib/common/fse_decompress.c",
+        "third_party/zstd/src/lib/common/pool.c",
+        "third_party/zstd/src/lib/common/threading.c",
+        "third_party/zstd/src/lib/common/xxhash.c",
+        "third_party/zstd/src/lib/common/zstd_common.c",
+        # compress
+        "third_party/zstd/src/lib/compress/fse_compress.c",
+        "third_party/zstd/src/lib/compress/hist.c",
+        "third_party/zstd/src/lib/compress/huf_compress.c",
+        "third_party/zstd/src/lib/compress/zstd_compress.c",
+        "third_party/zstd/src/lib/compress/zstd_compress_literals.c",
+        "third_party/zstd/src/lib/compress/zstd_compress_sequences.c",
+        "third_party/zstd/src/lib/compress/zstd_compress_superblock.c",
+        "third_party/zstd/src/lib/compress/zstd_double_fast.c",
+        "third_party/zstd/src/lib/compress/zstd_fast.c",
+        "third_party/zstd/src/lib/compress/zstd_lazy.c",
+        "third_party/zstd/src/lib/compress/zstd_ldm.c",
+        "third_party/zstd/src/lib/compress/zstd_opt.c",
+        "third_party/zstd/src/lib/compress/zstdmt_compress.c",
+        # dictBuilder (kept to mirror the GN `zstd` target's proven source set)
+        "third_party/zstd/src/lib/dictBuilder/cover.c",
+        "third_party/zstd/src/lib/dictBuilder/divsufsort.c",
+        "third_party/zstd/src/lib/dictBuilder/fastcover.c",
+        "third_party/zstd/src/lib/dictBuilder/zdict.c",
+        # decompress
+        "third_party/zstd/src/lib/decompress/huf_decompress.c",
+        "third_party/zstd/src/lib/decompress/huf_decompress_amd64.S",
+        "third_party/zstd/src/lib/decompress/zstd_ddict.c",
+        "third_party/zstd/src/lib/decompress/zstd_decompress.c",
+        "third_party/zstd/src/lib/decompress/zstd_decompress_block.c",
+    ],
+    hdrs = glob([
+        "third_party/zstd/include/**/*.h",
+        "third_party/zstd/src/lib/**/*.h",
+    ], allow_empty = True),
+    copts = [
+        "-Wno-implicit-fallthrough",
+        "-Wno-conversion",
+        "-Wno-unused-but-set-variable",
+        "-Wno-unknown-warning-option",
+    ],
+    defines = [
+        "XXH_NAMESPACE=ZSTD_",
+        "ZDICTLIB_VISIBILITY=",
+        "ZSTDERRORLIB_VISIBILITY=",
+        "ZSTDLIB_HIDDEN=",
+        "ZSTDLIB_VISIBILITY=",
+        "ZSTDLIB_VISIBLE=",
+    ],
+    includes = [
+        "third_party/zstd/include",
+        "third_party/zstd/src/lib",
+        "third_party/zstd/src/lib/common",
+        "third_party/zstd/src/lib/compress",
+        "third_party/zstd/src/lib/decompress",
+        "third_party/zstd/src/lib/dictBuilder",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "userboot_payload_zx_headers",
+    srcs = glob(["zircon/system/ulib/zx/include/**/*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "kernel_userabi_vdso_elf_cxx_sources",
+    srcs = [
+        "//zircon/kernel/lib/userabi:vdso_elf_cxx_sources",
+        "//zircon/system/ulib/affine:sources",
+        "//zircon/system/ulib/concurrent:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_vdso_elf_asm_sources",
+    srcs = ["//zircon/kernel/lib/userabi:vdso_elf_asm_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_vdso_elf_linker_scripts",
+    srcs = ["//zircon/kernel/lib/userabi:vdso_elf_linker_scripts"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_userabi_vdso_generation_scripts",
+    srcs = ["//zircon/kernel/lib/userabi:vdso_generation_scripts"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "lib_region_alloc_sources",
+    srcs = ["//zircon/system/ulib/region-alloc:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "lib_affine_sources",
+    srcs = ["//zircon/system/ulib/affine:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "lib_pretty_sources",
+    srcs = ["//zircon/system/ulib/pretty:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "lib_lz4_sources",
+    srcs = ["//zircon/third_party/lz4/lib:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_next_support_sources",
+    srcs = [
+        "//src/lib/zbitl:kernel_support_sources",
+        "//zircon/kernel/arch/x86:cpuid_source",
+        "//zircon/kernel/lib/arch:cpuid_source",
+        "//zircon/kernel/lib/topology:sources",
+        "//zircon/system/ulib/smbios:sources",
+        "//zircon/system/ulib/uart:parse_source",
+        "//zircon/system/ulib/bitmap:sources",
+        "//zircon/system/ulib/fbl:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_runtime_gap_c_sources",
+    srcs = [
+        "zircon/kernel/lib/efi/guids.c",
+        "//zircon/system/ulib/explicit-memory:sources",
+        "//zircon/kernel/lib/libc:runtime_gap_c_sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_runtime_gap_cxx_sources",
+    srcs = [
+        "//zircon/kernel/lib/heap:cxx_allocator_source",
+        "//zircon/kernel/lib/ktl:stub-new.cc",
+        "//zircon/kernel/lib/libc:runtime_gap_cxx_sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_runtime_gap_asm_sources",
+    srcs = ["zircon/kernel/lib/code-patching/self-test.S"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_leaf_support_sources",
+    srcs = [
+        "//zircon/kernel/arch/x86:crashlog_source",
+        "//zircon/kernel/dev/iommu:sources",
+        "//zircon/kernel/dev/iommu/stub:sources",
+        "//zircon/kernel/lib/backtrace:sources",
+        "//zircon/kernel/lib/btree:sources",
+        "//zircon/kernel/lib/kconcurrent:sources",
+        "//zircon/kernel/lib/kpci:sources",
+        "//zircon/kernel/lib/object_cache:sources",
+        "//zircon/kernel/lib/page-map:sources",
+        "//zircon/kernel/lib/stall:sources",
+        "//zircon/kernel/lib/wake-vector:sources",
+        "//zircon/kernel/phys/lib/memalloc:range_sources",
+        "//zircon/system/ulib/concurrent:sources",
+        "//zircon/system/ulib/ram-crashlog:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_leaf_support_c_sources",
+    srcs = ["//zircon/third_party/ulib/cksum:crc32_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_power_support_sources",
+    srcs = [
+        "//zircon/kernel/dev/pdev/power:sources",
+        "//zircon/kernel/lib/power-management:sources",
+        "//zircon/kernel/lib/suspend_wakeup_timer:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_lockup_detector_sources",
+    srcs = ["//zircon/kernel/lib/lockup_detector:sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_trace_support_sources",
+    srcs = [
+        "//zircon/kernel/lib/ktrace:sources",
+        "//zircon/kernel/lib/percpu_writer:sources",
+        "//zircon/kernel/lib/thread_sampler:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_mtrace_sources",
+    srcs = [
+        "//zircon/kernel/lib/mtrace:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_hypervisor_sources",
+    srcs = [
+        "//zircon/kernel/hypervisor:sources",
+        "//zircon/kernel/arch/x86/hypervisor:sources",
+    ],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_hypervisor_asm_sources",
+    srcs = ["//zircon/kernel/arch/x86/hypervisor:asm_sources"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_hypervisor_test_sources",
+    srcs = [
+        "//zircon/kernel/hypervisor:test_sources",
+        "//zircon/kernel/arch/x86/hypervisor:test_sources",
+    ],
+    testonly = True,
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_hypervisor_kernel_tests",
+    srcs = ["//zircon/kernel/hypervisor:kernel-tests"],
+    testonly = True,
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_heap_wrapper_source",
+    srcs = ["//zircon/kernel/lib/heap:heap_wrapper_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_cmpctmalloc_source",
+    srcs = ["//zircon/kernel/lib/heap/cmpctmalloc:cmpctmalloc_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_top_main_source",
+    srcs = ["//zircon/kernel/top:main_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_top_debug_source",
+    srcs = ["//zircon/kernel/top:debug_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_top_handoff_source",
+    srcs = ["//zircon/kernel/top:handoff_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_user_copy_source",
+    srcs = ["//zircon/kernel/arch/x86/user-copy:user_copy_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "kernel_x64_user_copy_asm_source",
+    srcs = ["//zircon/kernel/arch/x86/user-copy:user_copy_asm_source"],
+    visibility = ["//kernel:__pkg__"],
+)
+
+filegroup(
+    name = "x64_mvp_snapshot",
+    srcs = [
+        ":abi_snapshot",
+        ":kernel_snapshot",
+        ":kernel_ulib_header_support_snapshot",
+        ":packaging_snapshot",
+        ":metadata",
+    ],
+)
+
+filegroup(
+    name = "metadata",
+    srcs = ["README.md"],
+)
+
+# code_patching — code-patching has no upstream BUILD.bazel; defined here.
+cc_library(
+    name = "code_patching",
+    srcs = ["zircon/kernel/lib/code-patching/code-patching.cc"],
+    hdrs = glob([
+        "zircon/kernel/lib/code-patching/include/**/*.h",
+        "zircon/kernel/lib/code-patching/include/**/*.inc",
+    ], allow_empty = True),
+    includes = ["zircon/kernel/lib/code-patching/include"],
+    alwayslink = True,
+    deps = [
+        ":kernel_cc_headers",
+        "//src/lib/zbitl:phys_zbitl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# phys_elfldltl — compiles elfldltl/self.cc for phys builds.
+# elfldltl has no BUILD.bazel (GN-only upstream), so we define the
+# Bazel-native target here in the enclosing package.
+cc_library(
+    name = "phys_elfldltl",
+    srcs = ["src/lib/elfldltl/self.cc"],
+    hdrs = [":elfldltl_headers"],
+    includes = ["src/lib/elfldltl/include"],
+    alwayslink = True,
+    deps = [":kernel_cc_headers"],
+    visibility = ["//visibility:public"],
+)
+
+# symbolizer_markup_headers — provides symbolizer-markup include path.
+cc_library(
+    name = "symbolizer_markup_headers",
+    hdrs = glob([
+        "src/lib/symbolizer-markup/include/**/*.h",
+    ], allow_empty = True),
+    includes = ["src/lib/symbolizer-markup/include"],
+    visibility = ["//visibility:public"],
+)

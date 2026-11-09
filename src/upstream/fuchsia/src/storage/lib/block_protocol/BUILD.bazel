@@ -1,0 +1,32 @@
+# Bazel integration for this imported target.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "block_protocol",
+    srcs = [
+        "src/fifo.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "block_protocol",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "@crates//:bitflags",
+        "@crates//:zerocopy",
+    ],
+)
+
+cc_library(
+    name = "block_fifo",
+    hdrs = [
+        "block-fifo.h",
+        "types.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+    ],
+)

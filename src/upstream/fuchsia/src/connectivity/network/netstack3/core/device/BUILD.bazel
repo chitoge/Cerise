@@ -1,0 +1,37 @@
+# Authored locally for Cerise. netstack3-device (netstack3-core sub-crate),
+# x86_64-unknown-fuchsia. Base feature variant; test/loom/instrumented variants omitted.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-device",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "@crates//:assert_matches",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/ip:netstack3-ip",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:log",
+        "@crates//:ref-cast",
+    ],
+)
+
+# tests excluded: not diagnostics_assertions-
+# blocked like tcp/filter (no such import in src/), but wiring this crate's
+# own test - and its device/tests external sibling - needs
+# netstack3-{base,filter,ip}_testutils plus whatever this crate's own
+# #[cfg(test)] mods pull in; breadth-over-depth stop-loss after landing
+# base/sync/ip/packet-formats (365 + 19 + 848 + 236 tests) - not attempted,
+# left for a follow-up rung, not a hard blocker like tcp/filter/system-image.

@@ -1,0 +1,8 @@
+# Cerise BUILD (authored locally). The DDK driver API shim.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "driver",
+    srcs = ["api.cc"],
+    deps = ["//src/upstream/fuchsia/src/lib/ddk:ddk"],
+)

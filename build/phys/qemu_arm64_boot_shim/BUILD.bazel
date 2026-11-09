@@ -1,0 +1,33 @@
+package(default_visibility = ["//visibility:public"])
+
+# Minimal arm64 QEMU boot shim.
+# Produces a Linux arm64 Image format binary to be passed as -kernel.
+# The ZBI (arm64_kernel_storage.zbi or arm64-smoke.zbi) is passed as -initrd.
+# QEMU boots the shim, which scans RAM for the ZBI and jumps to physload.
+
+genrule(
+    name = "arm64_qemu_boot_shim",
+    srcs = ["shim.S"],
+    outs = ["arm64_qemu_boot_shim.bin"],
+    cmd = " && ".join([
+        "set -e",
+        # Assemble the shim (bare-metal aarch64, no PIC needed — all local refs)
+        "$(location //toolchain:prebuilt_clang) --target=aarch64-none-elf" +
+        "  -ffreestanding -nostdlib" +
+        "  -c $(location shim.S) -o $(RULEDIR)/shim.o",
+        # Link flat binary: .text starts at 0x40080000 (Linux TEXT_OFFSET from DRAM base).
+        # No dynamic linker, no PLT/GOT.
+        "$(location //toolchain:prebuilt_ld_lld)" +
+        "  --image-base=0x40080000" +
+        "  --section-start=.text=0x40080000" +
+        "  -nostdlib --no-dynamic-linker -static" +
+        "  $(RULEDIR)/shim.o -o $(RULEDIR)/shim.elf",
+        # Extract flat binary
+        "$(location //toolchain:llvm_objcopy) -O binary $(RULEDIR)/shim.elf $@",
+    ]),
+    tools = [
+        "//toolchain:llvm_objcopy",
+        "//toolchain:prebuilt_clang",
+        "//toolchain:prebuilt_ld_lld",
+    ],
+)

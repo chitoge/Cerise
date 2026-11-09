@@ -1,0 +1,22 @@
+# Vendored for Cerise (Phase 2 logging: Archivist). measure-tape host tool:
+# the FIDL "measuring tape" generator (Go). Given FIDL JSON IR and a set of
+# target types, it computes the exact max-encoded size and emits a Rust (or
+# hlcpp) module used for buffer sizing. Archivist uses it over
+# fuchsia.logger/LogMessage (see the measure_tape() codegen rule in
+# //src/upstream/fuchsia/tools/fidl/measure-tape:measure_tape.bzl, instantiated
+# in the archivist BUILD). Upstream: //tools/fidl/measure-tape/src.
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "measure-tape",
+    srcs = ["main.go"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen",
+        "//src/upstream/fuchsia/tools/fidl/measure-tape/src/hlcpp:hlcpp",
+        "//src/upstream/fuchsia/tools/fidl/measure-tape/src/measurer:measurer",
+        "//src/upstream/fuchsia/tools/fidl/measure-tape/src/rust:rust",
+    ],
+)

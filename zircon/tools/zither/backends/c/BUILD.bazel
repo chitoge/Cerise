@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+go_library(
+    name = "c",
+    srcs = ["c.go"],
+    embedsrcs = glob(["templates/*"]),
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/c",
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//zircon/tools/zither",
+    ],
+)

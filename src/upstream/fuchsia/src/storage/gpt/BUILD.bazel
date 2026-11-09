@@ -1,0 +1,47 @@
+# Vendored for Cerise fshost Phase 1. Real upstream src/storage/gpt (C++
+# only — rust/ subdir not vendored, not a real dep of fs_management/fvm's C++
+# targets, which is all this project needs it for).
+#
+# Two include roots, matching upstream's zx_library split: `gpt.h` (private impl
+# header, quote-included from gpt.cc as "gpt/gpt.h" — resolves via -Isrc/storage)
+# and `include/gpt/*.h` (public sdk_headers, angle-included as <gpt/...> by every
+# consumer — resolves via includes=["include"]).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "gpt",
+    srcs = [
+        "cros.cc",
+        "gpt.cc",
+        "guid.cc",
+    ],
+    hdrs = [
+        "gpt.h",
+        "include/gpt/c/gpt.h",
+        "include/gpt/cros.h",
+        "include/gpt/gpt.h",
+        "include/gpt/guid.h",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-Isrc/upstream/fuchsia/src/storage",
+    ],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fit-promise",
+        "//src/upstream/fuchsia/src/lib/utf_conversion",
+        "//src/upstream/fuchsia/src/lib/uuid",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/cpp:interface",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/mbr",
+        "//src/upstream/fuchsia/zircon/system/ulib/range",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/safemath",
+        "//zircon/third_party/ulib/cksum",
+    ],
+)

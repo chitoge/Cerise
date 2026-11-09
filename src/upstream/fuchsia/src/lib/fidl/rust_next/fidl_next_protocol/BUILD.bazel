@@ -1,0 +1,53 @@
+# Authored locally for Cerise. fidl_next_protocol: channel
+# protocol layer (transport abstraction, client/server endpoints) for fidl_next.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_next_protocol",
+    srcs = [
+        "src/body.rs",
+        "src/endpoints/client.rs",
+        "src/endpoints/connection.rs",
+        "src/endpoints/lockers.rs",
+        "src/endpoints/mod.rs",
+        "src/endpoints/server.rs",
+        "src/error.rs",
+        "src/flexibility.rs",
+        "src/flexible.rs",
+        "src/flexible_result.rs",
+        "src/framework_error.rs",
+        "src/fuchsia/channel.rs",
+        "src/fuchsia/mod.rs",
+        "src/lib.rs",
+        "src/mpsc.rs",
+        "src/service.rs",
+        "src/testing.rs",
+        "src/transport.rs",
+        "src/wire/empty.rs",
+        "src/wire/epitaph.rs",
+        "src/wire/flexible.rs",
+        "src/wire/flexible_result.rs",
+        "src/wire/framework_error.rs",
+        "src/wire/message_header.rs",
+        "src/wire/mod.rs",
+    ],
+    crate_name = "fidl_next_protocol",
+    edition = "2024",
+    crate_features = ["fuchsia"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust_constants:rust_constants",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next_codec:fidl_next_codec",
+        "//src/upstream/fuchsia/sdk/lib/fuchsia-loom:fuchsia_loom",
+        "@crates//:pin-project",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        ],
+        "//conditions:default": [],
+    }),
+)

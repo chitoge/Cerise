@@ -1,0 +1,111 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.posix.socket.packet",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fuchsia.posix",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.posix.socket.packet_cpp",
+    library = ":fuchsia.posix.socket.packet",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fuchsia.posix_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_rust
+# in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.posix.socket.packet_rs",
+    library = ":fuchsia.posix.socket.packet",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_posix_socket_packet",
+    srcs = [":fuchsia.posix.socket.packet_rs"],
+    crate_name = "fidl_fuchsia_posix_socket_packet",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fidl_fuchsia_posix",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fidl_fuchsia_posix_socket",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fidl_fuchsia_unknown",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# netstack3's bindings/socket/packet.rs uses
+# SocketRequest::SetMark/GetMark/GetCookie, inherited via `compose
+# fuchsia.posix.socket.BaseSocket` - all @available(added=HEAD) in
+# posix_socket.fidl, absent at this library's shared level-30 IR. Same
+# reasoning/precedent as fuchsia.posix.socket.raw_head above - the plain Rust
+# target has no other real consumer (zxio/fdio only use `_cpp`), but a parallel
+# target keeps the shared codegen byte-for-byte untouched regardless.
+fidl_library(
+    name = "fuchsia.posix.socket.packet_head",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fuchsia.posix",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.posix.socket.packet_head_rs",
+    library = ":fuchsia.posix.socket.packet_head",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_posix_socket_packet_head",
+    srcs = [":fuchsia.posix.socket.packet_head_rs"],
+    crate_name = "fidl_fuchsia_posix_socket_packet",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix:fidl_fuchsia_posix",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fidl_fuchsia_posix_socket_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.unknown:fidl_fuchsia_unknown",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

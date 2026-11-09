@@ -1,0 +1,87 @@
+# Authored locally for Cerise.
+# blockers:
+#   - resolving.rs uses mem_util::bytes_from_data (cfg(target_os = "fuchsia"))
+#   - bedrock/with_service_renames_and_filter.rs uses vfs::execution_scope (cfg fuchsia)
+# filtered_aggregate.rs is present in tree but NOT in upstream BUILD.gn; excluded.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "routing",
+    srcs = [
+        "src/availability.rs",
+        "src/component_instance.rs",
+        "src/config.rs",
+        "src/error.rs",
+        "src/error_logging_router.rs",
+        "src/lib.rs",
+        "src/policy.rs",
+        "src/resolving.rs",
+        "src/rights.rs",
+        "src/subdir.rs",
+        "src/bedrock/aggregate_router.rs",
+        "src/bedrock/dict_ext.rs",
+        "src/bedrock/lazy_get.rs",
+        "src/bedrock/mod.rs",
+        "src/bedrock/program_output_dict.rs",
+        "src/bedrock/request_metadata.rs",
+        "src/bedrock/sandbox_construction.rs",
+        "src/bedrock/structured_dict.rs",
+        "src/bedrock/use_dictionary_router.rs",
+        "src/bedrock/weak_instance_token_ext.rs",
+        "src/bedrock/with_policy_check.rs",
+        "src/bedrock/with_porcelain.rs",
+        "src/bedrock/with_rights.rs",
+        "src/bedrock/with_service_renames_and_filter.rs",
+    ],
+    crate_name = "routing",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    proc_macro_deps = [
+        "@crates//:async-trait",
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fidl_fuchsia_component_resolution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runtime:fidl_fuchsia_component_runtime",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.sys2:fidl_fuchsia_sys2",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/directed_graph:directed_graph",
+        "//src/upstream/fuchsia/src/lib/error/clonable_error:clonable_error",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust:version-history",
+        "//src/upstream/fuchsia/src/sys/component_manager/lib/router_error:router_error",
+        "//src/upstream/fuchsia/src/sys/lib/capability_source:capability_source",
+        "//src/upstream/fuchsia/src/sys/lib/cm_config:cm_config",
+        "//src/upstream/fuchsia/src/sys/lib/cm_graph:cm_graph",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/src/sys/lib/component_id_index:component_id_index",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "//src/upstream/fuchsia/src/sys/lib/routing/availability:routing_availability",
+        "//src/upstream/fuchsia/src/sys/lib/runtime_capabilities:runtime_capabilities",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:itertools",
+        "@crates//:log",
+        "@crates//:serde",
+        "@crates//:strum",
+        "@crates//:thiserror",
+        "@crates//:url",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+            "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+            "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+            "//src/upstream/fuchsia/src/sys/lib/mem_util:mem_util",
+        ],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,23 @@
+# Vendored from upstream (faithful port). libasync: safe Rust bindings over the
+# C async dispatcher runtime. Compile-only rlib.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rust",
+    srcs = [
+        "src/after_deadline.rs",
+        "src/callback_state.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "libasync",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async/rust/dispatcher:dispatcher",
+        "//src/upstream/fuchsia/sdk/lib/async/rust/sys:sys",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:futures",
+    ],
+)

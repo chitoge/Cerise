@@ -1,0 +1,35 @@
+# Host-portable emulated `zx` crate for Cerise unit tests.
+#
+# Provides a `crate_name = "zx"` drop-in for the host/exec platform so that
+# vendored Fuchsia crates whose tests only exercise portable handle operations
+# become host-runnable. The real `//src/upstream/fuchsia/sdk/rust/zx:zx` crate
+# cannot compile off-Fuchsia (zx-sys gates its syscall extern block on
+# `cfg(target_os = "fuchsia")`). This target is swapped in for that one via a
+# `select()` on `@platforms//os:fuchsia` in each consumer's `deps`.
+#
+# Mechanism: re-export fuchsia-async's existing `emulated_handle` backend (the
+# same one `fidl`/`fuchsia_async` use on host) so handle identity is shared
+# across zx <-> fuchsia_async <-> fidl. See src/lib.rs for the full rationale.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "zx_host",
+    srcs = ["src/lib.rs"],
+    crate_name = "zx",
+    edition = "2024",
+    # Not meaningful on Fuchsia (the real zx crate is used there); keep it out
+    # of accidental target builds.
+    target_compatible_with = select({
+        "@platforms//os:fuchsia": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-status-ext:zx-status-ext",
+        "//src/upstream/fuchsia/sdk/rust/zx-sys:zx-sys",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:rand",
+    ],
+)

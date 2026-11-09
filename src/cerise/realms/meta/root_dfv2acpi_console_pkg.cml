@@ -1,0 +1,97 @@
+// root_dfv2acpi_console_pkg — component_manager root for qemu-x64-console-pkg (packages,
+// post-storage APP TIER: realize the bootfs-offload payoff). It is root_dfv2acpi_console's status
+// display COMBINED with root_dfv2acpi_pkg's fshost+packages topology, with the FILESERVER moved OUT
+// of bootfs and delivered as a fuchsia-pkg PACKAGE over the network:
+//
+//   * status_console (Eager) renders the framebuffer immediately — it does NOT depend on storage or
+//     the fileserver, so the console is up long before (and whether or not) the fileserver arrives.
+//   * fxfs_provisioner + fshost bring up the fxfs blob + data volumes (the package store) on disk1.
+//   * apptier_fetcher (Eager) owns the NIC (DHCP), then downloads the fileserver PACKAGE from the host
+//     over the network, merkle-verifies + installs its blobs into the blob volume, and binds the
+//     fileserver's Binder. component_manager resolves fuchsia-pkg://cerise/fileserver via #pkg_resolver
+//     (from the trusted-in-image BASE index) and elf_runner launches it from DISK blobs — NOT bootfs.
+//   * the fileserver (Lazy, #pkg-env) SHARES apptier_fetcher's already-up interface (it binds
+//     0.0.0.0:50051 and skips its own bringup) and mounts its own fxfs on disk2, then serves gRPC.
+//   * on reboot the fileserver's blobs persist in the blob volume, so apptier_fetcher skips the fetch
+//     and the fileserver resolves from disk with no network — the zero-refetch durability proof.
+//
+// The fileserver's storage/crypt/network capabilities follow it into the pkg-resolved realm slot
+// (route_check enforces this). VmexResource -> pkg_resolver remains the one permitted privileged use.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fxfs_provisioner", url: "fuchsia-boot:///fxfs_provisioner#meta/fxfs_provisioner.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fshost", url: "fuchsia-boot:///fshost#meta/fshost.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "pkg_resolver", url: "fuchsia-boot:///pkg_resolver#meta/pkg_resolver.cm", startup: "lazy", environment: "#elf-env" },
+        // The app-tier update driver: owns the NIC, fetches the fileserver package, binds it.
+        { name: "apptier_fetcher", url: "fuchsia-boot:///apptier_fetcher#meta/apptier_fetcher.cm", startup: "eager", environment: "#elf-env" },
+        { name: "crypt_fxfs", url: "fuchsia-boot:///crypt_fxfs#meta/crypt_fxfs.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "status_console", url: "fuchsia-boot:///status_console#meta/status_console.cm", startup: "eager", environment: "#elf-env" },
+        // The FILESERVER, delivered as a PACKAGE (not bootfs): Lazy, resolved from disk blobs.
+        { name: "fileserver", url: "fuchsia-pkg://cerise/fileserver#meta/fileserver.cm", startup: "lazy", environment: "#pkg-env" },
+    ],
+    environments: [
+        {
+            name: "pkg-env",
+            extends: "realm",
+            runners: [{ runner: "elf", from: "#elf_runner", as: "elf" }],
+            resolvers: [{ resolver: "pkg-resolver", from: "#pkg_resolver", scheme: "fuchsia-pkg" }],
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netstack3", "#fxfs_provisioner", "#fshost", "#pkg_resolver", "#apptier_fetcher", "#crypt_fxfs", "#status_console", "#fileserver"],
+        },
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: ["#netstack3", "#fxfs_provisioner", "#fshost", "#pkg_resolver", "#apptier_fetcher", "#crypt_fxfs"],
+        },
+        // devfs: fshost finds the block device; apptier_fetcher finds the NIC; the fileserver finds
+        // both its NIC (dormant, guard skips) and its own block device (disk2).
+        { directory: "dev", from: "#driver_manager_rust", to: ["#apptier_fetcher", "#fshost", "#fileserver"], rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: ["#fxfs_provisioner", "#fshost", "#fileserver"] },
+        // Provisioner readiness handoff: apptier_fetcher reads it before opening fshost-fs.
+        { directory: "provisioned", from: "#fxfs_provisioner", to: "#apptier_fetcher" },
+        // fshost's exposed subtree: apptier_fetcher writes the fileserver package blobs (/fshost-fs/blob);
+        // pkg_resolver reads BlobReader + the (unused-here) dynamic index.
+        { directory: "fshost-fs", from: "#fshost", to: ["#apptier_fetcher", "#pkg_resolver"] },
+        // Executability grant: pkg_resolver serves EXECUTABLE package blobs (the one permitted privileged use).
+        { protocol: "fuchsia.kernel.VmexResource", from: "parent", to: "#pkg_resolver" },
+        // netstack3 sockets for apptier_fetcher: NIC install, TCP download, DHCP DORA.
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#apptier_fetcher" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#apptier_fetcher" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#apptier_fetcher" },
+        // The fileserver's framework Binder -> apptier_fetcher binds it after the package is installed.
+        { protocol: "fuchsia.component.Binder", from: "#fileserver", to: "#apptier_fetcher", as: "fileserver.Binder" },
+        // The fileserver's own capability set (identical to root_dfv2acpi_console's, now routed into the
+        // pkg-resolved slot): NIC (shared, bringup guarded off), sockets, block volume, Crypt.
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.Crypt", from: "#crypt_fxfs", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "#crypt_fxfs", to: "#fileserver" },
+        // status_console: framebuffer via the display driver's FIDL service + interface state. NO
+        // hardware capability — the native display driver owns the hardware.
+        { service: "cerise.display.Service", from: "#driver_manager_rust", to: "#status_console" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#status_console" },
+        // Memory + CPU: see root_dfv2acpi_console.cml for why this is fuchsia.kernel.Stats
+        // and not fuchsia.kernel.InfoResource.
+        { protocol: "fuchsia.kernel.Stats", from: "parent", to: "#status_console" },
+        // NO cerise.storage.Status offer here, deliberately. In THIS realm the file server is
+        // a Lazy, package-resolved child that apptier_fetcher installs and binds; routing its
+        // exposed protocol to the Eager console would make the console the thing that
+        // ACTIVATES it, inverting the ordering this product is built to demonstrate (line 6:
+        // the console does not depend on storage or the file server). The console's `use` is
+        // optional, so the absence is a legal route, and the Storage section renders
+        // "unavailable — not routed in this product" rather than a guess.
+    ],
+}

@@ -1,0 +1,97 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Host-side EFI stub/mock infrastructure (no EFI toolchain required).
+# stub_boot_services and fake_disk_io_protocol are independent of efi::String.
+cc_library(
+    name = "efi_testing_boot",
+    srcs = [
+        "fake_disk_io_protocol.cc",
+        "fake_network_protocol.cc",
+        "stub_boot_services.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    copts = ["-std=c++20"],
+    deps = [
+        "//:efi_headers",
+        "//zircon/system/public:public",
+        "@googletest//:gtest",
+    ],
+)
+
+# Runtime-services stub needs efi::String + variable types (requires utf_conversion).
+cc_library(
+    name = "efi_testing_runtime",
+    srcs = [
+        "stdio_file_protocol.cc",
+        "stub_runtime_services.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    copts = ["-std=c++20"],
+    deps = [
+        ":efi_string",
+        ":efi_testing_boot",
+        ":efi_variable",
+        "//:efi_headers",
+        "//zircon/system/public:public",
+        "@googletest//:gtest",
+    ],
+)
+
+# Pull in the string and variable libraries from their subdirs.
+alias(
+    name = "efi_string",
+    actual = "//zircon/kernel/lib/efi/string:efi_string",
+)
+
+alias(
+    name = "efi_variable",
+    actual = "//zircon/kernel/lib/efi/variable:efi_variable",
+)
+
+# Tests that do NOT need efi::String / utf_conversion.
+cc_test(
+    name = "efi_guid_tests",
+    srcs = ["efi_guid_test.cc"],
+    copts = ["-std=c++20"],
+    linkstatic = True,
+    deps = [
+        "//:efi_headers",
+        "@googletest//:gtest_main",
+        "@googletest//:gtest",
+    ],
+)
+
+cc_test(
+    name = "efi_boot_tests",
+    srcs = [
+        "fake_disk_io_protocol_test.cc",
+        "stub_boot_services_test.cc",
+    ],
+    copts = ["-std=c++20"],
+    linkstatic = True,
+    deps = [
+        ":efi_testing_boot",
+        "//:efi_headers",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Tests that DO need efi::String / utf_conversion.
+cc_test(
+    name = "efi_runtime_tests",
+    srcs = ["stub_runtime_services_test.cc"],
+    copts = ["-std=c++20"],
+    linkstatic = True,
+    deps = [
+        ":efi_testing_runtime",
+        "//:efi_headers",
+        "//sdk/lib/zircon-assert:zircon_assert_libc",
+        "//zircon/system/ulib/fbl:fbl",
+        "@googletest//:gtest_main",
+        "@googletest//:gtest",
+    ],
+)

@@ -1,0 +1,34 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "cerise.network",
+    srcs = ["network.fidl"],
+    tags = ["manual"],
+)
+
+fidl_rust(
+    name = "cerise.network_rs",
+    library = ":cerise.network",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_cerise_network",
+    srcs = [":cerise.network_rs"],
+    crate_name = "fidl_cerise_network",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,25 @@
+# Cerise BUILD (authored locally). //src/devices/lib/fidl:devfs_fidl — the
+# fuchsia.device devfs message server (device_server) bridged into the compat shim.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "devfs_fidl",
+    srcs = ["device_server.cc"],
+    hdrs = ["device_server.h"],
+    # device_server.{cc,h} include each other as "src/devices/lib/fidl/device_server.h"
+    # (workspace-relative).
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+    ],
+)

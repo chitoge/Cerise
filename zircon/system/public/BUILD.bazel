@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = glob(["zircon/**/*.h", "zircon/**/*.inc"], allow_empty = True),
+)
+
+cc_library(
+    name = "public",
+    hdrs = [":headers"],
+    includes = ["."],
+)

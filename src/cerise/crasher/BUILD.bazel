@@ -1,0 +1,41 @@
+# Cerise crasher (post-mortem gate fixture): a component that null-derefs so
+# the root-job crash_handler observes a real userspace crash. Built WITH frame
+# pointers so crash_handler's frame-pointer backtrace walk yields depth beyond
+# the fault PC. See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "crasher_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "crasher",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+        # Keep frame pointers so crash_handler's FP-walk sees deeper frames (the
+        # fault PC, frame 0, resolves regardless). This is a backtrace-DEPTH need,
+        # independent of symbolization, so it stays per-target.
+        #
+        # the former per-target `-Cstrip=none -Cdebuginfo=2` are GONE.
+        # Every Fuchsia-target rust binary now carries `-Cdebuginfo=1 -Cstrip=none`
+        # globally (the fuchsia transition in bazel/fuchsia_platform.bzl), so the
+        # crasher's unstripped store copy symbolizes to crasher::main with real
+        # source with no special-casing — the crash-handler gate proves it.
+        "-Cforce-frame-pointers=yes",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+    ],
+)
+
+fuchsia_stripped(
+    name = "crasher_bin_stripped.fuchsia",
+    src = ":crasher_bin",
+)

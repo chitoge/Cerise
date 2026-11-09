@@ -1,0 +1,34 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# ARM SMMUv2/v3 I/O Memory Management Unit driver.
+# Mirrors GN source_set("arm_smmu") in BUILD.gn.
+cc_library(
+    name = "arm_smmu",
+    srcs = [
+        "console.cc",
+        "context_bank.cc",
+        "device_aspace.cc",
+        "smmu.cc",
+        "smmu_bti.cc",
+        "smmu_mode.cc",
+        "smmu_pmt.cc",
+        "stream_match_reg_group.cc",
+        "translation_table_helper.cc",
+        "utils.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//:kernel_cc_headers",
+        "//zircon/kernel/dev/iommu:iommu",
+        "//zircon/kernel/dev/iommu/stub:iommu_stub",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True, exclude = ["tests/**"]),
+)

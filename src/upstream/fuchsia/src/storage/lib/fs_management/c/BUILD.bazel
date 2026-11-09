@@ -1,0 +1,17 @@
+# Vendored for Cerise fshost Phase 1. Real upstream
+# src/storage/lib/fs_management/c — a small C-callable FFI shim over the cpp fvm API.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "c",
+    srcs = ["fvm.cc"],
+    hdrs = ["fvm.h"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/storage/lib/fs_management/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+    ],
+)

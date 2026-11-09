@@ -1,0 +1,8 @@
+# Cerise BUILD (authored locally) — mmio-ptr header-only lib (used by hwreg).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "mmio-ptr",
+    hdrs = glob(["include/lib/mmio-ptr/*.h"]),
+    includes = ["include"],
+)

@@ -1,0 +1,37 @@
+# Cerise BUILD for the Fuchsia scudo integration (authored locally; upstream is GN).
+# Two pieces, deliberately split so scudo's C++ compiles against libc++ cleanly:
+#   - scudo_fuchsia_config: header-only glue scudo's C++ includes (custom_scudo_config.h +
+#     scudo_platform_tls_slot.h). No musl-internal deps — the slot header is just a
+#     declaration now (see scudo_tls_slot.c).
+#   - scudo_tls_slot: the out-of-line TSD-slot accessor, compiled as C in the musl-internal
+#     environment (where threads_impl.h works), so the deep musl header closure never
+#     enters a C++ compile and shadows libc++.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "scudo_fuchsia_config",
+    hdrs = [
+        "custom_scudo_config.h",
+        "scudo_platform_tls_slot.h",
+    ],
+    includes = ["."],
+)
+
+cc_library(
+    name = "scudo_tls_slot",
+    srcs = ["scudo_tls_slot.c"],
+    copts = ["-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    local_defines = ["_XOPEN_SOURCE=700"],
+    deps = [
+        # threads_impl.h (struct pthread with ->scudo_tsd) + the musl C compile closure.
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_private_headers",
+        "//src/cerise/sysroot:libc_sysroot_headers",
+        "//src/upstream/fuchsia/sdk/lib/c:headers",
+        "//src/upstream/fuchsia/sdk/lib/zircon-assert:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+    ],
+)

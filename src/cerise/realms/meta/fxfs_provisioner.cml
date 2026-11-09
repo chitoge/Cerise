@@ -1,0 +1,24 @@
+// fxfs_provisioner leaf — the one-time first-boot Fxfs genesis step for the
+// x64-fshost product. Formats the virgin disk + creates the bare "blob" volume fshost's
+// mount path OPENS, then CLOSES the disk and serves a "provisioned" readiness directory
+// (a single "ready" file). fshost_probe reads "/provisioned/ready" — a real routed
+// capability dependency — before triggering fshost's Lazy auto-mount, so provisioning
+// completes and the disk is released before fshost ever touches it. No crypt: fshost
+// creates/encrypts its own data + unencrypted volumes via its keybag path.
+// A NEW .cml (not in the decode_diff golden set).
+{
+    program: {
+        runner: "elf",
+        binary: "bin/fxfs_provisioner",
+    },
+    capabilities: [
+        { directory: "provisioned", rights: ["r*"], path: "/provisioned" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
+    expose: [
+        { directory: "provisioned", from: "self" },
+    ],
+}

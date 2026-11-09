@@ -1,0 +1,61 @@
+Cerise
+======
+
+Cerise-original code (primarily under src/cerise/) is licensed under the
+BSD 3-Clause License; see the LICENSE file at the repository root. Cerise
+source files carry SPDX-License-Identifier headers.
+
+Cerise is derived from Fuchsia and vendors a substantial amount of upstream
+and third-party code, each under its own license. This NOTICE summarizes
+those components; the authoritative terms for each are the license text
+distributed with that component (a LICENSE/COPYRIGHT file within its tree,
+and/or per-file SPDX headers).
+
+Third-party components
+----------------------
+
+Fuchsia (Zircon kernel, userland libraries, component and driver frameworks)
+    BSD 3-Clause License. Copyright The Fuchsia Authors.
+    src/upstream/fuchsia/LICENSE and per-file headers; also the top-level
+    zircon/ kernel tree.
+
+musl libc (vendored via Fuchsia)
+    MIT License. Copyright the musl contributors.
+    src/upstream/fuchsia/zircon/third_party/ulib/musl/COPYRIGHT
+
+LLVM runtime libraries — libc++, libc++abi, libunwind, compiler-rt, and the
+scudo allocator (vendored via @llvm-project / Fuchsia)
+    Apache License 2.0 with the LLVM exception.
+
+BoringSSL and its components (fiat-crypto, etc.)
+    ISC-style and OpenSSL/SSLeay-derived permissive licenses; MIT for
+    fiat-crypto.
+    src/upstream/fuchsia/third_party/boringssl/**/LICENSE
+
+lz4
+    BSD 2-Clause License. Copyright Yann Collet.
+    zircon/third_party/lz4/lib/LICENSE and
+    src/upstream/fuchsia/third_party/lz4/lib/LICENSE
+
+Zstandard (zstd)
+    BSD 3-Clause License. Copyright Meta Platforms, Inc. and affiliates.
+    (The zstd Linux-kernel glue under third_party/zstd/src/lib/linux-kernel/
+    is dual-licensed GPL-2.0+ OR BSD-3-Clause and is not built by Cerise; the
+    BSD-3-Clause terms apply here.)
+    third_party/zstd/src/lib/LICENSE
+
+Intel e1000 / e1000e Ethernet driver (FreeBSD-derived)
+    BSD 3-Clause License. Copyright (c) 2001-2010, Intel Corporation.
+    src/cerise/drivers/e1000/third_party/e1000/LICENSE
+
+Chromium safemath, ICU (via fxl), googletest, and other vendored support
+libraries
+    BSD 3-Clause License / Unicode license / respective permissive licenses;
+    see the LICENSE file within each component's tree.
+
+Rust crate dependencies (resolved via crate_universe)
+    Predominantly MIT and Apache-2.0 (with some ISC and BSD); each crate's
+    license is recorded in its own package metadata.
+
+If any component's bundled license text and this summary disagree, the
+bundled license text governs.

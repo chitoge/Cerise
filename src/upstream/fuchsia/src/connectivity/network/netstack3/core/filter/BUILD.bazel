@@ -1,0 +1,75 @@
+# Authored locally for Cerise. netstack3-filter (netstack3-core sub-crate),
+# x86_64-unknown-fuchsia. Base feature variant; test/loom/instrumented variants omitted.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-filter",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "//src/upstream/fuchsia/src/lib/replace-with",
+        "@crates//:assert_matches",
+        "@crates//:log",
+        "@crates//:once_cell",
+        "@crates//:rand",
+        "@crates//:zerocopy",
+    ],
+)
+
+# src/lib.rs's `pub mod testutil` (used by
+# ip/tcp/udp/device/datagram's own tests) is `#[cfg(any(test, feature =
+# "testutils"))]`-gated, same pattern as netstack3-base_testutils (see that
+# target's comment) - including one impl in src/context.rs gated the same
+# way that names `netstack3_base::testutil::FakeBindingsCtx`, so this needs
+# netstack3-base_testutils, not plain netstack3-base, on its own dependency
+# edge.
+rust_library(
+    name = "netstack3-filter_testutils",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    crate_features = ["testutils"],
+    crate_name = "netstack3_filter",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base_testutils",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "//src/upstream/fuchsia/src/lib/replace-with",
+        "@crates//:assert_matches",
+        "@crates//:log",
+        "@crates//:once_cell",
+        "@crates//:rand",
+        "@crates//:zerocopy",
+    ],
+)
+
+# tests excluded (netstack3-filter's OWN rust_test only - NOT
+# netstack3-filter_testutils above, which dependents need and which builds
+# fine): src/conntrack.rs's #[cfg(test)] mod (~L2116) does
+# `use diagnostics_assertions::assert_data_tree;` and
+# `use fuchsia_inspect::Inspector;` (the real inspect crate, not
+# //src/cerise/stubs/fuchsia_inspect - it needs real VMOs, i.e. the real `zx`
+# crate transitively). Neither diagnostics_assertions nor real fuchsia_inspect
+# is vendored anywhere in this tree, and rust_test recompiles the whole
+# crate as one unit, so this one file's test module blocks netstack3-filter's
+# entire test target the same way ip-test-macro blocked netstack3-core
+# before it was vendored - but unlike ip-test-macro, diagnostics_assertions'
+# transitive real-VMO dependency puts it on the zx-shim side of the hard
+# wall (out of scope this rung), not a small standalone port.

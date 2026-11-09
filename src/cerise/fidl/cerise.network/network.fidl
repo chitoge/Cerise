@@ -1,0 +1,30 @@
+// Runtime configuration of the physical host network.
+//
+// The component that owns the physical interface publishes this information
+// after DHCP completes. VM definitions and snapshots deliberately do not carry
+// it: workers acquire the current values again whenever they are constructed.
+library cerise.network;
+
+/// A point-in-time view of the host's physical IPv4 configuration.
+type Configuration = table {
+    /// Monotonically identifies an installed configuration within this boot.
+    1: generation uint64;
+    /// False until the interface owner has completed its initial configuration.
+    2: ready bool;
+    3: ipv4_address array<uint8, 4>;
+    4: ipv4_prefix_len uint8;
+    5: ipv4_router array<uint8, 4>;
+    /// DNS servers learned from DHCP, in preference order.
+    6: dns_servers vector<array<uint8, 4>>:8;
+    /// Whether the interface owner successfully installed the default route.
+    7: default_route_installed bool;
+};
+
+/// Published by the component that owns the physical interface.
+@discoverable
+closed protocol HostConfiguration {
+    /// Returns immediately. Callers may poll while `ready` is false.
+    strict Get() -> (struct {
+        configuration Configuration;
+    });
+};

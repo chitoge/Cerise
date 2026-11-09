@@ -1,0 +1,120 @@
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use crate::{test_topology, utils};
+use diagnostics_reader::{ArchiveReader, RetryConfig};
+use fidl_fuchsia_archivist_test as ftest;
+use fidl_fuchsia_diagnostics_types::Severity;
+use futures::StreamExt;
+
+const SPAM_COUNT: usize = 1001;
+
+#[fuchsia::test]
+/// Verify that Archivist correctly budgets and evicts log messages when its
+/// cache is full. Archivist is configured with a limited buffer size, and this
+/// test ensures that as new logs are ingested, older logs are dropped to stay
+/// within the budget. This prevents unbounded memory growth and ensures the
+/// system remains stable even under heavy log production.
+///
+/// The test sets up two log producers: a "victim" that logs a single message
+/// and a "spammer" that floods Archivist with enough logs to exceed the
+/// configured budget. It then verifies that the victim's initial log message is
+/// evicted from the cache, confirming the FIFO (First-In, First-Out) eviction
+/// strategy.
+async fn test_budget() {
+    let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
+        puppets: Some(vec![
+            test_topology::PuppetDeclBuilder::new("spammer").into(),
+            test_topology::PuppetDeclBuilder::new("victim").into(),
+        ]),
+        archivist_config: Some(ftest::ArchivistConfig {
+            logs_max_cached_original_bytes: Some(98304),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let spammer_puppet = test_topology::connect_to_puppet(&realm_proxy, "spammer").await.unwrap();
+    let victim_puppet = test_topology::connect_to_puppet(&realm_proxy, "victim").await.unwrap();
+    spammer_puppet.wait_for_interest_change().await.unwrap();
+    victim_puppet.wait_for_interest_change().await.unwrap();
+
+    let mut counter = 0;
+    let mut next_message = || {
+        counter += 1;
+        format!("{counter:50}")
+    };
+    let expected = next_message();
+    victim_puppet
+        .log(&ftest::LogPuppetLogRequest {
+            severity: Some(Severity::Info),
+            message: Some(expected.clone()),
+            ..Default::default()
+        })
+        .await
+        .expect("emitted log");
+
+    let accessor = utils::connect_accessor(&realm_proxy, utils::ALL_PIPELINE).await;
+    let mut log_reader = ArchiveReader::logs();
+    log_reader
+        .with_archive(accessor)
+        .with_minimum_schema_count(0) // we want this to return even when no log messages
+        .retry(RetryConfig::never());
+
+    let (mut observed_logs, _errors) =
+        log_reader.snapshot_then_subscribe().unwrap().split_streams();
+    let (mut observed_logs_2, _errors) =
+        log_reader.snapshot_then_subscribe().unwrap().split_streams();
+
+    let msg_a = observed_logs.next().await.unwrap();
+    let msg_a_2 = observed_logs_2.next().await.unwrap();
+    assert_eq!(expected, msg_a.msg().unwrap());
+    assert_eq!(expected, msg_a_2.msg().unwrap());
+
+    // Spam many logs.
+    let mut expected = Vec::new();
+    for i in 0..SPAM_COUNT {
+        let message = next_message();
+        spammer_puppet
+            .log(&ftest::LogPuppetLogRequest {
+                severity: Some(Severity::Info),
+                message: Some(message.clone()),
+                ..Default::default()
+            })
+            .await
+            .expect("emitted log");
+        expected.push(message);
+
+        // Each message is about 136 bytes. Archivist delays rolling out messages to reduce CPU
+        // time, so we must take care to observe the messages in batches. If we don't wait,
+        // the logs will get dropped when we try and send them. The batch size of 100 should
+        // fit in the buffer all at once, and then we sleep to ensure that Archivist will wake up
+        // and roll logs out before we write and read the next batch.
+        if i.is_multiple_of(100) {
+            for message in expected.drain(..) {
+                assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
+            }
+        }
+    }
+
+    for message in expected.drain(..) {
+        assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
+    }
+
+    // We observe some logs were rolled out.
+    while observed_logs_2.next().await.unwrap().rolled_out_logs().is_none() {}
+
+    let mut observed_logs = log_reader.snapshot().await.unwrap().into_iter();
+    let msg_b = observed_logs.next().unwrap();
+    assert!(!msg_b.moniker.to_string().contains("puppet-victim"));
+
+    // Victim logs should have been rolled out.
+    let messages = observed_logs
+        .filter(|log| log.moniker.to_string().contains("puppet-victim"))
+        .collect::<Vec<_>>();
+    assert!(messages.is_empty());
+    assert_ne!(msg_a.msg().unwrap(), msg_b.msg().unwrap());
+}

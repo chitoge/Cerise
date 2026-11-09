@@ -1,0 +1,95 @@
+// fshost leaf-realm — real upstream filesystem lifecycle manager (bin/fshost). It is
+// itself a mini-realm: a static Lazy #fxfs child and a fxfs-crypt collection (into
+// which it spawns Crypt instances). Watches the aggregate block.volume pool,
+// content-sniffs disks, and auto-mounts/provisions Fxfs, exposing "fshost-fs".
+{
+    program: {
+        runner: "elf",
+        binary: "bin/fshost",
+        lifecycle: { stop_event: "notify" },
+    },
+
+    // Structured-config schema (config-literal burn-down): flattened
+    // from real upstream's meta/config.cml parent-provided-config schema into a
+    // plain component-owned block (same field names/types/sizes; formerly the
+    // parallel meta/fshost_for_config_lib.cml copy). The fshost_config Rust
+    // crate is generated FROM THIS compiled manifest and the delivered values
+    // (meta/fshost.cvf) are configc-generated against the same .cm — checksum
+    // identity by construction. Values: //bundles:config_defaults.bzl.
+    config: {
+        no_zxcrypt: { type: "bool" },
+        ramdisk_image: { type: "bool" },
+        gpt_all: { type: "bool" },
+        check_filesystems: { type: "bool" },
+        blob_max_bytes: { type: "uint64" },
+        data_max_bytes: { type: "uint64" },
+        format_data_on_corruption: { type: "bool" },
+        data_filesystem_format: { type: "string", max_size: 64 },
+        blobfs: { type: "bool" },
+        factory: { type: "bool" },
+        fvm: { type: "bool" },
+        gpt: { type: "bool" },
+        merge_super_and_userdata: { type: "bool" },
+        data: { type: "bool" },
+        disable_block_watcher: { type: "bool" },
+        fvm_slice_size: { type: "uint64" },
+        blobfs_initial_inodes: { type: "uint64" },
+        blobfs_use_deprecated_padded_format: { type: "bool" },
+        fxfs_blob: { type: "bool" },
+        fxfs_crypt_url: { type: "string", max_size: 64 },
+        disable_automount: { type: "bool" },
+        starnix_volume_name: { type: "string", max_size: 64 },
+        inline_crypto: { type: "bool" },
+        provision_fxfs: { type: "bool" },
+        watch_deprecated_v1_drivers: { type: "bool" },
+    },
+    children: [
+        {
+            name: "fxfs",
+            url: "fuchsia-boot:///fxfs#meta/fxfs.cm",
+            startup: "lazy",
+        },
+    ],
+    collections: [
+        {
+            name: "fxfs-crypt",
+            durability: "transient",
+            environment: "#fxfs-crypt-env",
+        },
+    ],
+    environments: [
+        {
+            name: "fxfs-crypt-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "parent" },
+            ],
+        },
+    ],
+    capabilities: [
+        // rw* (was r*): fshost serves this export PERM_READABLE|WRITABLE|EXECUTABLE
+        // (main.rs `serve_on`), and a consumer must be able to WRITE a file through the
+        // auto-mounted "data" volume (the fshost gate: real read/write proof, not a
+        // read-only "mounted" log). A directory capability can only narrow rights
+        // downstream, so the write right must originate here.
+        { directory: "fshost-fs", rights: ["rw*"], path: "/fs" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.component.Realm", from: "framework" },
+        { protocol: "fuchsia.fs.startup.Startup", from: "#fxfs", path: "/fxfs/svc/fuchsia.fs.startup.Startup" },
+        { protocol: "fuchsia.fs.startup.Volumes", from: "#fxfs", path: "/fxfs/svc/fuchsia.fs.startup.Volumes" },
+        { directory: "root", from: "#fxfs", rights: ["r*"], path: "/data_root" },
+    ],
+    offer: [
+        // LogSink fanned to the Lazy #fxfs child and the fxfs-crypt collection.
+        // (#20: #fxfs was previously omitted — a tolerated routing gap — so Fxfs
+        // ran with a dropped LogSink; now routed for real.)
+        { protocol: "fuchsia.logger.LogSink", from: "parent", to: ["#fxfs", "#fxfs-crypt"] },
+    ],
+    expose: [
+        { directory: "fshost-fs", from: "self" },
+    ],
+}

@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = ["include/ram-crashlog/ram-crashlog.h"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["ram-crashlog.cc"],
+)
+
+cc_library(
+    name = "ram-crashlog",
+    srcs = [":sources"],
+    hdrs = [":headers"],
+    includes = ["include"],
+    deps = [
+        "//zircon/system/public:public",
+        "//zircon/third_party/ulib/cksum:cksum",
+    ],
+)
+
+# Kernel-context variant: adds kernel_cc_headers so that arch/arm64.h (pulled in
+# via arch/ops.h when _KERNEL is defined) can find <lib/zx/result.h>.
+cc_library(
+    name = "ram-crashlog-kernel",
+    srcs = [":sources"],
+    hdrs = [":headers"],
+    includes = ["include"],
+    deps = [
+        "//:kernel_cc_headers",
+        "//zircon/system/public:public",
+        "//zircon/third_party/ulib/cksum:cksum",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

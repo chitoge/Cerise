@@ -1,0 +1,77 @@
+// CFv2 component-test realm (the component_manager root for the x64-component-test
+// product). This is the real .cml framework path — authored
+// via cerise_component/cmc.
+//
+// Topology: a test-root realm that launches a subject (echo_server) and a verifier
+// (echo_check) and wires the capability under test between them:
+//   * elf_runner       — the ELF runner (builtin), registered as "elf" in elf-env.
+//   * cerise_logsink   — LogSink provider (bridges to DLOG).
+//   * echo_server      — subject: serves + exposes cerise.echo.Echo.
+//   * echo_check       — verifier: uses cerise.echo.Echo, asserts, emits verdict.
+//
+// component_manager routes cerise.echo.Echo from the subject to the verifier via
+// the `offer` below — a real cross-component protocol route, not a same-process
+// call. The verifier emits CERISE-COMPONENT-TEST-OK only after the round-trip.
+{
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "echo_server",
+            url: "fuchsia-boot:///echo_server#meta/echo_server.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "echo_check",
+            url: "fuchsia-boot:///echo_check#meta/echo_check.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+    environments: [
+        {
+            name: "elf-env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "elf",
+                    from: "#elf_runner",
+                    as: "elf",
+                },
+            ],
+        },
+    ],
+    offer: [
+        // Builtin process launcher -> elf_runner (so it can spawn ELF processes).
+        {
+            protocol: "fuchsia.process.Launcher",
+            from: "parent",
+            to: "#elf_runner",
+        },
+        // LogSink -> every ELF component.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: [
+                "#echo_server",
+                "#echo_check",
+            ],
+        },
+        // The capability under test: route Echo from subject to verifier.
+        {
+            protocol: "cerise.echo.Echo",
+            from: "#echo_server",
+            to: "#echo_check",
+        },
+    ],
+}

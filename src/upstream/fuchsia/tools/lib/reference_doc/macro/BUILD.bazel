@@ -1,0 +1,21 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "reference_doc_macro",
+    srcs = [
+        "src/derive_reference_doc.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "reference_doc_macro",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "@crates//:darling",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)

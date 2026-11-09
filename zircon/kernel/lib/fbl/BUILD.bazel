@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fbl",
+    srcs = ["arena.cc"],
+    alwayslink = True,
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "arena_source",
+    srcs = ["arena.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+cc_library(
+    name = "fbl_tests",
+    testonly = True,
+    tags = ["manual"],
+    srcs = [
+        "arena_tests.cc",
+        "gparena_tests.cc",
+        "name_tests.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        ":fbl",
+        "//zircon/kernel/lib/unittest:unittest",
+        "//:kernel_cc_headers",
+    ],
+)

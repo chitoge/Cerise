@@ -1,0 +1,13 @@
+// conformance_rust leaf — Rust runtime-conformance probe. A plain
+// `fn main` Rust binary with fdio statically linked (DT_NEEDED closure ld.so.1 +
+// libc++.so.1, same as shutdown_trigger). Markers are raw serial via
+// zx_debug_write; LogSink is used only so elf_runner installs the stdout socket.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/conformance_rust",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

@@ -1,0 +1,41 @@
+# Authored locally for Cerise. ebpf: Starnix's real eBPF
+# interpreter, a real netstack3 dependency (BPF socket filters). Test-only
+# sources excluded. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "ebpf",
+    srcs = [
+        "src/api.rs",
+        "src/conformance.rs",
+        "src/converter.rs",
+        "src/error.rs",
+        "src/executor.rs",
+        "src/lib.rs",
+        "src/maps.rs",
+        "src/memio/mod.rs",
+        "src/memio/x64.rs",
+        "src/program.rs",
+        "src/scalar_value.rs",
+        "src/verifier.rs",
+        "src/visitor.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync",
+        "//src/upstream/fuchsia/src/starnix/lib/linux_uapi",
+        "@crates//:bitflags",
+        "@crates//:byteorder",
+        "@crates//:smallvec",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+    proc_macro_deps = [
+        "@crates//:derivative",
+        "@crates//:paste",
+    ],
+)

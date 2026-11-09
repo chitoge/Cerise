@@ -1,0 +1,20 @@
+# Authored locally for Cerise.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "mem_util",
+    srcs = ["src/lib.rs"],
+    crate_name = "mem_util",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:log",
+        "@crates//:thiserror",
+    ],
+)

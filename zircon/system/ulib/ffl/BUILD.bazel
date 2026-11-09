@@ -1,0 +1,26 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/ffl/expression.h",
+        "include/ffl/fixed.h",
+        "include/ffl/fixed_format.h",
+        "include/ffl/saturating_arithmetic.h",
+        "include/ffl/string.h",
+        "include/ffl/utility.h",
+    ],
+)
+
+cc_library(
+    name = "ffl",
+    hdrs = [":headers"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

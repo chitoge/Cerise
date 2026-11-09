@@ -1,0 +1,74 @@
+// root_dfv2acpi_console_vmm — the console realm plus the VMM.
+//
+// root_dfv2acpi_console verbatim (driver stack + netstack3 + crypt/fileserver +
+// status_console), with `cryogen_vmm` added as one more Eager leaf. Reuse rather
+// than a minimal VMM-only realm, deliberately: a VMM-only root would duplicate
+// the driver-framework offer block word for word, would need its own NIC
+// bring-up story the moment the remote page source arrives, and would forgo
+// status_console — which is the only way to see what a headless machine is
+// doing.
+//
+// The honest cost of that choice, since nobody argued it: the VMM now boots into
+// a product that also mounts fxfs and serves gRPC, so there are more moving parts
+// in its boot path than a VMM needs, and every one of them is a way for a VMM
+// gate to go red for a storage reason.
+//
+// Startup: EAGER. Nothing has to bind the VMM for its markers to appear, which is
+// what makes a boot gate work with no extra machinery — a lazy child with nobody
+// to bind it is a component that never runs, and the resulting green gate would
+// be green because nothing happened. The leaf exposes the framework Binder
+// anyway, so a manager can drive it later without a manifest change.
+//
+// ORDERING, and it is a real dependency rather than an assumption. The file
+// server installs the interface and runs DHCP; the VMM detects an already-
+// configured interface rather than duplicating bring-up. The file server is
+// eager and starts first for that reason. Separately, there is no guarantee that
+// a block driver has bound before a child starts — every existing consumer
+// retries, and the file server records the device appearing ~180 s into boot on
+// real hardware — so the VMM's store acquisition retries BEFORE its guest
+// deadline starts. A VMM that started its clock at process start would time out
+// before storage existed, or silently boot a blank disk, which is a supported
+// success state and therefore the worst possible way to fail.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fileserver", url: "fuchsia-boot:///fileserver#meta/fileserver.cm", startup: "eager", environment: "#elf-env" },
+        { name: "crypt_fxfs", url: "fuchsia-boot:///crypt_fxfs#meta/crypt_fxfs.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "status_console", url: "fuchsia-boot:///status_console#meta/status_console.cm", startup: "eager", environment: "#elf-env" },
+        { name: "cryogen_vmm", url: "fuchsia-boot:///cryogen_vmm#meta/cryogen_vmm.cm", startup: "eager", environment: "#elf-env" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "#cerise_logsink", to: ["#netstack3", "#fileserver", "#crypt_fxfs", "#cryogen_vmm"] },
+        { runner: "elf", from: "#elf_runner", to: "#crypt_fxfs" },
+        { directory: "dev", from: "#driver_manager_rust", to: "#fileserver", rights: ["r*"] },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#cryogen_vmm" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#fileserver" },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: ["#fileserver", "#cryogen_vmm"] },
+        { protocol: "fuchsia.fxfs.Crypt", from: "#crypt_fxfs", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "#crypt_fxfs", to: "#fileserver" },
+        { service: "cerise.display.Service", from: "#driver_manager_rust", to: "#status_console" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#status_console" },
+        { protocol: "fuchsia.kernel.Stats", from: "parent", to: "#status_console" },
+        { protocol: "cerise.storage.Status", from: "#fileserver", to: "#status_console" },
+        { protocol: "cerise.vm.Status", from: "#cryogen_vmm", to: "#status_console" },
+        // The two kernel resources a guest partition needs, and they are two.
+        // HypervisorResource is what zx_guest_create validates; VmexResource is
+        // what zx_vmo_replace_as_executable validates, and a HypervisorResource
+        // child does not satisfy it. Both are builtins minted by
+        // component_manager, both are listed in cm_config's builtin_capabilities
+        // (without which they are minted in-process and silently unroutable), and
+        // both carry a runtime capability_policy entry pinning them — Hypervisor
+        // to /cryogen_vmm, Vmex to /cryogen_vmm and /pkg_resolver. Three files
+        // must agree; two of them agreeing is a silent failure.
+        { protocol: "fuchsia.kernel.HypervisorResource", from: "parent", to: "#cryogen_vmm" },
+        { protocol: "fuchsia.kernel.VmexResource", from: "parent", to: "#cryogen_vmm" },
+    ],
+}

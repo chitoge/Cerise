@@ -1,0 +1,66 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "acpi.cc",
+    "boot-shim.cc",
+    "cmdline.cc",
+    "pool-mem-config.cc",
+    "test-serial-number.cc",
+    "tty.cc",
+])
+
+cc_library(
+    name = "boot_shim_headers",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//:efi_headers",
+        "//:kernel_cc_headers",
+        "//sdk/lib/fit:fit",
+        "//sdk/lib/zbi-format:zbi-format",
+        "//zircon/kernel/lib/acpi_lite:headers",
+    ],
+)
+
+# EFI-specific boot shim library: ACPI probing, EFI memory map conversion,
+# and the EfiBootShimLoader::LoadAndBoot orchestration.
+# Only the efi-boot-shim.cc and efi.cc sources are needed for EFI builds;
+# the full boot-shim source_set (with devicetree, pool-mem-config, etc.)
+# is not wired here yet.
+cc_library(
+    name = "efi_boot_shim_lib",
+    srcs = [
+        "acpi.cc",
+        "boot-shim.cc",
+        "cmdline.cc",
+        "efi-boot-shim.cc",
+        "efi-gop.cc",
+        "efi.cc",
+        "pool-mem-config.cc",
+        "reboot-reason.cc",
+        "test-serial-number.cc",
+        "tty.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//:efi_headers",
+        "//:kernel_cc_headers",
+        "//zircon/kernel/phys/efi:efi_phys_headers",
+        "//:zx_result_headers",
+        "//sdk/lib/fit:fit",
+        "//sdk/lib/zbi-format:zbi-format",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/lib/acpi_lite:boot_shim_acpi",
+        "//zircon/kernel/lib/boot-options:phys_boot_options",
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/kernel/phys/lib/memalloc:memalloc",
+        "//zircon/system/ulib/explicit-memory:explicit-memory",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty",
+        "//zircon/system/ulib/uart:uart",
+    ],
+)

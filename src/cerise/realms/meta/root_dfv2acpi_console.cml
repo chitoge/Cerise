@@ -1,0 +1,55 @@
+// root_dfv2acpi_console — component_manager root for qemu-x64-console (the flagship
+// combined product). The fileserver root PLUS status_console (Eager). The console gets
+// the display driver's cerise.display.Service (framebuffer, aggregated from the driver
+// framework) + netstack3's net.interfaces.State — and NO hardware capability. The
+// framebuffer route was moved from ambient
+// Mmio/IoportResource to the native display driver.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fileserver", url: "fuchsia-boot:///fileserver#meta/fileserver.cm", startup: "eager", environment: "#elf-env" },
+        { name: "crypt_fxfs", url: "fuchsia-boot:///crypt_fxfs#meta/crypt_fxfs.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "status_console", url: "fuchsia-boot:///status_console#meta/status_console.cm", startup: "eager", environment: "#elf-env" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "#cerise_logsink", to: ["#netstack3", "#fileserver", "#crypt_fxfs"] },
+        { runner: "elf", from: "#elf_runner", to: "#crypt_fxfs" },
+        { directory: "dev", from: "#driver_manager_rust", to: "#fileserver", rights: ["r*"] },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#fileserver" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#fileserver" },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.Crypt", from: "#crypt_fxfs", to: "#fileserver" },
+        { protocol: "fuchsia.fxfs.CryptManagement", from: "#crypt_fxfs", to: "#fileserver" },
+        // status_console: framebuffer via the display driver's FIDL service + interface
+        // state. NO hardware capability (Mmio/Ioport) — the native display driver owns
+        // the hardware; the console is a pure client of cerise.display.Service, routed
+        // from driver_manager's aggregated boot-drivers collection.
+        { service: "cerise.display.Service", from: "#driver_manager_rust", to: "#status_console" },
+        { protocol: "fuchsia.net.interfaces.State", from: "#netstack3", to: "#status_console" },
+        // Memory + CPU for the panel. fuchsia.kernel.Stats, NOT fuchsia.kernel.InfoResource:
+        // both reach the same kernel gate (SYSTEM resource @ ZX_RSRC_SYSTEM_INFO_BASE, which
+        // is what ZX_INFO_KMEM_STATS and ZX_INFO_CPU_STATS validate against), but
+        // InfoResource hands over the HANDLE — and with it guest stats, power domains, and
+        // every future INFO-gated query — whereas Stats keeps the handle inside
+        // component_manager and returns only the decoded numbers. The console gets no handle
+        // of any kind. Mirrored by the cm_config `builtin_capabilities` entry that makes the
+        // builtin routable at all, and by a runtime capability_policy pinned to
+        // /status_console.
+        { protocol: "fuchsia.kernel.Stats", from: "parent", to: "#status_console" },
+        // Storage state for the panel, from the component that DECIDES it. The file server
+        // surveys the disk and either opens, formats or refuses it; the console renders that
+        // verdict and holds no block capability itself. Deliberately absent from
+        // root_dfv2acpi_console_pkg.cml, where the file server is a Lazy package-resolved
+        // child that apptier_fetcher is responsible for binding — a console connection there
+        // would ACTIVATE it, which is exactly the coupling that realm exists to avoid. The
+        // console's `use` is optional for that reason, and the panel says so on screen.
+        { protocol: "cerise.storage.Status", from: "#fileserver", to: "#status_console" },
+    ],
+}

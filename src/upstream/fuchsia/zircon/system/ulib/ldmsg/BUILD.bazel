@@ -1,0 +1,19 @@
+# Bazel integration for this imported target. ldmsg: the loader-
+# service message protocol, used by the musl dynamic linker (ldso/dynlink.c).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "ldmsg",
+    srcs = ["ldmsg.c"],
+    hdrs = ["include/ldmsg/ldmsg.h"],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/sysroot:libc_sysroot_headers",
+        "//src/upstream/fuchsia/sdk/lib/c:headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

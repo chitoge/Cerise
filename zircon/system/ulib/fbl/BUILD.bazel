@@ -1,0 +1,35 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+cc_library(
+    name = "fbl",
+    srcs = ["alloc_checker.cc"],
+    hdrs = [":headers"],
+    includes = ["include"],
+    alwayslink = True,
+    # Host gtest variants compile this under the exec/host toolchain, which
+    # defaults to C++17; request C++20 via the toolchain feature (policy stays
+    # in the toolchain, not in a per-target -std copt). No-op under the zircon
+    # kernel/user toolchains, which set their own C++ standard.
+    features = ["host_cxx20"],
+    deps = [
+        "//sdk/lib/stdcompat:stdcompat",
+        "//zircon/system/public:public",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["alloc_checker.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

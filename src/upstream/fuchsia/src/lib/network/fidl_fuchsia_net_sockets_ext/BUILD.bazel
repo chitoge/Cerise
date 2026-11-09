@@ -1,0 +1,36 @@
+# Bazel integration for this imported target. netstack3-bindings
+# dependency: real fidl_fuchsia_net_sockets_ext (BUILD.gn target
+# "fidl_fuchsia_net_sockets_ext"). Test-only unit tests (with_unit_tests) not
+# vendored -- src/lib.rs's #[cfg(test)] module is source-compiled but not run.
+#
+# fnet ("fidl_fuchsia_net") is backed by :fidl_fuchsia_net_head, not the shared
+# plain instance -- this crate's Marks usage (via fidl_fuchsia_net_ext, itself
+# HEAD-backed) requires the same compiled fuchsia.net instance throughout.
+# fnet_tcp is backed by :fidl_fuchsia_net_tcp_head (tcpi_snd_mss/tcpi_rcv_mss are
+# @available(added=NEXT), absent from the shared plain instance fuchsia.posix.socket
+# depends on) -- see fuchsia.net.tcp/BUILD.bazel's comment for the full rationale.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_sockets_ext",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    crate_name = "fidl_fuchsia_net_sockets_ext",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.matchers:fidl_fuchsia_net_matchers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.sockets:fidl_fuchsia_net_sockets",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.tcp:fidl_fuchsia_net_tcp_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.udp:fidl_fuchsia_net_udp",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_ext:fidl_fuchsia_net_ext",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ],
+)

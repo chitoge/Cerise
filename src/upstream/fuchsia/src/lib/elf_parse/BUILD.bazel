@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "elf_parse",
+    srcs = ["src/lib.rs"],
+    crate_name = "elf_parse",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:bitflags",
+        "@crates//:num-traits",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+    proc_macro_deps = [
+        "@crates//:num-derive",
+        "@crates//:zerocopy-derive",
+    ],
+)

@@ -1,0 +1,14 @@
+"""Cerise composition layer: typed providers + board/bundle/product rules.
+
+Load surface:
+  //assembly:providers.bzl -> BoardInfo, AIBInfo, ArtifactArchitectureInfo, ProductBundleInfo
+  //assembly:defs.bzl      -> cerise_board, cerise_assembly_input_bundle,
+                             cerise_architecture_artifact, cerise_product
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "providers.bzl",
+    "defs.bzl",
+])

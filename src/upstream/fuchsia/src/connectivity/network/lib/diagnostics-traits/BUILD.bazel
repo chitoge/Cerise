@@ -1,0 +1,37 @@
+# Authored locally for Cerise. diagnostics-traits: the target-
+# agnostic inspect/diagnostics traits netstack3-core uses. The fuchsia integration
+# (fuchsia-async/inspect) is gated off here (feature "fuchsia-diagnostics", not
+# enabled) — netstack3-core is no_std and must not gain a std-only dependency.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "diagnostics-traits",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    crate_features = ["fuchsia-diagnostics"],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:log",
+    ],
+)
+
+# reverted attempt at a SEPARATE "fuchsia-diagnostics"
+# target -- WRONG SHAPE. netstack3-core's own Inspector/InspectorDeviceExt/etc.
+# traits (defined in this crate, always compiled, not behind the feature) are
+# used by netstack3-core's src/{base,device,filter,ip,tcp,udp,icmp_echo}, and a
+# SEPARATE compiled instance of diagnostics-traits makes those trait *types*
+# themselves incompatible with netstack3-bindings' FuchsiaInspector (confirmed
+# empirically: enabling this caused ~40 new "multiple different versions of
+# crate diagnostics_traits" errors reaching through netstack3-core's own
+# source, not just inspect.rs). A real fix needs netstack3-core ITSELF (all ~13
+# sub-crates) built against the SAME diagnostics-traits instance
+# netstack3-bindings uses -- either by enabling the feature on this shared
+# target (verify this doesn't reintroduce a std-only dependency into a crate
+# meant to stay no_std-portable), or a parallel netstack3-core dependency graph.
+# Real, structural decision -- not something to invent unilaterally mid-build.
+# See the netstack3 dependency notes for the full investigation.

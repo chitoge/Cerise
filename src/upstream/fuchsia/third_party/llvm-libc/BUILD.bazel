@@ -1,0 +1,92 @@
+# Fuchsia's generated libc headers
+# (sdk/lib/c/include/gen/__llvm-libc-common.h) reach the llvm-libc shared header
+# via a hard-coded relative path (../../../../../third_party/llvm-libc/src/
+# include/__llvm-libc-common.h). Declaring it here as an input makes Bazel place
+# it at that path in the sandbox so the relative include resolves. (The header is
+# Apache-2.0 WITH LLVM-exception; also vendored in src/cerise/sysroot.)
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# All mirrored llvm-libc shared headers (__llvm-libc-common.h + llvm-libc-macros/
+# + llvm-libc-types/) the generated gen/ shims reach via relative paths. Declared
+# as inputs so Bazel places them in the sandbox at the expected relative path.
+cc_library(
+    name = "llvm_libc_common_header",
+    hdrs = glob(
+        [
+            "src/include/**/*.h",
+            "src/include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["src/include/**/*.h", "src/include/**/*.inc"], allow_empty = True),
+)
+
+# All mirrored llvm-libc src/ headers (src/__support, src/link, ...) that
+# Fuchsia's sdk/lib/c body includes as <src/.../*.h>. Kept under the "src/..."
+# prefix in the assembled sysroot (root_path strips up to the llvm-libc root).
+filegroup(
+    name = "support_header_files",
+    srcs = glob(
+        [
+            "src/**/*.h",
+            "src/**/*.inc",
+            "hdr/**/*.h",
+            "hdr/**/*.inc",
+            "include/**/*.h",
+            "include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+)
+
+# The llvm-libc entrypoints that Fuchsia's stripped musl omits
+# (atoi/qsort/strtoul/strtol/strtoll, isascii/isblank/isdigit/isalnum/isspace/
+# isxdigit/tolower, setjmp/longjmp, fenv, wchar). LLVM_LIBC_FUNCTION emits the
+# namespaced impl + the public C alias (requires LIBC_COPT_PUBLIC_PACKAGING);
+# linked into libc.so so its body (and consumers) resolve them. The mirror root
+# is on -I so "src/stdlib/atoi.h" / "src/__support/..." resolve.
+cc_library(
+    name = "entrypoints",
+    srcs = glob(
+        [
+            "src/stdlib/atoi.cpp",
+            "src/stdlib/bsearch.cpp",
+            "src/stdlib/qsort.cpp",
+            "src/stdlib/strtol.cpp",
+            "src/stdlib/strtoll.cpp",
+            "src/stdlib/strtoul.cpp",
+            "src/stdlib/strtoull.cpp",
+            # All ctype and wchar entrypoints. The upstream sdk/lib/c/{ctype,wchar}/
+            # BUILD.gn uses llvm_libc_source_set for the full set; glob all .cpp.
+            "src/ctype/*.cpp",
+            "src/fenv/*.cpp",
+            "src/wchar/*.cpp",
+        ],
+        allow_empty = True,
+    ),
+    hdrs = glob(["src/**/*.h", "src/**/*.inc", "hdr/**/*.h", "include/**/*.h"], allow_empty = True),
+    local_defines = [
+        # LIBC_COPT_PUBLIC_PACKAGING: makes LLVM_LIBC_FUNCTION create public C
+        # symbol aliases (e.g. `tolower`) in addition to the namespaced C++ version
+        # (LIBC_NAMESPACE::tolower). Without this the public C symbols are absent
+        # and the linker can't resolve them from libc.so consumers.
+        "LIBC_COPT_PUBLIC_PACKAGING",
+        # LLVM_LIBC_FUNCTION_ATTR: all entrypoint functions are inside
+        # namespace LIBC_NAMESPACE_DECL which adds [[gnu::visibility("hidden")]].
+        # Without this override the function symbols have hidden visibility and
+        # lld won't export them even if listed in the --version-script (libc.map).
+        # Matches what sdk/lib/c:libc_impl sets for the same reason.
+        "LLVM_LIBC_FUNCTION_ATTR=[[gnu::visibility(\\\"default\\\")]]",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia/third_party/llvm-libc",
+        "-fno-stack-protector", "-fno-sanitize=safe-stack",
+    ],
+    alwayslink = True,
+)

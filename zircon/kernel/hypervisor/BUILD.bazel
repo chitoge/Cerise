@@ -1,0 +1,79 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "hypervisor_lib",
+    srcs = [
+        "aspace.cc",
+        "cpu.cc",
+        "ktrace.cc",
+        "trap_map.cc",
+    ],
+    deps = [
+        ":headers",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/vm:headers",
+        "//:kernel_cc_headers",
+    ],
+    alwayslink = True,
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["include/**/*.h"]),
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [":header_files"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "aspace.cc",
+        "cpu.cc",
+        "ktrace.cc",
+        "trap_map.cc",
+    ],
+)
+
+filegroup(
+    name = "hypervisor",
+    srcs = [
+        ":sources",
+        "//zircon/kernel/arch/x86/hypervisor:hypervisor",
+    ],
+)
+
+filegroup(
+    name = "test_sources",
+    srcs = ["hypervisor_unittest.cc"],
+    testonly = True,
+)
+
+filegroup(
+    name = "tests",
+    srcs = [
+        ":hypervisor",
+        ":test_sources",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "kernel-tests",
+    srcs = [
+        ":tests",
+        "//zircon/kernel/arch/x86/hypervisor:kernel-tests",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

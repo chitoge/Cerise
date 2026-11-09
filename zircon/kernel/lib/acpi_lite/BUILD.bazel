@@ -1,0 +1,280 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "header_files",
+    srcs = [
+        "include/lib/acpi_lite.h",
+        "include/lib/acpi_lite/apic.h",
+        "include/lib/acpi_lite/debug_port.h",
+        "include/lib/acpi_lite/internal.h",
+        "include/lib/acpi_lite/numa.h",
+        "include/lib/acpi_lite/structures.h",
+        "include/lib/acpi_lite/zircon.h",
+    ],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [":header_files"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "boot_shim_acpi",
+    srcs = [":shim_sources", "binary_reader.h", "debug.h"],
+    hdrs = [":header_files"],
+    includes = ["include"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "acpi_lite_lib",
+    srcs = [
+        "acpi_lite.cc",
+        "apic.cc",
+        "binary_reader.h",
+        "debug.h",
+        "debug_port.cc",
+        "numa.cc",
+        "structures.cc",
+        "zircon.cc",
+    ],
+    hdrs = [":header_files"],
+    includes = ["include"],
+    deps = [
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/vm:headers",
+        "//:kernel_cc_headers",
+    ],
+    alwayslink = True,
+)
+
+filegroup(
+    name = "generic_sources",
+    srcs = [
+        "acpi_lite.cc",
+        "apic.cc",
+        "debug_port.cc",
+        "numa.cc",
+        "structures.cc",
+        "test_data.cc",
+    ],
+)
+
+filegroup(
+    name = "shim_sources",
+    srcs = [
+        "acpi_lite.cc",
+        "debug_port.cc",
+        "structures.cc",
+    ],
+)
+
+filegroup(
+    name = "kernel_sources",
+    srcs = ["zircon.cc"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        ":generic_sources",
+        ":kernel_sources",
+    ],
+)
+
+filegroup(
+    name = "acpi_lite",
+    srcs = [
+        ":header_files",
+        ":sources",
+    ],
+)
+
+filegroup(
+    name = "kernel_test_sources",
+    srcs = ["zircon_test.cc"],
+)
+
+filegroup(
+    name = "kernel-tests",
+    srcs = [
+        ":acpi_lite",
+        ":kernel_test_sources",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "phys-tests",
+    testonly = True,
+)
+
+filegroup(
+    name = "boot_tests",
+    testonly = True,
+)
+
+filegroup(
+    name = "acpi_lite_test",
+    srcs = [
+        ":acpi_lite",
+        "acpi_lite_test.cc",
+        "apic_test.cc",
+        "binary_reader_test.cc",
+        "debug_port_test.cc",
+        "numa_test.cc",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "acpi-lite-test",
+    srcs = [":acpi_lite_test"],
+    testonly = True,
+)
+
+filegroup(
+    name = "acpi_lite_fuzztest",
+    srcs = [
+        ":acpi_lite",
+        "acpi_lite_fuzztest.cc",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "apic_fuzztest",
+    srcs = [
+        ":acpi_lite",
+        "apic_fuzztest.cc",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "numa_fuzztest",
+    srcs = [
+        ":acpi_lite",
+        "numa_fuzztest.cc",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "debug_port_fuzztest",
+    srcs = [
+        ":acpi_lite",
+        "debug_port_fuzztest.cc",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "acpi-lite-fuzztest-component",
+    srcs = [
+        ":acpi_lite_fuzztest",
+        "meta/acpi_lite_fuzztest.cml",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "apic-fuzztest-component",
+    srcs = [
+        ":apic_fuzztest",
+        "meta/apic_fuzztest.cml",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "numa-fuzztest-component",
+    srcs = [
+        ":numa_fuzztest",
+        "meta/numa_fuzztest.cml",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "debug-port-fuzztest-component",
+    srcs = [
+        ":debug_port_fuzztest",
+        "meta/debug_port_fuzztest.cml",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "acpi-lite-fuzzer",
+    srcs = [
+        ":acpi-lite-fuzztest-component",
+        ":apic-fuzztest-component",
+        ":debug-port-fuzztest-component",
+        ":numa-fuzztest-component",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "tests",
+    srcs = [
+        ":acpi-lite-fuzzer",
+        ":acpi-lite-test",
+        ":acpi_lite_test",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+# Host-compatible acpi_lite library (no kernel_cc_headers).
+cc_library(
+    name = "acpi_lite_host",
+    srcs = [
+        "acpi_lite.cc",
+        "apic.cc",
+        "binary_reader.h",
+        "debug.h",
+        "debug_port.cc",
+        "numa.cc",
+        "structures.cc",
+        "test_data.cc",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    features = ["host_cxx20"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//zircon/system/public:public",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty_host",
+        "//:zx_result_headers",
+    ],
+)
+
+cc_test(
+    name = "acpi_lite_host_tests",
+    srcs = [
+        "acpi_lite_test.cc",
+        "apic_test.cc",
+        "binary_reader_test.cc",
+        "debug_port_test.cc",
+        "numa_test.cc",
+    ],
+    features = ["host_cxx20"],
+    linkstatic = True,
+    deps = [
+        ":acpi_lite_host",
+        "//sdk/lib/zircon-assert:zircon_assert_libc",
+        "@googletest//:gtest_main",
+    ],
+)

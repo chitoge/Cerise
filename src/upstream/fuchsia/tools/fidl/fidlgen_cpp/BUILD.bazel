@@ -1,0 +1,14 @@
+# Bazel integration for this imported target. fidlgen_cpp: the FIDL
+# IR -> C++ wire/natural bindings generator (Go host tool). Second piece of the
+# FIDL bindgen toolchain after fidlc.
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "fidlgen_cpp",
+    srcs = ["main.go"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/fidlgen_cpp/codegen:codegen",
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen_cpp:fidlgen_cpp",
+    ],
+)

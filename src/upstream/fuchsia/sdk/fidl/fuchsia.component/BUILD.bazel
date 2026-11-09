@@ -1,0 +1,67 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.component",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fuchsia.process",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.component_cpp",
+    library = ":fuchsia.component",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.component_rs",
+    library = ":fuchsia.component",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_component",
+    srcs = [":fuchsia.component_rs"],
+    crate_name = "fidl_fuchsia_component",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fidl_fuchsia_component_resolution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fidl_fuchsia_process",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fidl_fuchsia_url",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

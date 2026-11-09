@@ -1,0 +1,24 @@
+# Authored locally for Cerise. inspect_stubs: real netstack3
+# (via ebpf_api) dependency. Test-only deps excluded. Replaces the upstream GN
+# BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "inspect_stubs",
+    srcs = [
+        "src/lib.rs",
+        "src/stubs.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync",
+        "@crates//:anyhow",
+        "@crates//:flyweights",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

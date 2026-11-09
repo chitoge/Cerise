@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_ir_lib",
+    srcs = [
+        "src/fidl.rs",
+        "src/lib.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:heck",
+        "@crates//:regex",
+        "@crates//:serde",
+    ],
+)

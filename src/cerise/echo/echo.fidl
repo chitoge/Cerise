@@ -1,0 +1,14 @@
+// FIDL round-trip gate: minimal FIDL protocol for the FIDL round-trip demo.
+// Uses uint32 to keep manual Rust wire encoding trivial (avoids string
+// out-of-line encoding). The ordinal is set explicitly below via @selector.
+library cerise.echo;
+
+/// Echo a 32-bit value. Used by the FIDL round-trip gate.
+@discoverable
+closed protocol Echo {
+    strict EchoValue(struct {
+        value uint32;
+    }) -> (struct {
+        response uint32;
+    });
+};

@@ -1,0 +1,19 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(
+    name = "fuchsia.driver.compat",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+fidl_cpp(
+    name = "fuchsia.driver.compat_cpp",
+    library = ":fuchsia.driver.compat",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

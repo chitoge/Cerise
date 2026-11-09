@@ -1,0 +1,17 @@
+# Vendored for Cerise fshost Phase 1. Real upstream src/lib/utf_conversion,
+# unmodified.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "utf_conversion",
+    srcs = ["utf_conversion.cc"],
+    hdrs = ["utf_conversion.h"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

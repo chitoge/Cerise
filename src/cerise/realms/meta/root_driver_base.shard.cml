@@ -1,0 +1,38 @@
+// Common CMv2 root-realm wiring for the driver-manager base. Every
+// root_dfv2acpi variant declares the same child names and includes this shard;
+// its local manifest supplies only variant-specific children and routes.
+{
+    environments: [
+        {
+            name: "elf-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "#elf_runner", as: "elf" },
+            ],
+        },
+    ],
+
+    offer: [
+        { protocol: "fuchsia.process.Launcher", from: "parent", to: "#elf_runner" },
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#driver_index", "#driver_manager_rust"],
+        },
+        { runner: "elf", from: "#elf_runner", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.driver.index.DriverIndex", from: "#driver_index", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.boot.Items", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.IommuResource", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.IoportResource", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.IrqResource", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.MmioResource", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.MsiResource", from: "parent", to: "#driver_manager_rust" },
+        { protocol: "fuchsia.kernel.PowerResource", from: "parent", to: "#driver_manager_rust" },
+        {
+            protocol: "fuchsia.component.resolution.Resolver",
+            from: "parent",
+            to: "#driver_index",
+            as: "fuchsia.component.resolution.Resolver-boot",
+        },
+    ],
+}

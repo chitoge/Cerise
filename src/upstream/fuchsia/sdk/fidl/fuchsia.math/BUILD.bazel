@@ -1,0 +1,21 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.math",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+)
+
+fidl_cpp(
+    name = "fuchsia.math_cpp",
+    library = ":fuchsia.math",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

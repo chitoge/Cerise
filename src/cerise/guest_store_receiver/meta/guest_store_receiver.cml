@@ -1,0 +1,32 @@
+// guest_store_receiver — receives a pushed guest image over gRPC and writes it to
+// the raw guest-image GPT partition.
+//
+// THE CAPABILITY SET IS THE BLAST RADIUS, so it is worth being explicit about what
+// is and is not narrowed here. There is no per-partition capability in this
+// system: no GPT driver, no partition block devices, and the only routable thing
+// is the AGGREGATED fuchsia.hardware.block.volume.Service, which is one instance
+// per WHOLE physical disk under an anonymized name. So `use`ing it grants every
+// disk on the machine, read and write, and the narrowing to one partition happens
+// in this component's code by parsing the table itself. A product that routes this
+// is trusting the component, not the framework.
+//
+// What is NOT here, deliberately: no fuchsia.hardware.power.statecontrol.Admin
+// (this never reboots), no fxfs/crypt protocols (it mounts nothing), and no
+// storage capability of any kind (it holds no filesystem).
+{
+    program: {
+        runner: "elf",
+        binary: "bin/guest_store_receiver",
+    },
+    use: [
+        // Readiness gate + NIC discovery (/dev/class/network).
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        // Raw block access, to locate and write the guest-image partition.
+        { service: "fuchsia.hardware.block.volume.Service" },
+        // Network stack for the gRPC listener (NIC install + DHCP + TCP).
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+    ],
+}

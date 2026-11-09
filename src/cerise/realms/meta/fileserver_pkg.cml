@@ -1,0 +1,36 @@
+// fileserver_pkg — the fuchsia-pkg (meta.far) variant of the fileserver manifest for the post-storage
+// app tier (qemu-x64-console-pkg). Identical to meta/fileserver.cml EXCEPT it EXPOSES the framework
+// Binder, so apptier_fetcher can Lazy-start the pkg-resolved fileserver after installing its blobs
+// (the same pattern pkg_hello.cml uses). Kept separate from fileserver.cml so the bootfs fileserver
+// (and its frozen decode_diff golden) is unchanged.
+{
+    program: { runner: "elf", binary: "bin/fileserver" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        {
+            protocol: "fuchsia.net.routes.admin.RouteTableV4",
+            availability: "optional",
+        },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+        { protocol: "fuchsia.fxfs.Crypt" },
+        { protocol: "fuchsia.fxfs.CryptManagement" },
+    ],
+    // See meta/fileserver.cml — the file server owns the disk-claim decision and is
+    // the only component entitled to publish it.
+    capabilities: [
+        { protocol: "cerise.network.HostConfiguration" },
+        { protocol: "cerise.storage.Status" },
+        { protocol: "cerise.storage.Lifecycle" },
+    ],
+    expose: [
+        { protocol: "fuchsia.component.Binder", from: "framework" },
+        { protocol: "cerise.network.HostConfiguration", from: "self" },
+        { protocol: "cerise.storage.Status", from: "self" },
+        { protocol: "cerise.storage.Lifecycle", from: "self" },
+    ],
+}

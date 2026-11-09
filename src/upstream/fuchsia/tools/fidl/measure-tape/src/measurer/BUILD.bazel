@@ -1,0 +1,19 @@
+# Vendored for Cerise (Phase 2 logging: Archivist). measure-tape measurer:
+# the core Go package that walks FIDL IR and computes max-encoded ("measuring
+# tape") sizes for target types. Upstream: //tools/fidl/measure-tape/src/measurer.
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "measurer",
+    srcs = [
+        "code_generator.go",
+        "expressions.go",
+        "measurer.go",
+        "ops.go",
+        "pruning.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/measurer",
+    deps = ["//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen"],
+)

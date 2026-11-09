@@ -1,0 +1,29 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "inspect_format",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "inspect_format",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:num-derive",
+        "@crates//:paste",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy",
+        "@crates//:byteorder",
+        "@crates//:num-traits",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

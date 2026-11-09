@@ -1,0 +1,162 @@
+// Cerise storage-status protocol.
+//
+// WHY THIS EXISTS. The file server is the component that decides what happens to
+// the block device it is offered: it surveys the raw device, and either opens an
+// Fxfs container that is already its own, formats one it can positively prove is
+// blank, or REFUSES the device outright (a valid GPT, an FVM header, an ext
+// superblock, or simply any byte it does not recognise). Until now that decision
+// existed only as a line on the serial console, so the one place an operator
+// actually looks — the on-screen status console — could not show it.
+//
+// The obvious alternative, having the status console probe the block devices for
+// itself, is the wrong shape: two components independently deciding what the disk
+// is gives two notions of truth that can disagree, and the console's copy would be
+// the one with no authority and no write interlock. So the component that OWNS the
+// decision publishes it, and the console renders what it is told. The console holds
+// no block capability of any kind.
+library cerise.storage;
+
+/// What the file server decided about the storage it was offered.
+type Outcome = flexible enum : uint32 {
+    /// No decision yet — the file server is still waiting for a block device to be
+    /// published, or is mid-survey. This is the honest answer during the ~180s
+    /// before the nvme/ahci driver publishes anything, and is deliberately
+    /// distinct from "there is no storage".
+    PENDING = 1;
+    /// A filesystem is mounted read-write and the file server is serving it.
+    MOUNTED = 2;
+    /// A device was surveyed and DECLINED: it carries a layout the file server is
+    /// not entitled to overwrite. `reason` says which. Nothing failed — the file
+    /// server chose not to act — and this state is stable, not retried.
+    REFUSED = 3;
+    /// There is no filesystem for some reason that is not a refusal (no device
+    /// published, a transport error, an Fxfs container that would not open).
+    /// `reason` carries the detail.
+    UNAVAILABLE = 4;
+};
+
+/// What the file server decided about ONE block device it surveyed.
+type Disposition = flexible enum : uint32 {
+    /// Surveyed but not yet acted on.
+    SURVEYED = 1;
+    /// Carried an Fxfs container the file server opened as its own.
+    OPENED = 2;
+    /// Positively determined blank, and formatted.
+    FORMATTED = 3;
+    /// Declined — see the device's `reason`.
+    REFUSED = 4;
+    /// Could not be surveyed, or carried an Fxfs container that would not open.
+    PROBLEM = 5;
+};
+
+/// One block device the file server looked at, with the geometry it reported.
+/// Size is deliberately given as raw geometry rather than a pre-formatted string:
+/// the renderer decides the units, and a caller that wants bytes is not forced to
+/// parse prose back out of a log line.
+type Device = table {
+    /// The aggregated-service instance name. Stable within a boot, NOT across
+    /// boots — it is a component_manager-assigned id, not a device identity.
+    1: instance string:64;
+    2: block_size uint64;
+    3: block_count uint64;
+    4: disposition Disposition;
+    /// Why this particular device was refused or is a problem. Empty otherwise.
+    5: reason string:1024;
+};
+
+/// The whole of what the file server knows about storage right now.
+type Report = table {
+    1: outcome Outcome;
+    /// Every device surveyed on the most recent mount attempt, in the order the
+    /// file server considered them. May be empty when `outcome` is PENDING.
+    2: devices vector<Device>:8;
+    /// The overall reason, verbatim from the claim decision, when `outcome` is
+    /// REFUSED or UNAVAILABLE. Empty otherwise.
+    3: reason string:2048;
+    /// Filesystem size and usage. Present ONLY when `outcome` is MOUNTED — an
+    /// absent field is "we do not know", never a zero that could be mistaken for
+    /// a real measurement.
+    4: total_bytes uint64;
+    5: used_bytes uint64;
+};
+
+/// Published by the file server, consumed by the status console.
+@discoverable
+closed protocol Status {
+    /// Returns the current report. Cheap: the file server keeps this record
+    /// up to date as it makes decisions and does no I/O to answer.
+    strict GetReport() -> (struct {
+        report Report;
+    });
+};
+
+/// Admission state of the file server's mutating operations.
+type LifecyclePhase = flexible enum : uint32 {
+    /// New mutations are admitted.
+    OPEN = 1;
+    /// Admission is closed and mutations admitted before the boundary are
+    /// draining, or the final filesystem-wide sync is running.
+    FREEZING = 2;
+    /// The admitted mutations drained and the final sync completed.
+    FROZEN = 3;
+    /// Admission remains closed, but the final sync failed or its caller
+    /// disconnected. FreezeAndSync may be retried without reopening the store.
+    FROZEN_UNSYNCED = 4;
+};
+
+/// Recoverable state published by the lifecycle barrier.
+type LifecycleState = table {
+    1: phase LifecyclePhase;
+    /// Monotonically advances when an open store begins a new freeze. A retry
+    /// after a failed sync retains the same generation.
+    2: generation uint64;
+    /// Mutations admitted before the freeze boundary that have not yet
+    /// completed their per-RPC durability sync.
+    3: active_mutations uint64;
+};
+
+type FreezeReceipt = struct {
+    generation uint64;
+    /// True when this generation was already durably frozen before the call.
+    already_frozen bool;
+};
+
+type LifecycleError = flexible enum : uint32 {
+    /// There is no mounted filesystem to freeze.
+    NOT_MOUNTED = 1;
+    /// The final filesystem-wide sync did not complete. Admission remains
+    /// closed and FreezeAndSync can retry the same generation.
+    SYNC_FAILED = 2;
+    /// Thaw named a generation other than the current freeze generation.
+    STALE_GENERATION = 3;
+    /// Thaw raced an active freeze leader. The caller must wait for
+    /// FreezeAndSync to finish rather than cancelling its durability boundary.
+    BUSY = 4;
+};
+
+/// Store-wide lifecycle barrier for an orderly host transition.
+///
+/// The host first quiesces every VM and other storage producer, then calls
+/// FreezeAndSync. The file server closes mutation admission before it drains
+/// operations already in flight and performs one final Fxfs sync. Reads remain
+/// available because they cannot advance durable state. The host must not
+/// reboot, shut down, or activate an update until FreezeAndSync succeeds.
+@discoverable
+closed protocol Lifecycle {
+    /// Returns the current barrier state without performing I/O.
+    strict GetState() -> (struct {
+        state LifecycleState;
+    });
+
+    /// Establishes a durable freeze boundary. Concurrent calls join one
+    /// generation, and a call made after success is idempotent.
+    strict FreezeAndSync() -> (struct {
+        receipt FreezeReceipt;
+    }) error LifecycleError;
+
+    /// Reopens mutation admission. A matching generation prevents a delayed
+    /// controller from thawing a later host transition.
+    strict Thaw(struct {
+        generation uint64;
+    }) -> () error LifecycleError;
+};

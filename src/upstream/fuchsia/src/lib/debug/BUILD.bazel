@@ -1,0 +1,38 @@
+# Cerise BUILD (authored locally; upstream is GN).
+#
+# also vendors debug.h/debug.cc (upstream's
+# static_library("debug")) - fxfs's debug_assert_not_too_long! macro calls
+# ::debug::backtrace_request_all_threads() unconditionally under cfg(debug_assertions)
+# (active in this repo's default build config), which is genuinely exercised, not a
+# GN-only conditional. backtrace-request-utils.*/dap/test are still NOT vendored -
+# nothing references them.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "backtrace-request",
+    hdrs = ["backtrace-request.h"],
+    # Consumers #include "src/lib/debug/backtrace-request.h" (repo-root-relative);
+    # keep the include path un-prefixed and require -Isrc/upstream/fuchsia in copts.
+    strip_include_prefix = "",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+cc_library(
+    name = "debug",
+    srcs = ["debug.cc"],
+    hdrs = ["debug.h"],
+    # debug.cc itself quote-includes "src/lib/debug/debug.h" (repo-root-relative),
+    # same as backtrace-request.h above — needs the repo-root search path on its own
+    # compilation, not just on consumers.
+    copts = ["-Isrc/upstream/fuchsia"],
+    strip_include_prefix = "",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

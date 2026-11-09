@@ -1,0 +1,30 @@
+# Vendored for Cerise fshost Phase 1. Real upstream
+# zircon/system/ulib/storage/operation, adapted from its own real BUILD.bazel
+# with target paths rewritten to this project's convention.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "operation",
+    srcs = [
+        "operation.cc",
+        "unbuffered_operations_builder.cc",
+    ],
+    hdrs = [
+        "include/storage/operation/operation.h",
+        "include/storage/operation/unbuffered_operation.h",
+        "include/storage/operation/unbuffered_operations_builder.h",
+    ],
+    includes = ["include"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/zircon/system/ulib/range",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/safemath",
+        "//sdk/lib/fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat",
+    ],
+)

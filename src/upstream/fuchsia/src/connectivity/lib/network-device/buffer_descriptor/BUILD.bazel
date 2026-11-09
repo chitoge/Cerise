@@ -1,0 +1,14 @@
+# Cerise BUILD (authored locally; upstream is GN). Header-only buffer_descriptor
+# struct shared between network-device's device_interface/session and its clients.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "buffer_descriptor",
+    hdrs = ["buffer_descriptor.h"],
+    # Consumers #include "src/connectivity/lib/network-device/buffer_descriptor/
+    # buffer_descriptor.h" (repo-root-relative); require -Isrc/upstream/fuchsia.
+    strip_include_prefix = "",
+    tags = ["manual"],
+)

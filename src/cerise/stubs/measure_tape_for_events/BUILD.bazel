@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "measure_tape_for_events",
+    srcs = ["src/lib.rs"],
+    crate_name = "measure_tape_for_events",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+    ],
+)

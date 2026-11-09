@@ -1,0 +1,35 @@
+# Authored locally for Cerise (Phase 1 logging: Archivist import).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# diagnostics_message: decode/encode of the structured-log wire format used by
+# Archivist's log pipeline. The full fuchsia.diagnostics binding is a HEAD-only
+# upstream dep (guarded by current_build_target_api_level == HEAD|PLATFORM); at
+# Cerise's level-30 compile that code path is cfg'd out, so it is not a dep here.
+rust_library(
+    name = "diagnostics_message",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_message",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fidl_fuchsia_logger",
+        "//src/upstream/fuchsia/src/lib/diagnostics/data/rust:diagnostics_data",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/encoding/rust:diagnostics_log_encoding",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:bumpalo",
+        "@crates//:byteorder",
+        "@crates//:flyweights",
+        "@crates//:libc",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

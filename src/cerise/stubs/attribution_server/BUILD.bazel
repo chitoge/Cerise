@@ -1,0 +1,13 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "attribution_server",
+    srcs = ["src/lib.rs"],
+    crate_name = "attribution_server",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.memory.attribution:fidl_fuchsia_memory_attribution",
+    ],
+)

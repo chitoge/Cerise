@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+# Minimal example that depends only on the //sdk surface.
+# Demonstrates that user-space code can build against //sdk:zircon_api
+# without direct access to internal kernel or src/upstream targets.
+cc_library(
+    name = "hello_sdk",
+    srcs = ["main.cc"],
+    deps = ["//sdk:zircon_api"],
+)

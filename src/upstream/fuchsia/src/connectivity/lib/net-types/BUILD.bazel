@@ -1,0 +1,46 @@
+# Bazel integration for this imported target. net-types: a
+# foundational netstack3 crate (IP/Ethernet address types). Replaces the upstream
+# GN BUILD. The in-crate derive macro (GenericOverIp etc.) is net-types-macros,
+# built host-side as a proc-macro.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "net-types-macros",
+    srcs = ["src/macros.rs"],
+    crate_root = "src/macros.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:assert_matches",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+rust_library(
+    name = "net-types",
+    srcs = [
+        "src/ethernet.rs",
+        "src/ip.rs",
+        "src/lib.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    # The production net-types uses the "std" feature (GN); it adds the std::net <->
+    # net_types::ip conversions (used by net-declare-macros). Fuchsia has std.
+    crate_features = ["std"],
+    proc_macro_deps = [":net-types-macros"],
+    deps = ["@crates//:zerocopy"],
+)
+
+# src/ip.rs's #[cfg(test)] mod does
+# `use test_case::test_case;`. ethernet.rs's own test mod needs nothing
+# beyond the library's own deps.
+rust_test(
+    name = "net-types_test",
+    crate = ":net-types",
+    edition = "2024",
+    deps = ["@crates//:test-case"],
+)

@@ -1,0 +1,16 @@
+# Authored locally for Cerise — src/devices/lib/io-buffer.
+# Physical-address DMA scatter-gather iterator (port.cc's AHCI PRD list building).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "io-buffer",
+    srcs = ["phys-iter.c"],
+    hdrs = ["include/lib/io-buffer/phys-iter.h"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

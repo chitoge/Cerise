@@ -1,0 +1,54 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-inspect",
+    srcs = glob(["src/**/*.rs"], exclude = ["src/writer/types/testing_utils.rs"]),
+    crate_name = "fuchsia_inspect",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:async-trait",
+        "@crates//:derivative",
+        "@crates//:paste",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/format/rust:inspect_format",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/lib/injectable-time:injectable-time",
+        "@crates//:anyhow",
+        "@crates//:fragile",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:maplit",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# Host unit tests for the real Inspect crate (Phase 1 logging). Compiles the
+# crate's ~148 inline #[fuchsia::test] cases with --test; the #[cfg(test)]-only
+# `writer::testing_utils` module is already in `srcs`. `crate =` inherits the
+# library's srcs/deps/proc_macro_deps/rustc_flags; the deps below are the
+# additional test-only crates (upstream `test_deps`).
+rust_test(
+    name = "fuchsia-inspect_test",
+    crate = ":fuchsia-inspect",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "@crates//:assert_matches",
+    ],
+)

@@ -1,0 +1,51 @@
+# Cerise packages foundation: pkg_probe — the on-target proof. Ingests the demo
+# package's blobs into the fxfs "blob" volume via fuchsia.fxfs/BlobCreator, then resolves the
+# package with the vendored package_directory crate and reads meta/package + the .cm + a content
+# blob back (merkle-verified). See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "pkg_probe",
+    srcs = ["src/main.rs"],
+    crate_name = "pkg_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/package-directory:package-directory",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "//src/cerise/fxblob_storage:fxblob_storage",
+        "//src/cerise/stubs/delivery_blob:delivery_blob",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        # Real fdio (not the link-time stub) — fuchsia-fs/fuchsia-component FFI into libfdio.so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "pkg_probe_stripped.fuchsia",
+    src = ":pkg_probe",
+)

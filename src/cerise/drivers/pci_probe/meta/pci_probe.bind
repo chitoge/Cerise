@@ -1,0 +1,33 @@
+// PCI bring-up: COMPOSITE bind rules for the e1000 PCI device (8086:100e).
+//
+// WHY COMPOSITE (not a direct/normal bind to the isolate child):
+//   bus-pci publishes EVERY PCI device as both (a) an isolate child node (DdkAdd with
+//   str_props VID/DID/... + a fuchsia.hardware.pci.Service offer) AND (b) a composite
+//   node spec (DdkAddCompositeNodeSpec) — see bus/drivers/pci/fidl.cc + composite.cc.
+//   driver-index's match_driver() PRIORITIZES composite node specs: if a node matches
+//   any spec parent it returns the spec match and NEVER evaluates normal/direct drivers
+//   (indexer.rs:278-282 short-circuit; the matched_driver filter is an unimplemented
+//   upstream TODO). So a normal driver targeting the isolate child can never bind — the
+//   canonical path (and what virtio-net needs) is a COMPOSITE driver matching the
+//   spec. The spec's pci parent carries the Service property (composite.cc kPciProperties).
+//
+// e1000 has acpi=1, so its spec has TWO parents (composite.cc):
+//   - pci parent  (kPciProperties): Service==ZirconTransport, PCI_VID, PCI_DID, ...
+//   - acpi parent (kAcpiProperties): BIND_PROTOCOL==acpi.DEVICE, ACPI_BUS_TYPE==PCI, PCI_TOPO
+// Our primary "pci" node matches the pci parent; the "acpi" node matches the acpi parent.
+composite pci_probe;
+
+using fuchsia.acpi;
+using fuchsia.pci;
+using fuchsia.hardware.pci;
+
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
+  fuchsia.BIND_PCI_DID == 0x100e;
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.PCI;
+}

@@ -1,0 +1,11 @@
+package(default_visibility = ["//visibility:public"])
+
+# Cerise is this project's userland operating system identity.
+# It extends the standard @platforms//os:os dimension, so os-keyed select()
+# and toolchain resolution work exactly as for any stock OS value. Bare-metal
+# environments (kernel/phys) stay on @platforms//os:none and the EFI
+# environment uses @platforms//os:uefi; only userland is os:cerise.
+constraint_value(
+    name = "cerise",
+    constraint_setting = "@platforms//os:os",
+)

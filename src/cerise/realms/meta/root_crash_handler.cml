@@ -1,0 +1,52 @@
+// root_crash_handler — component_manager root for qemu-x64-crash-handler
+// (the userspace-crash post-mortem gate). Minimal ELF realm: elf_runner plus
+// crash_handler (eager, holds the root-job exception channel) and crasher (lazy,
+// launched by crash_handler's Binder AFTER it has attached). No driver/storage/
+// network stack — the gate exercises only the exception path.
+{
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "crash_handler",
+            url: "fuchsia-boot:///crash_handler#meta/crash_handler.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            // Lazy: crash_handler starts it via its Binder once attached, so its
+            // crash is deterministically observed (no eager-sibling attach race).
+            name: "crasher",
+            url: "fuchsia-boot:///crasher#meta/crasher.cm",
+            startup: "lazy",
+            environment: "#elf-env",
+        },
+    ],
+
+    environments: [
+        {
+            name: "elf-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "#elf_runner", as: "elf" },
+            ],
+        },
+    ],
+
+    offer: [
+        { protocol: "fuchsia.process.Launcher", from: "parent", to: "#elf_runner" },
+
+        // The narrow privileged grant: the root job to crash_handler
+        // ONLY. cm_config's capability_policy allowlists this exact (protocol,
+        // moniker) pair; route_check's permitted_privileged_use permits this exact
+        // (component, protocol) pair. Nothing else may use RootJob.
+        { protocol: "fuchsia.kernel.RootJob", from: "parent", to: "#crash_handler" },
+
+        // The launch trigger: crash_handler binds crasher's framework Binder after
+        // it has attached to the root-job exception channel.
+        { protocol: "fuchsia.component.Binder", from: "#crasher", to: "#crash_handler" },
+    ],
+}

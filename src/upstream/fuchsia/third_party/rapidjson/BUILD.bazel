@@ -1,0 +1,9 @@
+# Cerise BUILD (authored locally) — rapidjson (header-only JSON), third_party submodule
+# vendored at the Fuchsia pin (a8bf9c8). Used by zxtest's json-reporter.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "rapidjson",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)

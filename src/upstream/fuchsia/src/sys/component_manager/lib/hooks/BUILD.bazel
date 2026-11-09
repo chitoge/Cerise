@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "hooks",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "hooks",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    proc_macro_deps = ["@crates//:async-trait"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/sys/component_manager/lib/errors:errors",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "//src/upstream/fuchsia/src/sys/lib/runtime_capabilities:runtime_capabilities",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

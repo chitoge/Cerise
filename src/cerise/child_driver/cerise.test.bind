@@ -1,0 +1,6 @@
+// Driver-host bring-up, Step 2 test bind library. Declares the single string property the
+// parent driver attaches to its child node and the child driver matches on.
+library cerise.test;
+
+// The device kind the parent advertises on its child node.
+string DEVICE;

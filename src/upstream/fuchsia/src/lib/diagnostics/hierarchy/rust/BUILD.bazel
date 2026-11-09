@@ -1,0 +1,54 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "diagnostics_hierarchy",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_hierarchy",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    aliases = {
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics": "fidl_fuchsia_diagnostics_common",
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors": "selectors",
+    },
+    proc_macro_deps = [
+        "@crates//:num-derive",
+        "@crates//:paste",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics",
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors",
+        "@crates//:base64",
+        "@crates//:either",
+        "@crates//:log",
+        "@crates//:num-traits",
+        "@crates//:serde",
+        "@crates//:thiserror",
+    ],
+)
+
+# src/lib.rs's #[cfg(test)] mod does
+# `use test_case::test_case;`, `use assert_matches::assert_matches;`, and
+# `use selectors::VerboseError;` (via the library's own `selectors` alias for
+# diagnostics_selectors); several test fns crate-wide use `#[fuchsia::test]`
+# (see the diagnostics_selectors_test comment for that crate). Recompiled at
+# API level 30 like the library (rust_test's `crate` attribute does not
+# inherit rustc_flags). src/serialization/deserialize.rs's `ffx_writer`
+# import is itself `#[cfg(feature = "json_schema")]`-gated - a Cargo feature
+# this rust_test does not enable (`json_schema` isn't in @crates), so it
+# compiles out and isn't a blocker.
+rust_test(
+    name = "diagnostics_hierarchy_test",
+    crate = ":diagnostics_hierarchy",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia",
+        "@crates//:assert_matches",
+        "@crates//:serde_json",
+        "@crates//:test-case",
+    ],
+)

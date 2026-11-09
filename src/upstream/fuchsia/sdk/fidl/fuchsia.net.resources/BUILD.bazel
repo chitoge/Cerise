@@ -1,0 +1,87 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# bumped to HEAD -- fuchsia.net.interfaces.admin
+# (itself already bumped to HEAD for the same reason) references
+# GrantForInterfaceAuthorization, an @available(added=HEAD) addition absent at level
+# 30. zxio depends on fuchsia.net.resources_cpp (C++, additive-only risk verified by a
+# real rebuild immediately after this change, not assumed) -- no Rust consumer depends
+# on the plain level-30 binding besides other still-being-vendored networking FIDL libraries.
+fidl_library(
+    name = "fuchsia.net.resources",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.net.resources_cpp",
+    library = ":fuchsia.net.resources",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust in
+# BUILD.gn).
+fidl_rust(
+    name = "fuchsia.net.resources_rs",
+    library = ":fuchsia.net.resources",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_resources",
+    srcs = [":fuchsia.net.resources_rs"],
+    crate_name = "fidl_fuchsia_net_resources",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        # netstack3 (and its `_ext` crates) import the HEAD instance of fuchsia.net
+        # throughout; fuchsia.net.resources composes fuchsia.net types in its own
+        # API, so its Rust codegen must link the SAME instance (same rationale as
+        # fuchsia.net.root's/fuchsia.net.settings's identical swaps). No other real
+        # consumer of this Rust target exists besides netstack3's closed `_ext`
+        # subgraph, so no parallel target is needed, just this dep swap.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale.
+genrule(
+    name = "flex_fuchsia_net_resources_rs_gen",
+    outs = ["flex_fuchsia_net_resources.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_resources::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_resources",
+    srcs = [":flex_fuchsia_net_resources_rs_gen"],
+    crate_name = "flex_fuchsia_net_resources",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_resources"],
+)

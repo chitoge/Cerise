@@ -1,0 +1,23 @@
+# Codegen smoke test for the gRPC stack's Bazel codegen path.
+#
+# proto_library + rust_prost_library drives the //build/grpc:prost_toolchain
+# through protoc (proto toolchain resolution) and the protoc-gen-prost /
+# protoc-gen-tonic plugins, emitting a Rust crate that compiles for both the
+# host and the fuchsia triple (the runtime crates come from the isolated @grpc
+# universe, tokio[io-util] only — no mio on fuchsia).
+
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "fileserver_proto",
+    srcs = ["fileserver.proto"],
+    strip_import_prefix = "/src/cerise/fileserver/proto",
+)
+
+rust_prost_library(
+    name = "fileserver_rust_proto",
+    proto = ":fileserver_proto",
+)

@@ -1,0 +1,71 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "driver_start_gate",
+    srcs = ["src/start_coordination.rs"],
+    crate_name = "driver_start_gate",
+    compile_data = ["src/driver_runner.rs"],
+    edition = "2024",
+    deps = ["@crates//:futures"],
+)
+
+rust_test(
+    name = "driver_start_gate_test",
+    size = "small",
+    crate = ":driver_start_gate",
+    edition = "2024",
+)
+
+rust_library(
+    name = "driver_manager_core",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "driver_manager_core",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:async-trait",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.crash:fidl_fuchsia_driver_crash",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.development:fidl_fuchsia_driver_development",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.host:fidl_fuchsia_driver_host",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.index:fidl_fuchsia_driver_index",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.loader:fidl_fuchsia_driver_loader",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fidl_fuchsia_driver_token",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fidl_fuchsia_ldsvc",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.memory.attribution:fidl_fuchsia_memory_attribution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.process:fidl_fuchsia_process",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/bind:driver_manager_bind",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/composite:driver_manager_composite",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/devfs:driver_manager_devfs",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/driver_host:driver_manager_driver_host",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/node:driver_manager_node",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/shutdown:driver_manager_shutdown",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/types:driver_manager_types",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/utils:driver_manager_utils",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/performance/memory/attribution/server:attribution_server",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:rand",
+    ],
+)

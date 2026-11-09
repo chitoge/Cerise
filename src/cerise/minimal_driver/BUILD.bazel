@@ -1,0 +1,54 @@
+# Cerise minimal native DFv2 driver (DFv2 runtime bring-up) — loader de-risk target.
+# Built as a cc_binary(-shared) (like //src/cerise/runtime:libc++.so) so the FIDL
+# bindings' alwayslink=True is honored and the wire/natural out-of-line symbols are
+# whole-archived into the .so (cc_shared_library does not pull transitive-alwayslink
+# members for a .so's allowed-undefined refs).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "minimal_driver_impl",
+    srcs = ["minimal_driver.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/cerise/echo:echo_fidl_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    ],
+)
+
+cc_binary(
+    name = "cerise_minimal_driver.so",
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,cerise_minimal_driver.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # __fuchsia_driver_registration__ is a standalone const not referenced
+        # internally -> root it so --gc-sections keeps it, and export it so the
+        # loader's dlsym finds it.
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--export-dynamic",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":minimal_driver_impl",
+        # DIRECT alwayslink dep so the fuchsia_logging out-of-line symbols (referenced
+        # via DriverBase's logger) are whole-archived into the self-contained .so
+        # (cc_binary -shared honors DIRECT alwayslink, not transitive).
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        # compiler-rt builtins (libclang_rt.builtins.a) — -nodefaultlibs excludes the
+        # toolchain default, so 128-bit arithmetic helpers (__umodti3 etc., used by the
+        # FIDL/framework code) would be UND at load. Pull the needed ones in (same lib
+        # the fuchsia sysroot links; stateless, safe to also have in the host process).
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

@@ -1,0 +1,22 @@
+# Vendored from upstream (faithful port). fdf_sys: bindgen FFI bindings for the
+# fuchsia driver framework C runtime (libfdf). `bindings.rs` is the committed
+# bindgen output; no bindgen run is needed. Compile-only rlib (libfdf C symbols
+# resolve at final-binary link time).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fdf_sys",
+    srcs = [
+        "src/bindings.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fdf_sys",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async/rust/sys:sys",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ],
+)

@@ -1,0 +1,22 @@
+// Cerise packages foundation: pkg_hello — the demonstration package's real
+// component. Its compiled manifest (meta/pkg_hello.cm) is embedded in a genuine meta.far by
+// cerise_package, and its ELF binary is an external content blob. pkg_probe ingests both into
+// the fxfs `blob` volume, then serves the package as a package_directory and reads this .cm
+// straight out of the meta.far — proving meta.far parsing + content-addressed blob storage.
+//
+// It is a minimal, self-contained component (no structured config, no include shards) to keep
+// the cmc surface small. Launching it (resolving fuchsia-pkg://.../pkg_hello and starting it)
+// is a deliberate NON-goal of the foundation (needs a full package resolver daemon); the proof
+// READS the .cm and the binary blob rather than executing the component.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/pkg_hello",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+    expose: [
+        { protocol: "fuchsia.component.Binder", from: "framework" },
+    ],
+}

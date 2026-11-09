@@ -1,0 +1,51 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# The DFv2 driver manager. ONE binary: since the config burn-down,
+# root_driver (and the other config fields) are DATA delivered via the
+# meta/driver_manager_rust_dfv2acpi.cvf staged by the composing bundle/product
+# — see config/BUILD.bazel — so the historical per-root_driver binary variants,
+# each linking a stub config crate with a different baked-in URL, are gone. The
+# target keeps its historical name because the bootfs binary path
+# (pkg/driver_manager_rust_dfv2platbus/bin/driver_manager_rust_dfv2platbus) is
+# baked into the realm manifest and its frozen golden.
+rust_binary(
+    name = "driver_manager_rust_dfv2platbus",
+    srcs = ["src/main.rs"],
+    crate_name = "driver_manager_rust",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/config:driver_manager_config",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.index:fidl_fuchsia_driver_index",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fidl_fuchsia_ldsvc",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/core:driver_manager_core",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/development:driver_manager_development",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/devfs:driver_manager_devfs",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/firmware_crash:driver_manager_firmware_crash",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/shutdown:driver_manager_shutdown",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/utils:driver_manager_utils",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/performance/memory/scudo:scudo",
+        "//src/upstream/fuchsia/src/sys/lib/library_loader:library_loader",
+        "//src/upstream/fuchsia/src/sys/lib/stdout-to-debuglog/rust:stdout-to-debuglog",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

@@ -1,0 +1,56 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.driver.token",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+# storage (NVMe): nvme's Namespace implements fidl::Server<fuchsia_driver_token::
+# NodeToken> (C++ natural bindings) — added because upstream's BUILD.gn target
+# (fuchsia.driver.token_cpp) wasn't yet mirrored here; no other consumer needed it
+# until now.
+fidl_cpp(
+    name = "fuchsia.driver.token_cpp",
+    library = ":fuchsia.driver.token",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.driver.token_rs",
+    library = ":fuchsia.driver.token",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_driver_token",
+    srcs = [":fuchsia.driver.token_rs"],
+    crate_name = "fidl_fuchsia_driver_token",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

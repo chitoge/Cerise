@@ -1,0 +1,21 @@
+# Vendored from upstream (faithful port). libasync_sys: bindgen FFI bindings for
+# the C `async` dispatcher runtime. `bindings.rs` is the committed bindgen output;
+# no bindgen run is needed. Compile-only rlib (the C symbols resolve at final-
+# binary link time).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "sys",
+    srcs = [
+        "src/bindings.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "libasync_sys",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ],
+)

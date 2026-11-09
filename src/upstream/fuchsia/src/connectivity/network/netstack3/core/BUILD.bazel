@@ -1,0 +1,36 @@
+# Authored locally for Cerise. netstack3-core (netstack3-core sub-crate),
+# x86_64-unknown-fuchsia. Base feature variant; test/loom/instrumented variants omitted.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-core",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/macros:netstack3-macros",
+        "@crates//:derivative",
+    ],
+    deps = [
+        "@crates//:assert_matches",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/datagram:netstack3-datagram",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/device:netstack3-device",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/ip:netstack3-ip",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/tcp:netstack3-tcp",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/udp:netstack3-udp",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:log",
+        "@crates//:zerocopy",
+    ],
+)

@@ -1,0 +1,80 @@
+// Cerise Archivist component (logging bring-up): the vendored upstream
+// Archivist wired in as a real CMv2 component via `cerise_component`.
+//
+// This is a thin adaptation of upstream's
+//   //src/diagnostics/archivist/meta/archivist.cml
+// It reuses the upstream shards verbatim so the lowered ConfigSchema (and thus the
+// structured-config CHECKSUM) is byte-identical to the one the vendored
+//   //src/upstream/fuchsia/src/diagnostics/archivist:archivist-config
+// crate was generated from — the archivist binary calls
+// `archivist_config::Config::take_from_startup_handle()` and rejects a mismatched
+// checksum, so the schema MUST match. `cerise_component`'s default
+// includeroot=`src/upstream/fuchsia` makes the `//src/diagnostics/...` include
+// paths resolve to the vendored tree.
+//
+// Cerise deltas from upstream archivist.cml (all safe):
+//   * No `archivist-pipelines` child and no `use directory config`: we ship no
+//     pipeline selector config. archivist_lib's PipelineManager opens the
+//     pipelines_path directory best-effort (open_in_namespace); when it is absent
+//     it still installs the unfiltered "all" pipeline, which serves
+//     `fuchsia.diagnostics.ArchiveAccessor` (the query surface proves).
+//   * No `main_process_critical`: diagnostics failure must not terminate a VM
+//     host and its running guests. The gateway reports Archivist unavailability
+//     only on the diagnostics surface.
+//   * fuchsia.boot.ReadOnlyLog is optional in this reusable manifest. The
+//     production VM-host realm offers it and ships enable_klog=true; the
+//     diagnostics/conformance products omit it and ship enable_klog=false.
+//     PersistenceBinder, SamplerBinder, and netstack-diagnostics remain absent
+//     because this component does not run those sidecars.
+//
+// What the shards bring (see common.shard.cml / config.shard.cml /
+// config_capabilities.shard.cml):
+//   program:      runner=elf, binary=bin/archivist, lifecycle stop_event=notify,
+//                 use_next_vdso=true (the shared-log ring buffer uses zx_iob "next"
+//                 vDSO syscalls; elf_runner honors use_next_vdso).
+//   capabilities: the `diagnostics-accessors` dynamic dictionary (served via
+//                 fuchsia.component.sandbox.DictionaryRouter) + fuchsia.logger.Log /
+//                 fuchsia.logger.LogSink / fuchsia.inspect.InspectSink / the
+//                 LogSettings/LogStream/SerialLogControl/LogFlusher protocols.
+//   use:          event_stream `capability_requested` (filtered to
+//                 fuchsia.logger.LogSink and fuchsia.inspect.InspectSink — this is
+//                 how the Archivist intercepts LogSink connections),
+//                 fuchsia.component.sandbox.CapabilityStore from framework (builds
+//                 the accessors dictionary), fuchsia.tracing.provider.Registry
+//                 (optional), fuchsia.inspect.InspectSink from self.
+//   expose:       the diagnostics-accessors dictionary + the logger/inspect
+//                 protocols from self. The realm routes
+//                 fuchsia.diagnostics.ArchiveAccessor out of the exposed
+//                 diagnostics-accessors dictionary to the reader.
+//   config:       the full archivist ConfigSchema (values delivered via the .cvf
+//                 built from config_values in BUILD.bazel).
+{
+    include: [
+        "//src/diagnostics/archivist/meta/common.shard.cml",
+        "//src/diagnostics/archivist/meta/config_capabilities.shard.cml",
+    ],
+    program: {
+        environ: [
+            "SCUDO_OPTIONS=release_to_os_interval_ms=0",
+        ],
+    },
+    use: [
+        {
+            // Only the production VM host offers this builtin, and runtime
+            // capability policy permits it only to /archivist. Optionality lets
+            // the existing LogSink-only test products reuse the same schema.
+            protocol: "fuchsia.boot.ReadOnlyLog",
+            availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            // Host-socket variant of the accessor, drawn out of the dictionary.
+            // Not used by reader (which uses the FIDL
+            // fuchsia.diagnostics.ArchiveAccessor from the dictionary), but kept so
+            // the exposed surface matches upstream.
+            protocol: "fuchsia.diagnostics.host.ArchiveAccessor",
+            from: "self/diagnostics-accessors",
+        },
+    ],
+}

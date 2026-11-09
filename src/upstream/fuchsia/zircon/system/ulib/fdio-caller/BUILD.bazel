@@ -1,0 +1,19 @@
+# Vendored for Cerise fshost Phase 1. Real upstream zircon/system/ulib/fdio-caller.
+# Header-only (caller.h is all-inline).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fdio-caller",
+    hdrs = ["include/lib/fdio/cpp/caller.h"],
+    includes = ["include"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+    ],
+)

@@ -1,0 +1,6 @@
+bazel-*
+.sync-state/
+
+# Python bytecode
+__pycache__/
+*.pyc

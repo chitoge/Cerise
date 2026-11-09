@@ -1,0 +1,25 @@
+# Bazel integration for this imported target. fbl: the Zircon base
+# C++ library (alloc_checker, string utilities) used across the userspace libs.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fbl",
+    srcs = [
+        "alloc_checker.cc",
+        "string.cc",
+        "string_buffer.cc",
+        "string_printf.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    features = ["host_cxx20"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/sdk/lib/zircon-assert:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

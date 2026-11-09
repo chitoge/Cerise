@@ -1,0 +1,35 @@
+# Runtime bring-up: a minimal bump allocator for libc.so (the malloc family),
+# backed by zx_vmar_map. Unblocks the Rust std runtime; scudo is the eventual replacement.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cerise_malloc",
+    srcs = ["malloc.c"],
+    copts = ["-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# malloc.c is #included (not separately compiled) by the host stress test.
+cc_library(
+    name = "malloc_includable",
+    textual_hdrs = ["malloc.c"],
+)
+
+# Host stress test: thread churn, reuse, realloc/calloc correctness, double-free guard.
+# Tagged "manual": the default/remote C++ toolchain can't link the C++ runtime on the
+# aarch64 remote executors (a pre-existing libc++abi -fPIC issue), which a cc_test pulls
+# in even for pure-C tests. Verified instead with the host compiler:
+#   cc -D_GNU_SOURCE -O2 -pthread -fno-strict-aliasing \
+#      -o /tmp/malloc_stress src/cerise/libc-malloc/malloc_stress_test.c && /tmp/malloc_stress
+cc_test(
+    name = "malloc_stress_test",
+    srcs = ["malloc_stress_test.c"],
+    copts = ["-D_GNU_SOURCE", "-fno-strict-aliasing"],
+    linkopts = ["-pthread"],
+    tags = ["manual"],
+    deps = [":malloc_includable"],
+)

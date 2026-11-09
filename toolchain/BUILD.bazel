@@ -1,0 +1,1972 @@
+load(
+    "@rules_cc//cc/toolchains:args.bzl",
+    "cc_args",
+)
+load(
+    "@rules_cc//cc/toolchains:args_list.bzl",
+    "cc_args_list",
+)
+load(
+    "@rules_cc//cc/toolchains:feature.bzl",
+    "cc_feature",
+)
+load(
+    "@rules_cc//cc/toolchains:tool.bzl",
+    "cc_tool",
+)
+load(
+    "@rules_cc//cc/toolchains:nested_args.bzl",
+    "cc_nested_args",
+)
+load(
+    "@rules_cc//cc/toolchains:tool_map.bzl",
+    "cc_tool_map",
+)
+load(
+    "@rules_cc//cc/toolchains:toolchain.bzl",
+    "cc_toolchain",
+)
+load("@llvm//runtimes:module_map.bzl", "include_path", "module_map")
+load("//toolchain:raw_executable_tool.bzl", "raw_executable_tool")
+load(
+    "//toolchain:zircon_toolchain.bzl",
+    "zircon_efi_toolchain_probe",
+    "zircon_environment_toolchain",
+    "zircon_kernel_toolchain_probe",
+    "zircon_phys_toolchain_probe",
+    "zircon_user_toolchain_probe",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "zircon_toolchain.bzl",
+    "ambient-includes.json",
+])
+
+include_path(
+    name = "zircon_builtin_include_path",
+    srcs = ["@zr_llvm_toolchain_minimal_linux_amd64//:builtin_resource_dir"],
+)
+
+module_map(
+    name = "zircon_module_map",
+    include_path = ":zircon_builtin_include_path",
+)
+
+toolchain_type(name = "zircon_kernel_toolchain_type")
+
+toolchain_type(name = "zircon_phys_toolchain_type")
+
+toolchain_type(name = "zircon_efi_toolchain_type")
+
+toolchain_type(name = "zircon_user_toolchain_type")
+
+cc_tool(
+    name = "kernel_clang",
+    src = ":linux_x86_64/bin/clang.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/clang_builtin_resource_dir",
+    ],
+    allowlist_include_directories = [":linux_x86_64/clang_builtin_resource_dir"],
+)
+
+cc_tool(
+    name = "kernel_clangxx",
+    src = ":linux_x86_64/bin/clang++.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/clang_builtin_resource_dir",
+    ],
+    allowlist_include_directories = [":linux_x86_64/clang_builtin_resource_dir"],
+)
+
+cc_tool(
+    name = "kernel_lld",
+    src = ":linux_x86_64/bin/ld.lld.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/bin/ld64.lld.prebuilt",
+        ":linux_x86_64/bin/lld.prebuilt",
+        ":linux_x86_64/bin/wasm-ld.prebuilt",
+    ],
+)
+
+cc_tool(
+    name = "efi_lld_link",
+    src = ":linux_x86_64/bin/lld-link.prebuilt",
+    data = [":linux_x86_64/bin/llvm.prebuilt"],
+)
+
+cc_tool(
+    name = "kernel_llvm_ar",
+    src = ":linux_x86_64/bin/llvm-ar.prebuilt",
+    data = [":linux_x86_64/bin/llvm.prebuilt"],
+)
+
+cc_tool(
+    name = "kernel_llvm_objcopy",
+    src = ":linux_x86_64/bin/llvm-objcopy.prebuilt",
+    data = [":linux_x86_64/bin/llvm.prebuilt"],
+)
+
+cc_tool(
+    name = "kernel_llvm_strip",
+    src = ":linux_x86_64/bin/llvm-strip.prebuilt",
+    data = [":linux_x86_64/bin/llvm.prebuilt"],
+)
+
+cc_tool_map(
+    name = "kernel_tool_map",
+    tools = {
+        "@rules_cc//cc/toolchains/actions:assembly_actions": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:c_compile": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":kernel_clangxx",
+        "@rules_cc//cc/toolchains/actions:link_actions": ":kernel_lld",
+        "@rules_cc//cc/toolchains/actions:cpp_link_static_library": ":kernel_llvm_ar",
+        "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":kernel_llvm_objcopy",
+        "@rules_cc//cc/toolchains/actions:strip": ":kernel_llvm_strip",
+    },
+)
+
+# EFI tool map: uses lld-link (PE/COFF) instead of ld.lld (ELF) for link steps.
+# Required because --target=x86_64-unknown-uefi produces COFF objects.
+cc_tool_map(
+    name = "efi_tool_map",
+    tools = {
+        "@rules_cc//cc/toolchains/actions:assembly_actions": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:c_compile": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":kernel_clangxx",
+        "@rules_cc//cc/toolchains/actions:link_actions": ":efi_lld_link",
+        "@rules_cc//cc/toolchains/actions:cpp_link_static_library": ":kernel_llvm_ar",
+        "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":kernel_llvm_objcopy",
+        "@rules_cc//cc/toolchains/actions:strip": ":kernel_llvm_strip",
+    },
+)
+
+cc_args(
+    name = "kernel_header_parser_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_header_parsing"],
+    args = [
+        "-xc++-header",
+        "-fsyntax-only",
+    ],
+)
+
+cc_args(
+    name = "hermetic_c_stdlib_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    ],
+    args = [
+        "-nostdlibinc",
+        "-no-canonical-prefixes",
+    ],
+)
+
+# kernel_c_stdlib_flags contains ONLY the stdlib-resolution closure.
+# Every entry is justified in toolchain/ambient-includes.json.
+# All non-stdlib component includes are evicted to //:kernel_cc_headers CcInfo deps.
+cc_args(
+    name = "kernel_c_stdlib_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+        "@rules_cc//cc/toolchains/actions:preprocess_assemble",
+    ],
+    args = [
+        "-nostdlibinc",
+        "-no-canonical-prefixes",
+        "-isystem",
+        "zircon/system/public",
+        "-isystem",
+        "zircon/kernel/include",
+        "-isystem",
+        "zircon/kernel/arch/x86/include",
+        "-isystem",
+        "zircon/kernel/lib/arch/x86/include",
+        "-isystem",
+        "zircon/kernel/lib/arch/include",
+        "-isystem",
+        "zircon/kernel/lib/heap/include",
+        "-isystem",
+        "zircon/kernel/lib/ktl/include",
+        "-isystem",
+        "zircon/kernel/lib/libc/include",
+    ],
+    data = [
+        "//zircon/system/public:headers",
+        "//zircon/kernel/include:headers",
+        "//zircon/kernel/arch/x86/include:headers",
+        "//zircon/kernel/lib/arch/x86/include:headers",
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/heap/include:headers",
+        "//zircon/kernel/lib/ktl:headers",
+        "//zircon/kernel/lib/libc:headers",
+    ],
+)
+
+cc_args(
+    name = "kernel_c_stdlib_after_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    ],
+    args = [
+        "-idirafter",
+        "zircon/kernel/lib/ktl/include-after",
+        "-idirafter",
+        "zircon/kernel/lib/libc/include-after",
+    ],
+    data = [
+        "//zircon/kernel/lib/ktl:headers",
+        "//zircon/kernel/lib/libc:headers",
+    ],
+)
+
+cc_args(
+    name = "hermetic_cxx_stdlib_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    ],
+    args = [
+        "-nostdinc++",
+        "-no-canonical-prefixes",
+        "-isystem",
+        "{stdlib_include_dir}",
+    ],
+    data = [
+        "@llvm-project//libcxx:libcxx_headers_include_search_directory",
+    ],
+    format = {
+        "stdlib_include_dir": "@llvm-project//libcxx:libcxx_headers_include_search_directory",
+    },
+)
+
+cc_args(
+    name = "kernel_create_static_archive",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_link_static_library"],
+    args = ["rcsD"],
+)
+
+cc_args(
+    name = "kernel_archive_output_arg",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_link_static_library"],
+    args = ["{output_execpath}"],
+    format = {
+        "output_execpath": "@rules_cc//cc/toolchains/variables:output_execpath",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:output_execpath",
+)
+
+cc_args(
+    name = "kernel_archive_libraries",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_link_static_library"],
+    nested = [":kernel_archive_libraries_expansion"],
+    requires_not_none = "@rules_cc//cc/toolchains/variables:libraries_to_link",
+)
+
+cc_nested_args(
+    name = "kernel_archive_libraries_expansion",
+    iterate_over = "@rules_cc//cc/toolchains/variables:libraries_to_link",
+    nested = [
+        ":kernel_archive_link_obj_file",
+        ":kernel_archive_link_object_file_group",
+    ],
+)
+
+cc_nested_args(
+    name = "kernel_archive_link_obj_file",
+    args = ["{object_file}"],
+    format = {"object_file": "@rules_cc//cc/toolchains/variables:libraries_to_link.name"},
+    requires_equal = "@rules_cc//cc/toolchains/variables:libraries_to_link.type",
+    requires_equal_value = "object_file",
+)
+
+cc_nested_args(
+    name = "kernel_archive_link_object_file_group",
+    args = ["{object_files}"],
+    format = {"object_files": "@rules_cc//cc/toolchains/variables:libraries_to_link.object_files"},
+    iterate_over = "@rules_cc//cc/toolchains/variables:libraries_to_link.object_files",
+    requires_equal = "@rules_cc//cc/toolchains/variables:libraries_to_link.type",
+    requires_equal_value = "object_file_group",
+)
+
+cc_args_list(
+    name = "kernel_archiver_flags",
+    args = [
+        ":kernel_create_static_archive",
+        ":kernel_archive_output_arg",
+        ":kernel_archive_libraries",
+    ],
+)
+
+cc_args(
+    name = "kernel_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=x86_64-unknown-linux-gnu"],
+)
+
+cc_args(
+    name = "kernel_freestanding_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-m64",
+        "-mcx16",
+        "-mno-mmx",
+        "-mno-sse",
+        "-mno-sse2",
+    ],
+)
+
+cc_args(
+    name = "kernel_abi_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-fPIE",
+        "-fvisibility=hidden",
+        "-mcmodel=kernel",
+        "-mno-red-zone",
+        "-fasynchronous-unwind-tables",
+    ],
+)
+
+cc_args(
+    name = "kernel_define_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//config:lk_debuglevel_1": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-DARCH_X86",
+            "-DSMP_MAX_CPUS=32",
+            "-DDEBUG_PRINT_LEVEL=1",
+            "-DLK_DEBUGLEVEL=1",
+            "-DFUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST",
+            "-DLIB_ARCH_PAGING_CONFIGURATION=\"4level\"",
+            "-DWITH_FRAME_POINTERS=1",
+            "-DJTRACE_TARGET_BUFFER_SIZE=0",
+            "-DLZ4_STATIC_LINKING_ONLY",
+            "-DLZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
+            "-DEXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=0",
+        ],
+        "//conditions:default": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-DARCH_X86",
+            "-DSMP_MAX_CPUS=32",
+            "-DDEBUG_PRINT_LEVEL=2",
+            "-DLK_DEBUGLEVEL=2",
+            # Cross-compiling Fuchsia kernel with Linux host toolchain;
+            # syscalls-next.h requires this when __Fuchsia__ is not set by target triple.
+            "-DFUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST",
+            "-DLIB_ARCH_PAGING_CONFIGURATION=\"4level\"",
+            "-DWITH_FRAME_POINTERS=1",
+            "-DJTRACE_TARGET_BUFFER_SIZE=0",
+            "-DLZ4_STATIC_LINKING_ONLY",
+            "-DLZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
+            "-DEXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=0",
+        ],
+    }),
+)
+
+cc_args(
+    name = "kernel_cxx_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = [
+        "-fnew-alignment=8",
+        "-fno-exceptions",
+        "-fno-rtti",
+    ],
+)
+
+cc_args(
+    name = "kernel_cxx_std_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = [
+        "-std=c++20",
+    ],
+)
+
+cc_args(
+    name = "kernel_link_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-nostdlib",
+        "-nodefaultlibs",
+        "-nostartfiles",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_x64_kernel_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":kernel_target_flags",
+        ":kernel_freestanding_flags",
+        ":kernel_abi_flags",
+        ":kernel_cxx_std_flags",
+        ":kernel_define_flags",
+        ":kernel_cxx_flags",
+        ":kernel_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+# arm64 kernel cc_args (N-ary arch table; x64 cc_args above are unchanged)
+
+cc_args(
+    name = "kernel_arm64_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=aarch64-unknown-elf"],
+)
+
+cc_args(
+    name = "kernel_arm64_freestanding_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-mgeneral-regs-only",
+        # -mstrict-align (SCTLR.A-independent, EL1): the arm64 kernel's early boot
+        # code (start.S -> PhysMain and the LK init path) executes with the MMU
+        # OFF, where all memory is Device-nGnRnE and every unaligned access faults
+        # regardless of SCTLR_ELx.A. Without this, clang emits unaligned
+        # halfword/word accesses (legal on Normal memory) that alignment-fault
+        # before the kernel enables its page tables. Upstream Zircon compiles the
+        # arm64 kernel with -mstrict-align for exactly this reason. This flag has
+        # no x64 counterpart — x86 permits unaligned access even with paging off.
+        "-mstrict-align",
+    ],
+)
+
+cc_args(
+    name = "kernel_arm64_abi_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-fPIE",
+        "-fvisibility=hidden",
+        "-mcmodel=small",
+        "-fasynchronous-unwind-tables",
+        "-ffixed-x18",
+        "-fsanitize=shadow-call-stack",
+        # arm64 kernel ABI: integer-only register use (no FP/SIMD in kernel mode),
+        # x20 reserved for percpu pointer, TPIDR_EL1 for thread pointer.
+        "-mgeneral-regs-only",
+        "-ffixed-x20",
+        "-mtp=el1",
+    ],
+)
+
+cc_args(
+    name = "kernel_arm64_define_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//config:lk_debuglevel_1": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-DARCH_ARM64",
+            "-DSMP_MAX_CPUS=16",
+            "-DDEBUG_PRINT_LEVEL=1",
+            "-DLK_DEBUGLEVEL=1",
+            "-DFUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST",
+            "-DLIB_ARCH_PAGING_CONFIGURATION=\"4k-48bit\"",
+            "-DWITH_FRAME_POINTERS=1",
+            "-DJTRACE_TARGET_BUFFER_SIZE=0",
+            "-DLZ4_STATIC_LINKING_ONLY",
+            "-DLZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
+            "-DEXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=0",
+        ],
+        "//conditions:default": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-DARCH_ARM64",
+            "-DSMP_MAX_CPUS=16",
+            "-DDEBUG_PRINT_LEVEL=2",
+            "-DLK_DEBUGLEVEL=2",
+            "-DFUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST",
+            "-DLIB_ARCH_PAGING_CONFIGURATION=\"4k-48bit\"",
+            "-DWITH_FRAME_POINTERS=1",
+            "-DJTRACE_TARGET_BUFFER_SIZE=0",
+            "-DLZ4_STATIC_LINKING_ONLY",
+            "-DLZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
+            "-DEXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=0",
+        ],
+    }),
+)
+
+# arm64 stdlib include flags: replaces arch/x86 entries with arch/arm64 counterparts.
+# The x64 kernel_c_stdlib_flags is NOT used by arm64 toolchain, preventing x86 include leak.
+cc_args(
+    name = "kernel_arm64_c_stdlib_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+        "@rules_cc//cc/toolchains/actions:preprocess_assemble",
+    ],
+    args = [
+        "-nostdlibinc",
+        "-no-canonical-prefixes",
+        "-isystem",
+        "zircon/system/public",
+        "-isystem",
+        "zircon/kernel/include",
+        "-isystem",
+        "zircon/kernel/arch/arm64/include",
+        "-isystem",
+        "zircon/kernel/lib/arch/arm64/include",
+        "-isystem",
+        "zircon/kernel/lib/arch/include",
+        "-isystem",
+        "zircon/kernel/lib/heap/include",
+        "-isystem",
+        "zircon/kernel/lib/ktl/include",
+        "-isystem",
+        "zircon/kernel/lib/libc/include",
+    ],
+    data = [
+        "//zircon/system/public:headers",
+        "//zircon/kernel/include:headers",
+        "//zircon/kernel/arch/arm64/include:headers",
+        "//zircon/kernel/lib/arch/arm64/include:headers",
+        "//zircon/kernel/lib/arch/include:headers",
+        "//zircon/kernel/lib/heap/include:headers",
+        "//zircon/kernel/lib/ktl:headers",
+        "//zircon/kernel/lib/libc:headers",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_arm64_kernel_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_arm64_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":kernel_arm64_target_flags",
+        ":kernel_arm64_freestanding_flags",
+        ":kernel_arm64_abi_flags",
+        ":kernel_cxx_std_flags",
+        ":kernel_arm64_define_flags",
+        ":kernel_cxx_flags",
+        ":kernel_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+toolchain(
+    name = "zircon_arm64_kernel_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+    toolchain = ":zircon_arm64_kernel_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_arm64_kernel_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+    toolchain = ":zircon_arm64_kernel_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+cc_args(
+    name = "phys_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=x86_64-unknown-linux-gnu"],
+)
+
+cc_args(
+    name = "phys_common_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-m64",
+        "-mcx16",
+        "-mno-mmx",
+        "-mno-sse",
+        "-mno-sse2",
+    ],
+)
+
+cc_args(
+    name = "phys_abi_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-fPIC",
+        "-fvisibility=hidden",
+        "-funwind-tables",
+        "-mcmodel=small",
+        "-mno-red-zone",
+    ],
+)
+
+cc_args(
+    name = "phys_cxx_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-threadsafe-statics",
+    ],
+)
+
+cc_args(
+    name = "phys_cxx_std_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = [
+        "-std=c++20",
+    ],
+)
+
+cc_args(
+    name = "phys_define_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "//config:lk_debuglevel_1": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-D_PHYS",
+            "-DSMP_MAX_CPUS=32",
+            "-DDEBUG_PRINT_LEVEL=1",
+            "-DLK_DEBUGLEVEL=1",
+        ],
+        "//conditions:default": [
+            "-DLK",
+            "-DZIRCON_TOOLCHAIN",
+            "-D_KERNEL",
+            "-D_PHYS",
+            "-DSMP_MAX_CPUS=32",
+            "-DDEBUG_PRINT_LEVEL=2",
+            "-DLK_DEBUGLEVEL=2",
+        ],
+    }),
+)
+
+cc_args(
+    name = "phys_link_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-nostdlib",
+        "-nodefaultlibs",
+        "-nostartfiles",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_x64_phys_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":phys_target_flags",
+        ":phys_common_flags",
+        ":phys_abi_flags",
+        ":phys_cxx_std_flags",
+        ":phys_cxx_flags",
+        ":phys_define_flags",
+        ":phys_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+cc_args(
+    name = "x86_32_phys_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=i386-unknown-linux-gnu"],
+)
+
+cc_args(
+    name = "x86_32_phys_common_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-m32",
+        "-march=i686",
+        "-mno-mmx",
+        "-mno-sse",
+        "-mno-sse2",
+    ],
+)
+
+cc_args(
+    name = "x86_32_phys_abi_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fdata-sections",
+        "-ffunction-sections",
+        "-fno-pic",
+        "-fno-pie",
+        "-fvisibility=hidden",
+        "-funwind-tables",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_x86_32_phys_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":x86_32_phys_target_flags",
+        ":x86_32_phys_common_flags",
+        ":x86_32_phys_abi_flags",
+        ":phys_cxx_std_flags",
+        ":phys_cxx_flags",
+        ":phys_define_flags",
+        ":phys_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+# arm64 phys toolchain — bootstrap code for the arm64-phys platform.
+cc_args(
+    name = "arm64_phys_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=aarch64-unknown-elf"],
+)
+
+cc_args(
+    name = "arm64_phys_common_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-mgeneral-regs-only",
+        # -mstrict-align: phys (physload/physboot) runs with the MMU OFF, where
+        # memory is Device-nGnRnE and unaligned accesses alignment-fault
+        # regardless of SCTLR_ELx.A. Without this, clang emits an unaligned
+        # `sturh` in physload's early C path that faulted at physload PC
+        # 0x48067d28 (FAR 0x480fb07d) before any UART output. Upstream Zircon
+        # builds arm64 phys with -mstrict-align.
+        "-mstrict-align",
+    ],
+)
+
+cc_args(
+    name = "arm64_phys_codemodel_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        # tiny code model: all code/data within ±1MB, no GOT/PLT needed.
+        # Must come AFTER phys_abi_flags (which has -mcmodel=small) so it wins.
+        # Phys binaries are small boot stubs (<512KB), safe and avoids GOT entries
+        # that would violate the phys.ld assertion (SIZEOF(.got) <= 32).
+        "-mcmodel=tiny",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_arm64_phys_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_arm64_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":arm64_phys_target_flags",
+        ":arm64_phys_common_flags",
+        ":phys_abi_flags",
+        ":arm64_phys_codemodel_flags",
+        ":phys_cxx_std_flags",
+        ":phys_cxx_flags",
+        ":phys_define_flags",
+        ":phys_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+cc_args(
+    name = "efi_target_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=x86_64-unknown-uefi", "-m64"],
+)
+
+cc_args(
+    name = "efi_abi_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-fshort-wchar"],
+)
+
+cc_args(
+    name = "efi_define_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-DZIRCON_TOOLCHAIN",
+        "-D_EFI",
+        "-D__PE_COFF__",
+    ],
+)
+
+cc_args(
+    name = "efi_common_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+    ],
+)
+
+cc_args(
+    name = "efi_cxx_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-threadsafe-statics",
+    ],
+)
+
+cc_args(
+    name = "efi_cxx_std_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = ["-std=c++20"],
+)
+
+cc_toolchain(
+    name = "zircon_x64_efi_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":kernel_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_c_stdlib_after_flags",
+        ":kernel_archiver_flags",
+        ":efi_target_flags",
+        ":efi_abi_flags",
+        ":efi_common_flags",
+        ":efi_cxx_flags",
+        ":efi_cxx_std_flags",
+        ":efi_define_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":efi_tool_map",
+)
+
+cc_args(
+    name = "user_target_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "--target=x86_64-unknown-linux-gnu",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-fPIE",
+        "-fPIC",
+    ],
+)
+
+cc_args(
+    name = "user_cxx_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-threadsafe-statics",
+    ],
+)
+
+cc_args(
+    name = "user_cxx_std_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = [
+        "-std=c++20",
+    ],
+)
+
+cc_args(
+    name = "user_define_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-DZIRCON_TOOLCHAIN"],
+)
+
+cc_args(
+    name = "user_link_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-pie",
+        "--no-dynamic-linker",
+        "--gc-sections",
+        "-z", "max-page-size=4096",
+        "-z", "stack-size=0x100000",
+        "--entry=_start",
+    ],
+)
+
+cc_toolchain(
+    name = "zircon_x64_user_cc_toolchain",
+    args = [
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        ":kernel_header_parser_flags",
+        ":hermetic_c_stdlib_flags",
+        ":hermetic_cxx_stdlib_flags",
+        ":kernel_archiver_flags",
+        ":user_target_flags",
+        ":user_cxx_flags",
+        ":user_cxx_std_flags",
+        ":user_define_flags",
+        ":user_link_flags",
+    ],
+    compiler = "clang",
+    known_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:layering_check",
+        "@rules_cc//cc/toolchains/args/layering_check:use_module_maps",
+    ],
+    enabled_features = [
+        "@rules_cc//cc/toolchains/args/layering_check:module_maps",
+    ],
+    module_map = ":zircon_module_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    tool_map = ":kernel_tool_map",
+)
+
+zircon_environment_toolchain(
+    name = "zircon_x64_kernel_config",
+    config_name = "zircon.x64.kernel",
+    cpu = "x64",
+    environment = "kernel",
+    feature_names = [
+        "cpu.x64.common",
+        "abi.x64.kernel",
+        "env.kernel",
+        "lang.kernel_cxx",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ] + select({
+        "//config:lk_debuglevel_1": ["debug.kernel_level_1"],
+        "//conditions:default": ["debug.kernel_level_2"],
+    }) + [
+        "link.freestanding",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_arm64_kernel_config",
+    config_name = "zircon.arm64.kernel",
+    cpu = "arm64",
+    environment = "kernel",
+    feature_names = [
+        "cpu.arm64.common",
+        "abi.arm64.kernel",
+        "env.kernel",
+        "lang.kernel_cxx",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ] + select({
+        "//config:lk_debuglevel_1": ["debug.kernel_level_1"],
+        "//conditions:default": ["debug.kernel_level_2"],
+    }) + [
+        "link.freestanding",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_x64_phys_config",
+    config_name = "zircon.x64.phys",
+    cpu = "x64",
+    environment = "phys",
+    feature_names = [
+        "cpu.x64.common",
+        "abi.x64.phys",
+        "env.phys",
+        "lang.phys_cxx",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ] + select({
+        "//config:lk_debuglevel_1": ["debug.kernel_level_1"],
+        "//conditions:default": ["debug.kernel_level_2"],
+    }) + [
+        "link.freestanding",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_x86_32_phys_config",
+    config_name = "zircon.x86_32.phys",
+    cpu = "x86_32",
+    environment = "phys",
+    feature_names = [
+        "cpu.x86_32.common",
+        "abi.x86_32.phys",
+        "env.phys",
+        "lang.phys_cxx",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ] + select({
+        "//config:lk_debuglevel_1": ["debug.kernel_level_1"],
+        "//conditions:default": ["debug.kernel_level_2"],
+    }) + [
+        "link.freestanding",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_arm64_phys_config",
+    config_name = "zircon.arm64.phys",
+    cpu = "arm64",
+    environment = "phys",
+    feature_names = [
+        "cpu.arm64.common",
+        "abi.arm64.phys",
+        "env.phys",
+        "lang.phys_cxx",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ] + select({
+        "//config:lk_debuglevel_1": ["debug.kernel_level_1"],
+        "//conditions:default": ["debug.kernel_level_2"],
+    }) + [
+        "link.freestanding",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_x64_efi_config",
+    config_name = "zircon.x64.efi",
+    cpu = "x64",
+    environment = "efi",
+    feature_names = [
+        "cpu.x64.efi",
+        "abi.x64.efi",
+        "env.efi",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+    ],
+)
+
+zircon_environment_toolchain(
+    name = "zircon_x64_user_config",
+    config_name = "zircon.x64.user",
+    cpu = "x64",
+    environment = "user",
+    feature_names = [
+        "cpu.x64.user",
+        "env.user",
+        "lang.user_cxx",
+        "lang.user_cxx_std",
+        "stdlib.c_headers",
+        "stdlib.cxx_headers",
+        "link.user",
+    ],
+)
+
+toolchain(
+    name = "zircon_x64_kernel_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+    toolchain = ":zircon_x64_kernel_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_kernel_env_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+    toolchain = ":zircon_x64_kernel_config",
+    toolchain_type = ":zircon_kernel_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_arm64_kernel_env_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:kernel",
+    ],
+    toolchain = ":zircon_arm64_kernel_config",
+    toolchain_type = ":zircon_kernel_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_phys_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_x64_phys_config",
+    toolchain_type = ":zircon_phys_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x86_32_phys_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_x86_32_phys_config",
+    toolchain_type = ":zircon_phys_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_arm64_phys_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_arm64_phys_config",
+    toolchain_type = ":zircon_phys_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_arm64_phys_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_arm64_phys_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_efi_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:uefi",
+        "//platforms/env:efi",
+    ],
+    toolchain = ":zircon_x64_efi_config",
+    toolchain_type = ":zircon_efi_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_user_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+    toolchain = ":zircon_x64_user_config",
+    toolchain_type = ":zircon_user_toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_phys_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_x64_phys_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x86_32_phys_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:none",
+        "//platforms/env:phys",
+    ],
+    toolchain = ":zircon_x86_32_phys_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_efi_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:uefi",
+        "//platforms/env:efi",
+    ],
+    toolchain = ":zircon_x64_efi_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "zircon_x64_user_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+    toolchain = ":zircon_x64_user_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+# Exec-platform CC toolchain for x86_64 Linux exec → x86_64 Linux target.
+# Registered before @llvm_toolchains//:all so it takes priority for exec→exec
+# builds (e.g. rust_binary_without_process_wrapper, fidlc on x86_64 workers).
+#
+# stdlib: hermetic libc++ + libc++abi headers via cxxstdlib_headers_include_search_paths,
+# hermetic Linux kernel headers and glibc headers from @llvm//toolchain/args/linux.
+# -nostdlibinc (hermetic_compile_flags) blocks all system stdlib include paths.
+# static_link_cpp_runtimes enabled with hermetic libc++.a (same as reference linux_x86_64 toolchain).
+# exec_cpp_runtime_input_dep cc_args carries @llvm//runtimes:static_runtime_lib as a data dep so
+# that the .a files are included as Bazel action inputs for ALL link actions — including
+# rules_rust's rust_binary_without_process_wrapper, which does not propagate cc_toolchain
+# static_runtime_lib files on its own.
+# exec_exec_link_libs provides -lpthread -ldl via SYSTEM glibc (no hermetic glibc -L dir),
+# keeping the exec binary ABI compatible with the remote workers' system glibc.
+# The hermetic @llvm//toolchain/args/linux:default_libs adds a -L<hermetic-glibc-dir> path
+# that makes the linker resolve libpthread/libdl against the hermetic glibc 2.25+ stubs,
+# embedding GLIBC_2.25 version requirements that the remote workers cannot satisfy.
+# Stage1 select returns :none for static/dynamic runtimes, breaking the with_cfg.bzl build cycle.
+
+# Carries the hermetic static C++ runtime as a data dep so that Bazel includes
+# the .a files as action inputs for every exec-platform link action.
+# rules_rust's rust_binary_without_process_wrapper invokes the CC linker but
+# does not propagate cc_toolchain.static_runtime_lib as action inputs, causing
+# the link to fail on a cold remote cache.  Adding the runtime here via
+# cc_args.data ensures it is always listed as an input regardless of rule type.
+cc_args(
+    name = "exec_cpp_runtime_input_dep",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [],
+    data = ["@llvm//runtimes:static_runtime_lib"],
+)
+
+# Provides -ldl/-lpthread via system glibc (no hermetic -L prefix).
+# Using @llvm//toolchain/args/linux:default_libs here would add the hermetic
+# glibc library search directory, making exec binaries reference GLIBC_2.25+
+# symbols that are absent on the remote workers.
+cc_args(
+    name = "exec_link_libs",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-Wl,--push-state",
+        "-Wl,--as-needed",
+        "-lpthread",
+        "-ldl",
+        "-Wl,--pop-state",
+    ],
+)
+
+cc_args(
+    name = "exec_x86_64_target_triple",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-target",
+        "x86_64-linux-gnu",
+    ],
+)
+
+cc_args(
+    name = "exec_x86_64_fuse_lld",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = ["-fuse-ld=lld"],
+)
+
+# Opt-in host C++20 standard for the exec/host toolchain. Host-side
+# cc_library/cc_test targets that need C++20 (e.g. the acpi_lite/fbl host gtest
+# variants) request it with `features = ["host_cxx20"]` instead of carrying a
+# per-target -std copt, which the no_policy_in_build guardrail forbids in
+# component BUILD files (`features` is not a forbidden policy attr).
+#
+# Modelled as a feature so it expands after the legacy `default_compile_flags`
+# feature's -std=c++17 and therefore wins (clang honors the final -std). It is
+# listed in `known_features` but NOT `enabled_features`, so it is OFF by
+# default: LLVM-as-a-build-tool (needs C++17), the from-source libcxx runtime
+# (sets its own C++23) and other host tools keep their working standard, and
+# only targets that explicitly opt in are affected. The zircon environment
+# toolchains carry their own -std via the lang.*_cxx_std features.
+cc_args(
+    name = "exec_x86_64_cxx_std_args",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = ["-std=c++20"],
+)
+
+cc_feature(
+    name = "exec_x86_64_cxx_std",
+    feature_name = "host_cxx20",
+    args = [":exec_x86_64_cxx_std_args"],
+)
+
+cc_tool(
+    name = "exec_clangxx",
+    src = ":linux_x86_64/bin/clang++.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/bin/ld.lld.prebuilt",
+        ":linux_x86_64/clang_builtin_resource_dir",
+    ],
+    allowlist_include_directories = [":linux_x86_64/clang_builtin_resource_dir"],
+)
+
+cc_tool_map(
+    name = "exec_x86_64_tool_map",
+    tools = {
+        "@rules_cc//cc/toolchains/actions:assembly_actions": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:c_compile": ":kernel_clang",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":kernel_clangxx",
+        "@rules_cc//cc/toolchains/actions:link_actions": ":exec_clangxx",
+        "@rules_cc//cc/toolchains/actions:cpp_link_static_library": ":kernel_llvm_ar",
+        "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":kernel_llvm_objcopy",
+        "@rules_cc//cc/toolchains/actions:strip": ":kernel_llvm_strip",
+    },
+)
+
+cc_toolchain(
+    name = "exec_x86_64_cc_toolchain",
+    # Stage1 omits cxxstdlib/glibc/kernel header args to avoid conflicts when building
+    # the libc++ runtime itself (which provides its own deps on those headers).
+    # Mirrors the reference linux_x86_64 toolchain's stage-aware args select.
+    args = select({
+        "@llvm//toolchain:runtimes_stage1": [
+            ":exec_x86_64_target_triple",
+            ":exec_x86_64_fuse_lld",
+            "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+            "@llvm//toolchain/args:no_absolute_paths_for_builtins",
+            "@llvm//toolchain/args:module_map",
+            "@llvm//toolchain/args:hermetic_compile_flags",
+        ],
+        "@llvm//toolchain:runtimes_stage1_hosted": [
+            ":exec_x86_64_target_triple",
+            ":exec_x86_64_fuse_lld",
+            "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+            "@llvm//toolchain/args:no_absolute_paths_for_builtins",
+            "@llvm//toolchain/args:module_map",
+            "@llvm//toolchain/args:hermetic_compile_flags",
+        ],
+        # runtimes_none = runtime_stage:stage0, which cc_runtime_stage0_static_library
+        # uses for libcxx.static/libcxxabi.static/libunwind.static. Omit
+        # cxxstdlib_headers_include_search_paths here: that arg adds
+        # libcxx_headers_include_search_directory as a -isystem path, which
+        # intercepts #include_next <string.h>/<errno.h> before glibc when
+        # libcxx source is already on the user -I path via cc_library deps.
+        "@llvm//toolchain:runtimes_none": [
+            ":exec_x86_64_target_triple",
+            ":exec_x86_64_fuse_lld",
+            "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+            "@llvm//toolchain/args:no_absolute_paths_for_builtins",
+            "@llvm//toolchain/args:module_map",
+            "@llvm//toolchain/args:hermetic_compile_flags",
+            "@llvm//toolchain/args/linux:kernel_headers_include_search_paths",
+            "@llvm//toolchain/args/linux:glibc_headers_include_search_paths",
+        ],
+        "//conditions:default": [
+            ":exec_x86_64_target_triple",
+            ":exec_x86_64_fuse_lld",
+            "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+            "@llvm//toolchain/args:no_absolute_paths_for_builtins",
+            "@llvm//toolchain/args:module_map",
+            "@llvm//toolchain/args:hermetic_compile_flags",
+            "@llvm//toolchain/args:cxxstdlib_headers_include_search_paths",
+            "@llvm//toolchain/args/linux:kernel_headers_include_search_paths",
+            "@llvm//toolchain/args/linux:glibc_headers_include_search_paths",
+            ":exec_link_libs",
+            ":exec_cpp_runtime_input_dep",
+        ],
+    }),
+    known_features = select({
+        "@llvm//toolchain:runtimes_stage1": [
+            "@llvm//toolchain/features:archive_param_file",
+            "@llvm//toolchain/features:prefer_pic_for_opt_binaries",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+            ":exec_x86_64_cxx_std",
+        ],
+        "@llvm//toolchain:runtimes_stage1_hosted": [
+            "@llvm//toolchain/features:archive_param_file",
+            "@llvm//toolchain/features:prefer_pic_for_opt_binaries",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+            ":exec_x86_64_cxx_std",
+        ],
+        "//conditions:default": [
+            "@llvm//toolchain/features/legacy:all_legacy_builtin_features",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+            "@llvm//toolchain/features:static_link_cpp_runtimes",
+            "@llvm//toolchain/features/runtime_library_search_directories:feature",
+            ":exec_x86_64_cxx_std",
+        ],
+    }),
+    enabled_features = select({
+        "@llvm//toolchain:runtimes_stage1": [
+            "@llvm//toolchain/features:prefer_pic_for_opt_binaries",
+            "@llvm//toolchain/features:archive_param_file",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+        ],
+        "@llvm//toolchain:runtimes_stage1_hosted": [
+            "@llvm//toolchain/features:prefer_pic_for_opt_binaries",
+            "@llvm//toolchain/features:archive_param_file",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+        ],
+        "//conditions:default": [
+            "@llvm//toolchain/features/legacy:all_legacy_builtin_features",
+            "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+            "@llvm//toolchain/features:static_link_cpp_runtimes",
+            "@llvm//toolchain/features/runtime_library_search_directories:feature",
+        ],
+    }),
+    tool_map = ":exec_x86_64_tool_map",
+    module_map = ":zircon_module_map",
+    static_runtime_lib = select({
+        "@llvm//toolchain:runtimes_none": "@llvm//runtimes:none",
+        "@llvm//toolchain:runtimes_stage1": "@llvm//runtimes:none",
+        "@llvm//toolchain:runtimes_stage1_hosted": "@llvm//runtimes:none",
+        "//conditions:default": "@llvm//runtimes:static_runtime_lib",
+    }),
+    dynamic_runtime_lib = select({
+        "@llvm//toolchain:runtimes_none": "@llvm//runtimes:none",
+        "@llvm//toolchain:runtimes_stage1": "@llvm//runtimes:none",
+        "@llvm//toolchain:runtimes_stage1_hosted": "@llvm//runtimes:none",
+        "//conditions:default": "@llvm//runtimes:dynamic_runtime_lib",
+    }),
+    supports_header_parsing = True,
+    supports_param_files = True,
+    compiler = "clang",
+)
+
+toolchain(
+    name = "exec_x86_64_cc_toolchain_registration",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":exec_x86_64_cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+filegroup(
+    name = "zircon_x64_toolchain_manifests",
+    srcs = [
+        ":zircon_x64_user_config",
+        ":zircon_x64_efi_config",
+        ":zircon_x64_kernel_config",
+        ":zircon_x64_phys_config",
+    ],
+)
+
+filegroup(
+    name = "zircon_arm64_toolchain_manifests",
+    srcs = [
+        ":zircon_arm64_kernel_config",
+    ],
+)
+
+zircon_kernel_toolchain_probe(
+    name = "zircon_x64_kernel_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+zircon_phys_toolchain_probe(
+    name = "zircon_x64_phys_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+zircon_phys_toolchain_probe(
+    name = "zircon_x86_32_phys_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:none",
+    ],
+)
+
+zircon_efi_toolchain_probe(
+    name = "zircon_x64_efi_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+zircon_user_toolchain_probe(
+    name = "zircon_x64_user_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+filegroup(
+    name = "zircon_x64_toolchain_resolution_manifests",
+    srcs = [
+        ":zircon_x64_efi_toolchain_probe",
+        ":zircon_x64_kernel_toolchain_probe",
+        ":zircon_x64_phys_toolchain_probe",
+        ":zircon_x64_user_toolchain_probe",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:none",
+    ],
+)
+
+zircon_kernel_toolchain_probe(
+    name = "zircon_arm64_kernel_toolchain_probe",
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+    ],
+)
+
+filegroup(
+    name = "zircon_arm64_toolchain_resolution_manifests",
+    srcs = [
+        ":zircon_arm64_kernel_toolchain_probe",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:none",
+    ],
+)
+
+filegroup(
+    name = "zircon_x86_32_phys_toolchain_resolution_manifests",
+    srcs = [
+        ":zircon_x86_32_phys_toolchain_probe",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_32",
+        "@platforms//os:none",
+    ],
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm",
+)
+
+alias(
+    name = "linux_x86_64/bin/clang.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/clang",
+)
+
+alias(
+    name = "linux_x86_64/bin/clang++.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/clang++",
+)
+
+alias(
+    name = "linux_x86_64/bin/ld.lld.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/ld.lld",
+)
+
+alias(
+    name = "linux_x86_64/bin/ld64.lld.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/ld64.lld",
+)
+
+alias(
+    name = "linux_x86_64/bin/lld.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/lld",
+)
+
+alias(
+    name = "linux_x86_64/bin/lld-link.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/lld-link",
+)
+
+alias(
+    name = "linux_x86_64/bin/wasm-ld.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/wasm-ld",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-ar.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-ar",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-nm.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-nm",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-objcopy.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-objcopy",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-strip.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-strip",
+)
+
+alias(
+    name = "linux_x86_64/clang_builtin_resource_dir",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:builtin_resource_dir",
+)
+
+raw_executable_tool(
+    name = "linux_x86_64/clang",
+    src = ":linux_x86_64/bin/clang.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/clang_builtin_resource_dir",
+    ],
+)
+
+raw_executable_tool(
+    name = "linux_x86_64/clang++",
+    src = ":linux_x86_64/bin/clang++.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/clang_builtin_resource_dir",
+    ],
+)
+
+raw_executable_tool(
+    name = "linux_x86_64/lld",
+    src = ":linux_x86_64/bin/ld.lld.prebuilt",
+    data = [
+        ":linux_x86_64/bin/llvm.prebuilt",
+        ":linux_x86_64/bin/ld64.lld.prebuilt",
+        ":linux_x86_64/bin/lld.prebuilt",
+        ":linux_x86_64/bin/wasm-ld.prebuilt",
+    ],
+)
+
+raw_executable_tool(
+    name = "linux_x86_64/lld-link",
+    src = ":linux_x86_64/bin/lld-link.prebuilt",
+    data = [":linux_x86_64/bin/llvm.prebuilt"],
+)
+
+alias(
+    name = "clang",
+    actual = "@llvm-project//clang:clang",
+)
+
+alias(
+    name = "clang_pp",
+    actual = "@llvm-project//clang:clang++",
+)
+
+alias(
+    name = "prebuilt_clang",
+    actual = ":linux_x86_64/clang",
+)
+
+alias(
+    name = "prebuilt_clang_pp",
+    actual = ":linux_x86_64/clang++",
+)
+
+alias(
+    name = "ld_lld",
+    actual = "@llvm-project//lld:lld",
+)
+
+alias(
+    name = "prebuilt_ld_lld",
+    actual = ":linux_x86_64/lld",
+)
+
+alias(
+    name = "prebuilt_lld_link",
+    actual = ":linux_x86_64/lld-link",
+)
+
+alias(
+    name = "llvm_ar",
+    actual = "@llvm-project//llvm:llvm-ar",
+)
+
+alias(
+    name = "llvm_nm",
+    actual = "@llvm-project//llvm:llvm-nm",
+)
+
+alias(
+    name = "llvm_objcopy",
+    actual = "@llvm-project//llvm:llvm-objcopy",
+)
+
+alias(
+    name = "llvm_strip",
+    actual = "@llvm-project//llvm:llvm-strip",
+)
+
+# Symbolization tooling: peers of the objcopy/nm/strip aliases above.
+# //src/cerise/tools/symbolize drives llvm_symbolizer as a subprocess to resolve
+# symbolizer-markup {{{bt}}}/{{{pc}}} frames against the .build-id store; gdb init
+# snippets (validation/run-qemu.sh --gdb) and manual addr2line lookups use these.
+# Point at the PREBUILT multitool (like llvm_objcopy), NOT the from-source
+# @llvm-project targets — the latter trigger a multi-minute LLVM build in the
+# boot-test harness and the symbolize tests.
+alias(
+    name = "llvm_symbolizer",
+    actual = ":linux_x86_64/bin/llvm-symbolizer.prebuilt",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-symbolizer.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer",
+)
+
+alias(
+    name = "llvm_addr2line",
+    actual = ":linux_x86_64/bin/llvm-addr2line.prebuilt",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-addr2line.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-addr2line",
+)
+
+# Prebuilt llvm-readelf: the .build-id store rule (cerise_debug_symbols) reads
+# each ELF's NT_GNU_BUILD_ID note to key the hashed store; peer of the
+# llvm-objcopy prebuilt used by fuchsia_stripped.
+alias(
+    name = "llvm_readelf",
+    actual = ":linux_x86_64/bin/llvm-readelf.prebuilt",
+)
+
+alias(
+    name = "linux_x86_64/bin/llvm-readelf.prebuilt",
+    actual = "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-readelf",
+)
+
+genrule(
+    name = "clang_version",
+    outs = ["clang.version.txt"],
+    cmd = "$(location :clang) --version > $@",
+    tools = [":clang"],
+)
+
+genrule(
+    name = "ld_lld_version",
+    outs = ["ld.lld.version.txt"],
+    cmd = "$(location :ld_lld) --version > $@",
+    tools = [":ld_lld"],
+)
+
+genrule(
+    name = "kernel_probe_object",
+    srcs = ["//toolchain/tests:kernel_probe.c"],
+    outs = ["kernel_probe.o"],
+    cmd = " ".join([
+        "$(location :clang)",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-m64",
+        "-mcmodel=kernel",
+        "-mno-red-zone",
+        "-mno-mmx",
+        "-mno-sse",
+        "-mno-sse2",
+        "-Wall",
+        "-Werror",
+        "-c $(location //toolchain/tests:kernel_probe.c)",
+        "-o $@",
+    ]),
+    tools = [":clang"],
+)
+
+genrule(
+    name = "kernel_probe_symbols",
+    srcs = [":kernel_probe_object"],
+    outs = ["kernel_probe.symbols.txt"],
+    cmd = "$(location :llvm_nm) $(location :kernel_probe_object) > $@",
+    tools = [":llvm_nm"],
+)
+
+filegroup(
+    name = "metadata",
+    srcs = [
+        "README.md",
+        "//toolchain/tests:kernel_probe.c",
+    ],
+)

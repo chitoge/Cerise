@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "wake-vector",
+    srcs = ["wake-vector.cc"],
+    hdrs = ["include/lib/wake-vector.h"],
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/wake-vector.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["wake-vector.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

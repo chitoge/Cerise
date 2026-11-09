@@ -1,0 +1,41 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cbuf",
+    srcs = ["cbuf.cc"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["cbuf.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+cc_library(
+    name = "cbuf_tests",
+    testonly = True,
+    tags = ["manual"],
+    srcs = ["cbuf_tests.cc"],
+    alwayslink = True,
+    deps = [
+        ":cbuf",
+        "//zircon/kernel/lib/unittest:unittest",
+        "//:kernel_cc_headers",
+    ],
+)

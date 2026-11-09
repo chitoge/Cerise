@@ -1,0 +1,42 @@
+# Bazel integration for this imported target. The FIDL C++ binding
+# runtime. The LLCPP "wire" layer lives in //...:cpp/wire; shared/natural headers
+# (features.h, transaction_header.h, the natural binding headers) are here.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Shared + natural binding headers (no wire dep, to avoid a cycle: wire pulls a
+# few of these, e.g. features.h/transaction_header.h).
+cc_library(
+    name = "shared_headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_c_headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# The natural (unified) C++ binding runtime — encoder/decoder/coding-traits.
+cc_library(
+    name = "natural",
+    srcs = glob(
+        ["*.cc", "internal/*.cc"],
+        exclude = ["*_test*.cc", "internal/*_test*.cc"],
+        allow_empty = True,
+    ),
+    tags = ["manual"],
+    deps = [
+        ":shared_headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_c_headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

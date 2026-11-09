@@ -1,0 +1,70 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# gop_display.bind -> gop_display_bind.bindbc: COMPOSITE bind rules matching ANY
+# PCI display-class (0x03) composite node spec published by bus-pci. Same structure
+# as display-bind, minus the VID:DID (see meta/gop_display.bind for the rationale
+# and the product-level mutual exclusion with the stdvga driver).
+driver_bind_rules(
+    name = "gop_display-bind",
+    rules = "meta/gop_display.bind",
+    output_name = "gop_display_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# Driver implementation compiled separately so cc_binary(-shared) links it alwayslink
+# (same split as display/e1000).
+cc_library(
+    name = "gop_display_impl",
+    srcs = ["gop_display.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/cerise/fidl/cerise.display:cerise.display_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/zbi-format:zbi-format",
+    ],
+)
+
+# DFv2-native GOP display driver .so — cc_binary(-shared), version-script exports ONLY
+# __fuchsia_driver_registration__; soname must match program["binary"] basename in
+# gop_display.cm (same recipe as display.so).
+cc_binary(
+    name = "gop_display.so",
+    additional_linker_inputs = ["gop_display.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,gop_display.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location gop_display.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":gop_display_impl",
+        # FIDL wire/natural symbols embedded alwayslink (mirrors display.so's policy).
+        "//src/cerise/fidl/cerise.display:cerise.display_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+        # Structured syslog backend (needed by FDF_LOG; same dep as display/e1000).
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

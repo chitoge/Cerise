@@ -1,0 +1,56 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "vm_unittests",
+    srcs = [
+        "aspace_unittest.cc",
+        "compression_unittest.cc",
+        "continuous_attribution_unittest.cc",
+        "evictor_unittest.cc",
+        "page_queues_unittest.cc",
+        "pmm_unittest.cc",
+        "slab_unittest.cc",
+        "test_helper.cc",
+        "vmo_unittest.cc",
+        "vmpl_unittest.cc",
+    ],
+    hdrs = ["test_helper.h"],
+    testonly = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+# Shared test helpers (make_committed_pager_vmo, etc.) as their own library so
+# more than one kernel-harness suite can link them without defining their
+# symbols twice. `includes = ["."]` lets dependents in other directories include
+# "test_helper.h".
+cc_library(
+    name = "vm_test_helper",
+    srcs = ["test_helper.cc"],
+    hdrs = ["test_helper.h"],
+    includes = ["."],
+    testonly = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+# Isolated snapshot/restore VMO tests, kept as their own kernel-harness suite so
+# they can be linked into the utest kernel without dragging in the rest of
+# vm_unittests (aspace_unittest.cc references validate_user_accessible_range,
+# an as-yet-unported user_copy symbol, so the full suite does not link here).
+# alwayslink keeps the UNITTEST_START_TESTCASE registration in the kernel ELF.
+cc_library(
+    name = "vm_snapshot_unittests",
+    srcs = ["snapshot_unittest.cc"],
+    testonly = True,
+    alwayslink = True,
+    deps = [
+        ":vm_test_helper",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

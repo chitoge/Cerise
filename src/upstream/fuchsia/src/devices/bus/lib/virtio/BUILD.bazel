@@ -1,0 +1,80 @@
+# Authored locally for Cerise — src/devices/bus/lib/virtio.
+# The shared C++ virtio transport library: ring management, PCI backends (legacy
+# and modern/mmio), device reset/features, IRQ thread. Used by all virtio drivers.
+#
+# Mirrors upstream BUILD.gn targets:
+#   :virtio-headers   — header-only (lib/virtio/*.h + backends/*.h)
+#   :virtio-common    — compiled lib (device.cc, ring.cc, driver_utils.cc, backends/*.cc)
+#   group("virtio")   — virtio-common + logging-dfv2 (what DFv2 drivers dep on)
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Header-only: lib/virtio/*.h and lib/virtio/backends/*.h
+# (No strip_include_prefix; consumers use includes = ["include"] or copts -I.)
+cc_library(
+    name = "virtio-headers",
+    hdrs = glob(
+        [
+            "include/lib/virtio/*.h",
+            "include/lib/virtio/backends/*.h",
+            "include/lib/virtio/internal/*.h",
+        ],
+        allow_empty = True,
+    ),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/src/devices/lib/dma-buffer:dma-buffer",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/virtio:virtio",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Compiled: device.cc, ring.cc, driver_utils.cc, backends/*.cc
+# Needs:
+#   -Isrc/upstream/fuchsia — for "src/graphics/..." relative includes in .cc files
+#   :virtio-headers        — for <lib/virtio/...> headers
+#   stdcompat, mmio-ptr    — implementation deps
+#   logging-dfv2           — runtime implementation of zxlogf for DFv2
+cc_library(
+    name = "virtio-common",
+    srcs = [
+        "backends/pci.cc",
+        "backends/pci_legacy.cc",
+        "backends/pci_modern.cc",
+        "device.cc",
+        "driver_utils.cc",
+        "ring.cc",
+        "trace.h",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        # Enable _ALL_SOURCE to expose thrd_create_with_name (Fuchsia-specific
+        # extension to POSIX threads, guarded by _ALL_SOURCE in threads.h).
+        "-D_ALL_SOURCE",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":virtio-headers",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/src/graphics/display/lib/driver-framework-migration-utils/logging:zxlogf",
+        "//src/upstream/fuchsia/zircon/system/ulib/mmio-ptr:mmio-ptr",
+    ],
+)
+
+# The target DFv2 drivers should depend on (group("virtio") in upstream).
+# = virtio-common + the DFv2 logging-dfv2 runtime implementation.
+cc_library(
+    name = "virtio",
+    tags = ["manual"],
+    deps = [
+        ":virtio-common",
+        "//src/upstream/fuchsia/src/graphics/display/lib/driver-framework-migration-utils/logging:logging-dfv2",
+    ],
+)

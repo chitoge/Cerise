@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+# Passthrough "clang-format" no-op for structured-config C++ generation.
+#
+# configc's `cpp` subcommand pipes the generated source through
+# `clang-format --style=google` purely to pretty-print it; the output compiles
+# identically without formatting. The minimal LLVM toolchain stubs clang-format
+# to an `empty` symlink, so we substitute an identity stdin->stdout filter until
+# a real clang-format is wired. Cosmetic-only; revisit.
+cc_binary(
+    name = "clang_format_noop",
+    srcs = ["clang_format_noop.c"],
+    visibility = ["//visibility:public"],
+)
+
+# Same rationale, for the Rust structured-config path (configc's `rust` subcommand
+# pipes through rustfmt purely to pretty-print).
+cc_binary(
+    name = "rustfmt_noop",
+    srcs = ["rustfmt_noop.c"],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["rustfmt_empty.toml"])

@@ -1,0 +1,55 @@
+# Cerise packages: pkg_fetcher — the on-target update driver. Ingests the base
+# package, launches v1 (base index), brings up netstack3 + DHCP, DOWNLOADS v2 over the network,
+# merkle-verifies + installs it, registers it in the persistent dynamic index, launches v2 (dynamic
+# index), and runs the verified-exec identity negative test. See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "pkg_fetcher",
+    srcs = ["src/main.rs"],
+    crate_name = "pkg_fetcher",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/lib/blob_download:cerise_blob_download",
+        "//src/cerise/lib/fxblob_install:cerise_fxblob_install",
+        "//src/cerise/lib/http_download:http_download",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "//src/cerise/pkg_index:pkg_index",
+        "//src/cerise/fxblob_storage:fxblob_storage",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/package-directory:package-directory",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fidl_fuchsia_component_resolution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        # Real fdio (not the link-time stub) — fuchsia_fs namespace opens, std::fs on the data volume, and
+        # std::net TCP to the host all go through libfdio.so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "pkg_fetcher_stripped.fuchsia",
+    src = ":pkg_fetcher",
+)

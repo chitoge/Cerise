@@ -1,0 +1,8 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "pretty",
+    srcs = glob(["*.cc"]),
+    hdrs = glob(["include/pretty/**/*.h"]),
+    includes = ["include"],
+)

@@ -1,0 +1,32 @@
+# Cerise. Validates the FIDL bindgen toolchain +
+# the fidl_library rule: a leaf library, a dependent library (transitive deps),
+# and C++ binding generation via fidlgen_cpp.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "probe",
+    srcs = ["test.fidl"],
+    tags = ["manual"],
+)
+
+# Imports cerise.probe -> exercises transitive dep propagation in the rule.
+fidl_library(
+    name = "probe_dep",
+    srcs = ["dep.fidl"],
+    tags = ["manual"],
+    deps = [":probe"],
+)
+
+# Compile the generated C++ bindings against the FIDL C++ binding runtime —
+# closes the bindgen loop (.fidl -> generated C++ -> compiled cc_library).
+fidl_cpp(
+    name = "probe_cpp",
+    library = ":probe",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+    ],
+)

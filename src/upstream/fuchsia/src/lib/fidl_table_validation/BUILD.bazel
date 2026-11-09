@@ -1,0 +1,16 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_table_validation",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/lib/fidl_table_validation/fidl_table_validation_derive",
+    ],
+    deps = [
+        "@crates//:anyhow",
+    ],
+)

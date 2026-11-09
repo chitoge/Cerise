@@ -1,0 +1,20 @@
+# vendored here (verbatim, from
+# https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/lib/proptest-support/src/lib.rs)
+# to unblock netstack3-core's (base's, tcp's) own #[cfg(test)] mods, which do
+# `use proptest_support::...` / invoke the `failed_seeds!`/`failed_seeds_no_std!`
+# macros - this crate was missing entirely from the curated src/upstream tree
+# (upstream itself marks it `testonly` - it's test-infra, not production
+# code, same category as the `teststd` shim and `ip-test-macro` called for /
+# discovered in this rung). Single upstream dep (proptest), matching
+# upstream's BUILD.gn exactly.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "proptest-support",
+    srcs = ["src/lib.rs"],
+    crate_name = "proptest_support",
+    edition = "2024",
+    deps = ["@crates//:proptest"],
+)

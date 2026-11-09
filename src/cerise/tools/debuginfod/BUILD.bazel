@@ -1,0 +1,40 @@
+# debuginfod — a std-only host HTTP server over a `.build-id` debug-symbol
+# store, speaking the debuginfod protocol gdb/lldb/llvm-symbolizer consume via
+# DEBUGINFOD_URLS. See src/lib.rs. std-only,
+# like //src/cerise/tools/symbolize and assembly/tools/bootfs_diff.py.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "debuginfod_lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "debuginfod",
+    edition = "2021",
+)
+
+# Standalone host CLI: `bazel run //src/cerise/tools/debuginfod -- <store-dir>`.
+rust_binary(
+    name = "debuginfod",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = [":debuginfod_lib"],
+)
+
+# Hermetic request-line parser + path-mapping unit tests (no sockets).
+rust_test(
+    name = "parser_test",
+    crate = ":debuginfod_lib",
+    edition = "2021",
+    size = "small",
+)
+
+# End-to-end: build a store, serve on an ephemeral port, fetch over real HTTP,
+# assert bytes match + a 404. Uses only std::net.
+rust_test(
+    name = "serve_test",
+    srcs = ["tests/serve_test.rs"],
+    edition = "2021",
+    size = "small",
+    deps = [":debuginfod_lib"],
+)

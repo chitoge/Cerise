@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Historically a no-op stub; now a thin re-export of the real vendored Inspect
+# crate so all existing consumers get real VMO-backed Inspect with zero edits to
+# their own BUILD files. The real target's crate_name is also `fuchsia_inspect`,
+# so it is aliased to `real_inspect` here to avoid a crate-name collision.
+rust_library(
+    name = "fuchsia_inspect",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_inspect",
+    edition = "2024",
+    aliases = {
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect": "real_inspect",
+    },
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+    ],
+)

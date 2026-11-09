@@ -1,0 +1,84 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "fidl_banjo_c", "fidl_banjo_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# block.fidl is @available(added=HEAD) — needs the HEAD override, same recurring trap
+# as every other HEAD-gated FIDL library in this repo (fuchsia.component.internal,
+# fuchsia.hardware.pciroot, etc).
+fidl_library(
+    name = "fuchsia.hardware.block.driver",
+    srcs = ["block.fidl"],
+    available = "fuchsia:HEAD",
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_banjo_c(
+    name = "fuchsia.hardware.block.driver_banjo_c_gen",
+    library = ":fuchsia.hardware.block.driver",
+)
+
+# Copy to the canonical include path: <fuchsia/hardware/block/driver/c/banjo.h>
+genrule(
+    name = "block_driver_banjo_hdr",
+    srcs = [":fuchsia.hardware.block.driver_banjo_c_gen"],
+    outs = ["fuchsia/hardware/block/driver/c/banjo.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.block.driver_banjo_c",
+    hdrs = [":block_driver_banjo_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.driver",
+)
+
+# C++ banjo (ddktl protocol/client classes) — src/devices/block/lib/common's common.h
+# (AHCI/sata.cc dep) includes <fuchsia/hardware/block/driver/cpp/banjo.h> directly.
+fidl_banjo_cpp(
+    name = "fuchsia.hardware.block.driver_banjo_cpp_gen",
+    library = ":fuchsia.hardware.block.driver",
+    backend = "cpp",
+)
+
+fidl_banjo_cpp(
+    name = "fuchsia.hardware.block.driver_banjo_cpp_internal_gen",
+    library = ":fuchsia.hardware.block.driver",
+    backend = "cpp_internal",
+)
+
+genrule(
+    name = "block_driver_banjo_cpp_hdr",
+    srcs = [":fuchsia.hardware.block.driver_banjo_cpp_gen"],
+    outs = ["fuchsia/hardware/block/driver/cpp/banjo.h"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "block_driver_banjo_cpp_internal_hdr",
+    srcs = [":fuchsia.hardware.block.driver_banjo_cpp_internal_gen"],
+    outs = ["fuchsia/hardware/block/driver/cpp/banjo-internal.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.block.driver_banjo_cpp",
+    hdrs = [
+        ":block_driver_banjo_cpp_hdr",
+        ":block_driver_banjo_cpp_internal_hdr",
+    ],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.driver",
+    deps = [
+        ":fuchsia.hardware.block.driver_banjo_c",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+    ],
+)
+
+# Compile probe: ensure the generated C++ banjo header actually compiles.
+cc_library(
+    name = "banjo_cpp_probe",
+    srcs = ["banjo_cpp_probe.cc"],
+    tags = ["manual"],
+    deps = [":fuchsia.hardware.block.driver_banjo_cpp"],
+)

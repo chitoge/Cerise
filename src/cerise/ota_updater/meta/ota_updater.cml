@@ -1,0 +1,26 @@
+// ota_updater — the in-OS A/B image stager. It success-commits the running slot and
+// serves cerise.update.Stager: download/authentication is separate from the quiesced
+// inactive-slot write. It deliberately has no reboot/shutdown capability.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/ota_updater",
+    },
+    use: [
+        // Readiness gate + NIC discovery (/dev/class/network) + block enumeration.
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        // Raw block access to the ESP/GPT disk (the ahci_probe model).
+        { service: "fuchsia.hardware.block.volume.Service" },
+        // Network stack for the HTTP fetch (NIC install + DHCP + TCP).
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+    ],
+    capabilities: [
+        { protocol: "cerise.update.Stager" },
+    ],
+    expose: [
+        { protocol: "cerise.update.Stager", from: "self" },
+    ],
+}

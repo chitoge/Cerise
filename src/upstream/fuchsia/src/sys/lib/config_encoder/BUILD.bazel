@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "config_encoder",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "config_encoder",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/src/lib/dynfidl/rust:dynfidl",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "@crates//:flyweights",
+        "@crates//:thiserror",
+    ],
+)

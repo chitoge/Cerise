@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Real bssl-crypto: safe Rust wrapper over bssl-sys's raw FFI bindings.
+# Replaces the previously-undisclosed compatibility stub (src/cerise/stubs/bssl-crypto).
+# `default = []` features per upstream Cargo.toml — fuchsia-merkle only needs
+# digest::Sha256, so the "mlalgs" (post-quantum) feature is left disabled.
+rust_library(
+    name = "bssl-crypto",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "bssl_crypto",
+    edition = "2021",
+    rustc_flags = [
+        "-Adead_code",
+        "-Aelided_lifetimes_in_paths",
+        "-Aunused_extern_crates",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/third_party/boringssl/src/rust/bssl-sys:bssl-sys",
+    ],
+)

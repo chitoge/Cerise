@@ -1,0 +1,39 @@
+# Networking gate: netstack3_probe — discovers the real network device via devfs,
+# hands it to real netstack3's Installer, configures a static-IP interface, and
+# proves a real HTTP echo over a real fuchsia.posix.socket TCP listener.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "netstack3_probe",
+    srcs = ["src/main.rs"],
+    crate_name = "netstack3_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap",
+        "//src/cerise/lib/network_bootstrap:cerise_network_bootstrap_fuchsia",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "@crates//:anyhow",
+        # Structured ops logging via LogSink (init'd by #[fuchsia::main]); markers stay
+        # on serial via zx_debug_write.
+        "@crates//:log",
+        # Real fdio (not the link-time libfdio.so stub) — needed for std::net's
+        # socket()/bind()/listen()/accept() emulation over fuchsia.posix.socket.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "netstack3_probe_stripped.fuchsia",
+    src = ":netstack3_probe",
+)

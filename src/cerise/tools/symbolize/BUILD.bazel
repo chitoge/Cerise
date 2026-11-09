@@ -1,0 +1,69 @@
+# symbolize — host tool that resolves Fuchsia symbolizer-markup frames in a
+# boot serial log against the product's .build-id store, via llvm-symbolizer.
+# See src/lib.rs. std-only, like the other
+# stdlib host tools (assembly/tools/bootfs_diff.py).
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "symbolize_lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "symbolize",
+    edition = "2021",
+)
+
+# Standalone host CLI: `bazel run //src/cerise/tools/symbolize -- <log>`.
+rust_binary(
+    name = "symbolize",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = [":symbolize_lib"],
+)
+
+# Hermetic parser unit tests, including malformed-markup cases (no subprocess).
+rust_test(
+    name = "parser_test",
+    crate = ":symbolize_lib",
+    edition = "2021",
+    size = "small",
+)
+
+# Structural golden: parse the frozen boot fixture (real markup, whose build-ids
+# predate any live build — so this checks parsing/extraction, not resolution).
+rust_test(
+    name = "golden_parse_test",
+    srcs = ["tests/golden_parse.rs"],
+    edition = "2021",
+    size = "small",
+    data = ["//validation:fixtures/new-boot-smoke.log"],
+    env = {
+        "FIXTURE": "$(rootpath //validation:fixtures/new-boot-smoke.log)",
+    },
+    deps = [":symbolize_lib"],
+)
+
+# Live end-to-end: build a .build-id store from the unstripped kernel ELF and
+# symbolize a real frame through llvm-symbolizer. Proves the whole pipeline
+# resolves real kernel symbols. Heavier (builds vmzircon + llvm tools).
+rust_test(
+    name = "live_symbolize_test",
+    srcs = ["tests/live_symbolize.rs"],
+    edition = "2021",
+    size = "small",
+    # Use the PREBUILT llvm binaries (not the from-source //toolchain:llvm_*
+    # aliases): these are host tools the test shells out to, and building the
+    # symbolizer from @llvm-project source would be a huge, needless cost. This
+    # mirrors fuchsia_stripped's use of llvm-objcopy.prebuilt.
+    data = [
+        "//build/kernel:vmzircon",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-nm",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer",
+    ],
+    env = {
+        "KERNEL_ELF": "$(rootpath //build/kernel:vmzircon)",
+        "LLVM_NM": "$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-nm)",
+        "LLVM_SYMBOLIZER": "$(rootpath @zr_llvm_toolchain_minimal_linux_amd64//:bin/llvm-symbolizer)",
+    },
+    deps = [":symbolize_lib"],
+)

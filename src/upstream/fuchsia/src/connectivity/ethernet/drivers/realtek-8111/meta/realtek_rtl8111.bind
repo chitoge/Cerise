@@ -1,0 +1,42 @@
+// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// Cerise variant of the upstream realtek_rtl8111 composite bind (upstream @ 0f3c21bc:
+// src/connectivity/ethernet/drivers/realtek-8111/meta/realtek_rtl8111.bind).
+//
+// WHY COMPOSITE (not direct/normal): identical rationale to e1000.bind in this tree —
+// bus-pci publishes EVERY PCI device as a COMPOSITE node spec (composite.cc), and
+// driver-index short-circuits on composite specs, so a normal driver targeting the
+// isolate child can never bind. The canonical path is a composite driver matching the
+// spec's pci parent (which carries the fuchsia.hardware.pci.Service property) plus the
+// acpi parent (BIND_PROTOCOL == acpi.DEVICE, ACPI_BUS_TYPE == PCI).
+//
+// DIVERGENCE FROM UPSTREAM:
+//   * Upstream additionally constrains `fuchsia.BIND_PCI_INTERFACE == 1` on the pci
+//     parent. bus-pci's composite spec DOES publish PCI_INTERFACE (composite.cc
+//     kPciProperties: info.program_interface), so that constraint is evaluable here.
+//     We DROP it (as e1000.bind does) to maximize bind probability on the untested
+//     Apollo Lake NUC (RTL8111HN, 10ec:8168) — VID+DID already uniquely identify the
+//     NIC function. If the NUC's device reports program-interface 1, re-adding the
+//     constraint would still match; dropping it is strictly more permissive.
+//   * Upstream marks the acpi parent `optional`. e1000 (the proven in-tree sibling)
+//     requires the acpi parent and additionally checks ACPI_BUS_TYPE == PCI; we mirror
+//     e1000 so the composite matches the spec bus-pci actually publishes for an
+//     acpi=1 device.
+composite realtek_rtl8111;
+
+using fuchsia.acpi;
+using fuchsia.pci;
+using fuchsia.hardware.pci;
+
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.REALTEK;
+  fuchsia.BIND_PCI_DID == fuchsia.pci.BIND_PCI_DID.RTL8111;
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.PCI;
+}

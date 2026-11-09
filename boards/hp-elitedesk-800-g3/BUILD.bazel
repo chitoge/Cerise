@@ -1,0 +1,218 @@
+"""Board: hp-elitedesk-800-g3 — HP EliteDesk 800 G3 SFF (Skylake-S, Q270/vPro AMT).
+
+Replaces //boards/cf-sz5 as the physical test machine (that unit was retired
+2026-08-04). Identical hardware posture to //boards/hw-x64 (generic UEFI +
+ACPI x86-64: GOP framebuffer, AHCI + NVMe, ACPI/PCI enumeration) — it shares
+that board's driver list, bootfs staging map and feature tokens verbatim, the
+same way //boards/cf-sz5 did. The ONE thing this board exists to change is the
+serial console, and that difference is load-bearing for the same reason it was
+on the CF-SZ5: this machine also has no COM1, so `kernel.serial=legacy` would
+boot it stone silent.
+
+PROVENANCE DISCIPLINE — read this before trusting any claim below. The CF-SZ5
+board doc records a long, hard-won debugging history on THAT unit. This is a
+DIFFERENT machine (different chipset generation, different firmware, different
+NIC silicon revision). Nothing measured on the CF-SZ5 is assumed to hold here
+just because the architecture rhymes. Every claim below is labelled:
+
+  MEASURED — read directly off this unit, booted bare-metal into Alpine at L0,
+    2026-08-04 from a complete hardware inventory capture.
+  INHERITED, UNPROVEN — the CF-SZ5 hit this failure mode / needed this fix, and
+    the same hardware shape is present here, but it has NOT been re-measured on
+    this unit. Treat as a hypothesis the first real boot must check, not fact.
+  UNKNOWN — not measured, not obviously inferable from the CF-SZ5 experience
+    either.
+
+== MEASURED on this unit ==
+
+  Identity: HP EliteDesk 800 G3 SFF, board id 8299, Q270 chipset (Intel
+  200-series PCH), Intel Core i5-6500 (Skylake-S, 4 cores / no HT, 3.2 GHz),
+  12 GiB RAM (4 GiB + 8 GiB DDR4-2133).
+
+  Serial console: Intel AMT Serial-over-LAN, PCI function 00:16.3
+  [8086:a2bd], "200 Series/Z370 Chipset Family Keyboard and Text (KT)
+  Redirection", class 0x070002 (a genuine 16550A, PIO not MMIO — same shape as
+  the CF-SZ5's SOL function, different address). BAR0 is I/O 0x4088-0x408f;
+  Linux enumerates it as `ttyS0 at I/O 0x4088 (irq = 19, base_baud = 115200)
+  is a 16550A`. The matching cmdline is `ioport,<base>,<irq>`:
+    * "ioport" is uart::ns8250::PioDriver's kConfigName (ns8250.h) — the
+      config name for ZBI_KERNEL_DRIVER_I8250_PIO_UART.
+    * the payload is zbi_dcfg_simple_pio_t, and its ParseConfig
+      (//zircon/system/ulib/uart/parse.cc) reads exactly two integers in the
+      order (base, irq); both accept 0x hex. This grammar and the ParseConfig
+      behavior are generic kernel code, not CF-SZ5-specific, so they apply
+      here unchanged.
+
+  NIC: Intel I219-LM [8086:15e3] ("I219-LM5" per e1000.bind's device table
+  comment) at 00:1f.6, Linux driver e1000e, MAC 3c:52:82:72:4a:fd. Already
+  bind-listed: 0x15e3 appears in
+  //src/cerise/drivers/e1000/meta/e1000.bind:41 and in e1000.cc's header
+  comment, so no bind-list change was needed for this board (verified by
+  reading those files, not assumed).
+
+  Storage: AHCI at 00:17.0 with two SATA SSDs (/dev/sda INTEL 238.5G,
+  /dev/sdb Apacer 111.8G) and NVMe at 01:00.0 (/dev/nvme0n1, PCI id
+  1d97:1160 "Shenzhen Longsys... FORESEE P900", NVMe-identifies itself as
+  "Lexar 256GB SSD" — a rebadged controller, not a discrepancy worth chasing).
+  All three currently carry VMware VMFS partitions from a former life as an
+  ESXi host; nothing on any disk needs preserving, and consuming the whole
+  disk is authorised.
+
+  iGPU: Skylake GT2 HD Graphics 530 at 00:02.0 — same GOP framebuffer path as
+  hw-x64 and the CF-SZ5.
+
+  USB: xHCI at 00:14.0.
+
+  IRQ FIELD IS 0, NOT 19 — this reasoning is architecture-level, not
+  CF-SZ5-specific, and was already generalized in-tree before this board was
+  written: //zircon/kernel/arch/x86/ioapic.cc now passes GSIs >= 16 through
+  instead of ASSERTing `isa_irq < NUM_ISA_IRQS`, so the historical CF-SZ5
+  landmine (booting `ioport,<base>,19` outright panicking on that assert) is
+  already closed generically. irq=0 is still the right choice regardless: it
+  selects the kernel's SUPPORTED polling mode (platform/debug.cc's
+  UartDriverHandoffLate treats a zero/absent IRQ as "no interrupt" and starts
+  gUartPollTimer). uart::ns8250 transmits by polling the line-status
+  register's tx_register_empty bit unconditionally (TxReady/Write), so
+  console TX never depended on the interrupt in the first place; RX is
+  drained by the poll timer. Moving to interrupt-driven RX would need GSI 19
+  programmed into the IOAPIC with PCI trigger/polarity (level/low), which
+  cannot be rehearsed under QEMU (ISA bus rejects irqnum >= 16 outright) and
+  so would have to be proven on the real unit first — nobody has asked for
+  that yet.
+
+== INHERITED, UNPROVEN on this hardware ==
+
+  * FIRMWARE HANDS THE OS 00:16.3 WITH I/O DECODE TURNED OFF. This was the
+    CF-SZ5's actual root cause (COMMAND=0x0000 while BAR0 was programmed, so
+    the port read back all-ones and every byte vanished into an unclaimed
+    port). //zircon/kernel/phys/uart-console.cc's EnableIoDecodeForPort fix
+    for this is BOARD-GENERIC — it scans for whichever type-0 PCI function
+    owns the configured I/O BAR and turns its decode on, keyed off the port
+    number, not off a device ID or a hardcoded address — so it should cover
+    0x4088 unchanged with no code change required. Confirmed by reading the
+    fix (it is genuinely general). But whether THIS unit's firmware exhibits
+    the same decode-off condition at all has not been measured — the Alpine
+    inventory capture ran Linux, whose PCI core enables device decode as an
+    ordinary part of enumeration, so ttyS0 working under Linux does not tell
+    us what Cerise's phys boot environment (which runs its own PCI probing
+    before any generic OS PCI core touches the device) will see. This can
+    only be checked by watching for uart-console.cc's fix path firing (or not
+    being needed) on the first real boot.
+
+  * AMT / e1000 COEXISTENCE. The CF-SZ5's e1000 driver history (see that
+    board's docstring) found and fixed a real ordering bug in
+    src/cerise/drivers/e1000/e1000.cc: e1000_init_hw_ich8lan zeroes RAR[1..11]
+    and reprograms RAR[0], and reading the MAC AFTER that call (instead of
+    before) let a since-fixed version of the driver invalidate the receive
+    filter AMT's own traffic matches, taking AMT off the network entirely.
+    That fix (read the MAC before InitHw, snapshot RAR[0], set/clear
+    CTRL_EXT.DRV_LOAD around Stop/start) is GENERIC DRIVER CODE — it is not
+    gated on board or device ID — so it applies to this NIC too without any
+    change here. What is NOT re-proven: the CF-SZ5's six-boot AMT-health
+    validation was against mac_type e1000_pch_spt (Sunrise Point / 100-series
+    PCH, device id 0x156f). This board's I219-LM is device id 0x15e3 on a
+    Q270 (200-series, "Union Point") PCH, which e1000_set_mac_type maps to a
+    DIFFERENT mac_type (almost certainly e1000_pch_cnp, per
+    e1000.cc:127-128's IsPchSptFamily / IsPchManageabilityFamily split — cnp
+    is handled by the same code path, but has not been exercised against real
+    ME firmware here). Whether AMT stays healthy through a Cerise boot on
+    THIS silicon revision — ICMP reachable, :16992 web UI answering, SOL
+    surviving the driver bind — is unmeasured and must be checked on first
+    boot exactly as the CF-SZ5 was: verify AMT healthy before and after.
+
+  * WHETHER FIRMWARE REDIRECTS POST/UEFI OUTPUT TO SOL. On the CF-SZ5 it does
+    not — the pre-kernel shim's CERISE-SHIM-GOP-FB prints on the UEFI console
+    only, and the first thing expected on SOL is the kernel's own
+    "physload: Console configured as..." line. HP's firmware may behave
+    differently (some HP business desktops do offer a "Redirection after BIOS
+    POST" AMT option); not checked here. Its absence on first boot is not
+    evidence of failure unless corroborated by the shim/kernel markers also
+    being missing.
+
+== UNKNOWN ==
+
+  * Whether this Q270 board's GOP implementation has any quirks relative to
+    the CF-SZ5's / hw-x64's (untested; assumed fine, standard OEM desktop
+    firmware).
+  * Whether the DRAM-less FORESEE/Lexar NVMe controller has any quirks under
+    Cerise's nvme driver (untested).
+  * Actual boot time / fallback-OS-return timing on this unit, i.e. this
+    board's analogue of the CF-SZ5's "55s reboot baseline" discriminator for
+    telling a hung boot from a running one. Not yet measured — establish it
+    on first boot before relying on "does it come back" as a signal.
+
+Because AMT SOL is a real UART the kernel drives directly (not a firmware
+redirection service), the port should stay open for the whole boot — including
+after ExitBootServices, where UEFI-console output would stop. That is a
+property of the design, inherited from the CF-SZ5 case, not yet independently
+re-confirmed on this unit.
+"""
+
+load("//assembly:defs.bzl", "cerise_board")
+load(
+    "//boards/hw-x64:drivers.bzl",
+    "HW_X64_BOOTFS",
+    "HW_X64_BOOT_DRIVERS",
+    "HW_X64_PROVIDED_FEATURES",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+cerise_board(
+    name = "hp-elitedesk-800-g3",
+    platform = "//platforms:x64-fuchsia",
+    # The hw-x64 boot-driver list, e1000 included -- this board's AMT Serial-
+    # over-LAN and the e1000-driven NIC are the same PHY (I219-LM), so whatever
+    # the NIC driver does to this device also affects the only remote console.
+    # See the docstring's "AMT / e1000 COEXISTENCE" section: the ordering fix
+    # that keeps AMT alive is generic driver code and already applies here,
+    # but has not yet been independently measured on this silicon revision
+    # (device id 0x15e3, presumed mac_type e1000_pch_cnp) the way it was on
+    # the CF-SZ5's 0x156f/e1000_pch_spt part.
+    boot_drivers = HW_X64_BOOT_DRIVERS,
+    provided_features = HW_X64_PROVIDED_FEATURES,
+    # AMT Serial-over-LAN 16550A at PIO 0x4088 (measured on the unit; Linux:
+    # `ttyS0 at I/O 0x4088 (irq = 19, ...) is a 16550A`). IRQ field is 0 = the
+    # kernel's polling mode; the real GSI is 19. See the docstring.
+    #
+    # WALLCLOCK: override the shared base default (kernel.wallclock=pit, in
+    # build/kernel/BUILD.bazel `kernel_storage_zbi`) with `=auto` — a later
+    # CMDLINE item wins. `=auto` (not `=tsc`) is deliberate: autodetect picks
+    # invariant TSC on this unit's metal (the clock we need), and degrades to
+    # HPET under this board's own QEMU gate, whose TCG CPU model offers no
+    # invariant TSC. Forcing `=tsc` instead would panic that gate ("Could not
+    # satisfy kernel.wallclock choice"). We override rather than dropping the
+    # base pin, because the pin is load-bearing for every OTHER x86 product;
+    # only THIS unit needs a different clock.
+    #
+    # Why PIT is wrong here, measured 2026-08-04: with 4 CPUs on the PIT
+    # wallclock the per-CPU heartbeats gap to the 3000 ms lockup threshold
+    # (2996-3012 ms against a 1000 ms period; the "heartbeats" that do land are
+    # the lockup detector's own diagnostic IPIs waking the stalled cores), idle
+    # APs sit in MWAIT C1 for 0.6-2 s at a stretch, and boot never produces
+    # userspace. On the autodetected TSC the same image's gaps drop to
+    # 505-1075 ms and every timer behaves. WHY PIT starves AP timers on this
+    # firmware is still open; TSC is simply the correct clock for an
+    # invariant-TSC part regardless.
+    #
+    # kernel.x86.disable_x2apic: with x2APIC mode enabled (the default on this
+    # CPUID), even a timer-healthy 4-CPU boot stalls before userspace produces
+    # output; in xAPIC mode the identical image reaches the fileserver's :50051
+    # in ~70 s from reset. Mechanism not yet root-caused (suspicion: HP's DMAR
+    # x2APIC-opt-out, which Zircon does not consult); revisit before any
+    # feature that needs x2APIC (>254 APIC IDs, IR) — this box needs neither.
+    # Both measured on the unit 2026-08-04, each knob isolated first, then the
+    # pair confirmed end to end.
+    #
+    # TEMPORARY, but safe to pin: the real fix is teaching apic_local_init to
+    # consult the DMAR x2APIC-opt-out flag instead of forcing xAPIC per-board.
+    # Until then this pin is not a hazard — lapic.cc's demotion path is
+    # SDM-correct (passes x2APIC->disabled->xAPIC rather than clearing EXTD in
+    # place), so a board arriving in x2APIC mode is demoted cleanly, not wedged.
+    kernel_cmdline = [
+        "kernel.serial=ioport,0x4088,0",
+        "kernel.wallclock=auto",
+        "kernel.x86.disable_x2apic=true",
+    ],
+    bootfs = HW_X64_BOOTFS,
+)

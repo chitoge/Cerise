@@ -1,0 +1,19 @@
+# Cerise BUILD (authored locally). stdformat (//src/lib/stdformat:stdformat):
+# header-only std::print/std::format polyfill used by src/devices/lib/log.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "stdformat",
+    hdrs = [
+        "print.h",
+        "internal/print.h",
+    ],
+    # log.h includes this as "src/lib/stdformat/print.h" (workspace-relative);
+    # the workspace-root -I is supplied by consumers' copts.
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

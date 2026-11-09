@@ -1,0 +1,117 @@
+# Cerise BUILD (authored locally) — the compat shim driver. This is the DFv2
+# driver that dlopens a LEGACY (DFv1 / ZIRCON_DRIVER) driver .so and bridges it to
+# the DFv2 node/framework, so legacy drivers (platform-bus-x86, bus-pci) can load.
+#
+# Upstream: source_set("lib") + fuchsia_cc_driver("driver", output_name="compat",
+# version-script compat.ld). Packaged here as a self-contained DFv2 driver .so per
+# the //src/cerise/minimal_driver recipe: a cc_binary(-shared) whose DIRECT
+# alwayslink deps whole-archive the FIDL/framework out-of-line symbols (cc_binary
+# -shared honors DIRECT, not transitive, alwayslink), leaving UND only libc/libc++/
+# vDSO + the stateful fdf_* C runtime (host-resolved at load).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["compat.ld"])
+
+# The full upstream :lib closure. Listed once and reused for both the impl
+# cc_library and the .so cc_binary (so alwayslink is honored on DIRECT deps).
+COMPAT_DEPS = [
+    # compat library + DFv1 symbol table
+    "//src/upstream/fuchsia/sdk/lib/driver/compat/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/driver/compat/cpp:symbols",
+    # DFv2 framework + logging + driver runtime
+    "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+    "//src/upstream/fuchsia/sdk/lib/driver/devfs/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/driver/promise/cpp:cpp",
+    # devfs message server + driver-symbol checker + real syslog log
+    "//src/upstream/fuchsia/src/devices/lib/fidl:devfs_fidl",
+    "//src/upstream/fuchsia/src/devices/lib/log:log",
+    "//src/upstream/fuchsia/src/lib/driver_symbols:driver_symbols",
+    # FIDL C++ bindings (wire/natural + driver transport)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.system.state:fuchsia.system.state_cpp",
+    # bind-library C++
+    "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/upstream/fuchsia/src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    # async + component runtime
+    "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+    "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/inspect/component/cpp:cpp",
+    "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    # DFv1 ddk + driver runtime glue + zircon ulibs
+    "//src/upstream/fuchsia/src/devices/lib/driver:driver",
+    "//src/upstream/fuchsia/src/lib/ddk:ddk",
+    "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+    # ddk::IntoDeviceFIDLTransaction / FromDeviceFIDLTransaction (compiled ddktl
+    # source; declared in ddktl/fidl.h, used by the devfs FIDL bridge).
+    "//src/upstream/fuchsia/src/lib/ddktl:fidl",
+    "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+]
+
+cc_library(
+    name = "lib",
+    srcs = [
+        "api.cc",
+        "compat_driver_server.cc",
+        "device.cc",
+        "driver.cc",
+        "simple_binding.cc",
+    ],
+    hdrs = [
+        "compat_driver_server.h",
+        "composite_node_spec_util.h",
+        "device.h",
+        "driver.h",
+        "simple_binding.h",
+    ],
+    copts = [
+        # Workspace-root -I (for "src/devices/lib/..."/"src/lib/..." includes) and
+        # the package dir (for bare "driver.h"/"device.h" includes).
+        "-Isrc/upstream/fuchsia",
+        "-Isrc/upstream/fuchsia/src/devices/misc/drivers/compat",
+        # Compile at HEAD so the FIDL/framework availability gating matches the
+        # bindings compiled at HEAD (see API-level HEAD gating memory).
+        "-ffuchsia-api-level=4292870144",
+    ],
+    # source_set semantics: the driver's own objects (api.cc's DFv1 compat-shim ABI
+    # exports — device_add_from_driver, get_*_resource, driver_logf_internal, ... —
+    # which nothing references internally) must all be whole-archived into the .so so
+    # the version script can export them for the dlopen-ed legacy driver to resolve.
+    alwayslink = True,
+    tags = ["manual"],
+    deps = COMPAT_DEPS,
+)
+
+# Self-contained DFv2 driver .so -> compat.so (output_name "compat" upstream).
+cc_binary(
+    name = "compat.so",
+    additional_linker_inputs = ["compat.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,compat.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # Root __fuchsia_driver_registration__ against --gc-sections; export surface
+        # is governed by the faithful upstream version script (which lists it +
+        # the compat-shim ABI symbols the dlopen-ed legacy driver resolves against).
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location compat.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [":lib"] + COMPAT_DEPS + [
+        # 128-bit arithmetic / builtins excluded by -nodefaultlibs.
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

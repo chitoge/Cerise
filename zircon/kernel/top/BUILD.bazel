@@ -1,0 +1,44 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "top",
+    srcs = [
+        "debug.cc",
+        "handoff.cc",
+        "init.cc",
+        "main.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//zircon/kernel/dev/hw_rng:hw_rng",
+        "//zircon/kernel/lib/thread-stack:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "init_source",
+    srcs = ["init.cc"],
+)
+
+filegroup(
+    name = "main_source",
+    srcs = ["main.cc"],
+)
+
+filegroup(
+    name = "debug_source",
+    srcs = ["debug.cc"],
+)
+
+filegroup(
+    name = "handoff_source",
+    srcs = ["handoff.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

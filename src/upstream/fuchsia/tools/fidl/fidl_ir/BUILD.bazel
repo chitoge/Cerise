@@ -1,0 +1,16 @@
+# Cerise BUILD for tools/fidl/fidl_ir (FIDL JSON IR parser crate), authored locally.
+# Used by bindc's generate-bind command (FIDL IR -> bind library).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_ir",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fidl_ir",
+    edition = "2024",
+    deps = [
+        "@crates//:bitflags",
+        "@crates//:serde",
+    ],
+)

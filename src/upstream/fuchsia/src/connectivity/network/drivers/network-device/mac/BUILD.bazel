@@ -1,0 +1,42 @@
+# Authored locally for Cerise — network-device/mac: driver-mode variant only.
+#
+# Upstream's driver_source_split("mac") (mac/BUILD.gn) emits two source_sets: "mac"
+# (non-driver, syslog-based logging + log/log.h) and "mac_driver" (NETDEV_DRIVER
+# define, FDF logging). Only the DRIVER variant is needed here (network-device is a
+# DFv2-native driver); the non-driver "mac" variant (test_util, network_mac-test.cc,
+# log/) is NOT vendored — those are test-only per driver_source_split.gni.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "mac_driver",
+    srcs = [
+        "mac_interface.cc",
+    ],
+    hdrs = [
+        "log.h",
+        "mac_interface.h",
+        "public/network_mac.h",
+    ],
+    copts = [
+        # NETDEV_DRIVER selects the FDF_LOG branch in log.h (matches driver_source_split
+        # template: defines = ["_ALL_SOURCE", "NETDEV_DRIVER"] for the "_driver" variant).
+        "-DNETDEV_DRIVER",
+        "-D_ALL_SOURCE",
+        # network_mac.h and mac_interface.h use root-relative FIDL includes fine via
+        # normal deps, but device_port.h (network-device/device) includes this
+        # directory's public header via a full repo-root-relative path.
+        "-Isrc/upstream/fuchsia",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+    ],
+)

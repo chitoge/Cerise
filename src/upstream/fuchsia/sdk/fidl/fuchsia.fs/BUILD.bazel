@@ -1,0 +1,45 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(
+    name = "fuchsia.fs",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+fidl_cpp(
+    name = "fuchsia.fs_cpp",
+    library = ":fuchsia.fs",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# fxfs/platform's src/fuchsia/volumes_directory.rs needs
+# fuchsia.fs_rust (Admin/Query protocols).
+fidl_rust(
+    name = "fuchsia.fs_rs",
+    library = ":fuchsia.fs",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_fs",
+    srcs = [":fuchsia.fs_rs"],
+    crate_name = "fidl_fuchsia_fs",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

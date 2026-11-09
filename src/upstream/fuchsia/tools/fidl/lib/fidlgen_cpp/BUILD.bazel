@@ -1,0 +1,11 @@
+# Bazel integration for this imported target. fidlgen_cpp Go lib:
+# C++-specific FIDL codegen model (namespaces, types, naming).
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "fidlgen_cpp",
+    srcs = glob(["*.go"], exclude = ["*_test.go"], allow_empty = True),
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen_cpp",
+    visibility = ["//visibility:public"],
+    deps = ["//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen"],
+)

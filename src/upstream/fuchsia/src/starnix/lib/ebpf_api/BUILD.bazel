@@ -1,0 +1,38 @@
+# Authored locally for Cerise. ebpf_api: real Starnix eBPF
+# helper/map API, a real netstack3 dependency. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "ebpf_api",
+    srcs = [
+        "src/helpers.rs",
+        "src/lib.rs",
+        "src/maps/array.rs",
+        "src/maps/buffer.rs",
+        "src/maps/hashmap.rs",
+        "src/maps/lock.rs",
+        "src/maps/lpm_trie.rs",
+        "src/maps/mod.rs",
+        "src/maps/ring_buffer.rs",
+        "src/maps/vmar.rs",
+        "src/program_type.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ebpf:fidl_fuchsia_ebpf",
+        "//src/upstream/fuchsia/sdk/rust/zx",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/contrib/stubs:inspect_stubs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime",
+        "//src/upstream/fuchsia/src/starnix/lib/ebpf",
+        "//src/upstream/fuchsia/src/starnix/lib/linux_uapi",
+        "@crates//:rand",
+        "@crates//:siphasher",
+        "@crates//:smallvec",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)

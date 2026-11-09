@@ -1,0 +1,43 @@
+# Authored locally for Cerise. fuchsia.update.verify: real
+# netstack3 dependency (health-check verification protocol).
+# @available(added=HEAD) (this project's #1 recurring porting trap;
+# `available = "fuchsia:HEAD"` matches the established fix pattern). Rust
+# binding only — netstack3-bindings only needs the `_rust` variant.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.update.verify",
+    srcs = ["verify.fidl"],
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.update.verify_rs",
+    library = ":fuchsia.update.verify",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_update_verify",
+    srcs = [":fuchsia.update.verify_rs"],
+    crate_name = "fidl_fuchsia_update_verify",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

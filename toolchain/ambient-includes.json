@@ -1,0 +1,37 @@
+{
+  "stdlib_resolution_closure": [
+    {
+      "path": "zircon/system/public",
+      "why": "zircon/include/zircon/*.h — fundamental types (zx_status_t, zx_handle_t) included by libc and ktl headers"
+    },
+    {
+      "path": "zircon/kernel/include",
+      "why": "kernel/include/kernel/*.h — kernel ABI types (Thread, Cpu) included by lib/arch and lib/ktl base headers"
+    },
+    {
+      "path": "zircon/kernel/arch/x86/include",
+      "why": "arch/x86/include/arch/*.h — x86 hardware definitions (cr3, msr) included by lib/arch/x86 and lib/arch base"
+    },
+    {
+      "path": "zircon/kernel/lib/arch/x86/include",
+      "why": "lib/arch/x86/include/lib/arch/*.h — x86 arch abstraction layer (SmbiosStructurePointer, cpuid) included by lib/arch base"
+    },
+    {
+      "path": "zircon/kernel/lib/arch/include",
+      "why": "lib/arch/include/lib/arch/*.h — arch abstraction (InstructionDataBytes, code-patching primitives) included by ktl and kernel base"
+    },
+    {
+      "path": "zircon/kernel/lib/heap/include",
+      "why": "lib/heap/include/lib/heap.h — allocator interface called by ktl operator new/delete"
+    },
+    {
+      "path": "zircon/kernel/lib/ktl/include",
+      "why": "lib/ktl/include/ktl/*.h — kernel STL replacement (<ktl/array.h>, <ktl/move.h> etc.) used by virtually all kernel code"
+    },
+    {
+      "path": "zircon/kernel/lib/libc/include",
+      "why": "lib/libc/include/*.h — kernel-private C stdlib headers (<string.h>, <stdlib.h>, <stdio.h>) needed in all TUs"
+    }
+  ],
+  "note": "include-after dirs (ktl/include-after, libc/include-after) are in kernel_c_stdlib_after_flags and are implicitly part of this closure."
+}

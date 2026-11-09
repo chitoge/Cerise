@@ -1,0 +1,68 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+# display.bind -> display_bind.bindbc: COMPOSITE bind rules matching the stdvga composite
+# node spec published by bus-pci (pci parent + acpi parent). Same structure as e1000-bind,
+# retargeted to VID 0x1234 / DID 0x1111 (a distinct composite name "display").
+driver_bind_rules(
+    name = "display-bind",
+    rules = "meta/display.bind",
+    output_name = "display_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# Driver implementation compiled separately so cc_binary(-shared) links it alwayslink
+# (same split as e1000/pci_probe).
+cc_library(
+    name = "display_impl",
+    srcs = ["display.cc"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/cerise/fidl/cerise.display:cerise.display_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+    ],
+)
+
+# DFv2-native display driver .so — cc_binary(-shared), version-script exports ONLY
+# __fuchsia_driver_registration__ (DFv2 loader lesson). driver_host_dfv2 dlopens by soname
+# ("display.so"); soname must match program["binary"] basename in display.cm.
+cc_binary(
+    name = "display.so",
+    additional_linker_inputs = ["display.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,display.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location display.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":display_impl",
+        # cerise.display + fuchsia.hardware.pci FIDL wire/natural symbols, alwayslink so
+        # they're embedded (mirrors e1000's fuchsia.hardware.pci_cpp policy).
+        "//src/cerise/fidl/cerise.display:cerise.display_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        # Structured syslog backend (needed by FDF_LOG; same dep as e1000/pci_probe).
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

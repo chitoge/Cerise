@@ -1,0 +1,36 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    ["zx_panic_libc.cc"],
+    visibility = [
+        "//tools/fidl:__pkg__",
+        "//zircon/kernel/lib/acpi_lite:__pkg__",
+    ],
+)
+
+# Host-compatible __zx_panic implementation using libc fprintf/abort.
+# Add to cc_test or cc_binary deps when linking code that references __zx_panic.
+cc_library(
+    name = "zircon_assert_libc",
+    srcs = ["zx_panic_libc.cc"],
+    deps = ["//zircon/system/public:public"],
+)
+
+cc_library(
+    name = "zircon_assert",
+    hdrs = ["zircon/assert.h"],
+    includes = ["."],
+    deps = ["//zircon/system/public:public"],
+)
+
+# phys_zircon_assert: same header, no system/public dep.
+# Used as the FIRST dep in phys cc_libraries so that -I sdk/lib/zircon-assert
+# appears before -I zircon/system/public in the compile command, causing
+# <zircon/assert.h> to resolve to the version that declares __zx_panic.
+cc_library(
+    name = "phys_zircon_assert",
+    hdrs = ["zircon/assert.h"],
+    includes = ["."],
+)

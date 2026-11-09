@@ -1,0 +1,9 @@
+// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Platform bus is the ROOT driver; it is started by URL (start_root_driver),
+// not matched against device nodes. disable_autobind = true (--disable-autobind
+// passed to bindc) makes the compiled bytecode always false so driver-index
+// never autobinds it. The `false` statement satisfies bindc's E021 requirement.
+false;

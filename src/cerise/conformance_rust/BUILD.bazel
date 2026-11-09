@@ -1,0 +1,45 @@
+# Cerise conformance_rust: the Rust runtime-conformance probe. Part of
+# the //validation:runtime-conformance boot gate. Exercises std::thread + channels,
+# catch_unwind over a deliberate panic (proving the unwind machinery + no abort),
+# a panic backtrace, a multithreaded fuchsia_async SendExecutor concurrent-load
+# workload (num_threads=3), and std::time. Same link recipe as shutdown_trigger:
+# fdio statically linked, sysroot + -lc++ passed per-binary.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/conformance_rust.cml"])
+
+rust_binary(
+    name = "conformance_rust_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "conformance_rust",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ],
+)
+
+fuchsia_stripped(
+    name = "conformance_rust_stripped.fuchsia",
+    src = ":conformance_rust_bin",
+)
+
+cerise_component(
+    name = "conformance_rust",
+    manifest = "meta/conformance_rust.cml",
+    binary = ":conformance_rust_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)

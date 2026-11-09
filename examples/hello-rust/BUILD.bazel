@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+# Minimal Cerise userland Rust binary: prints a boot marker and exits.
+# Linked against cerise_rt which provides _start, panic handler, and allocator.
+rust_binary(
+    name = "hello-rust",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = ["//src/cerise/rt:cerise_rt"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+)

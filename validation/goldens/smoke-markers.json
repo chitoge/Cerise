@@ -1,0 +1,1 @@
+{"required_markers":["CERISE-SMOKE-OK"],"forbidden_markers":["panic","triple fault","fatal"],"timeout_seconds":60,"non_empty_serial":true}

@@ -1,0 +1,46 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("//build/fidl:fidl.bzl", "fidl_bind_library_cpp", "fidl_cpp", "fidl_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.goldfish.pipe",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # The whole library is @available(added=HEAD); compile at HEAD or the IR is
+    # empty (no service decls => empty bind library => missing SERVICE constants).
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.goldfish.pipe_cpp",
+    library = ":fuchsia.hardware.goldfish.pipe",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_bind_library_cpp(
+    name = "fuchsia.hardware.goldfish.pipe_bindlib_cpp_gen",
+    library = ":fuchsia.hardware.goldfish.pipe",
+)
+
+genrule(
+    name = "fuchsia.hardware.goldfish.pipe_bindlib_hdr",
+    srcs = [":fuchsia.hardware.goldfish.pipe_bindlib_cpp_gen"],
+    outs = ["bind/fuchsia/hardware/goldfish/pipe/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.goldfish.pipe_bindlib_cpp",
+    hdrs = [":fuchsia.hardware.goldfish.pipe_bindlib_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.goldfish.pipe",
+)

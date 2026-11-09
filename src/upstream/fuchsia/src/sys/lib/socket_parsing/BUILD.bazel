@@ -1,0 +1,25 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "socket_parsing",
+    srcs = ["src/lib.rs"],
+    crate_name = "socket_parsing",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ],
+)
+
+# tests excluded (host): NOT a zx blocker (the Cerise host-zx shim covers this
+# crate's zx::Socket + zx::Status surface). socket_parsing's *library* uses
+# `fuchsia_async::{ReadableHandle, ReadableState}` and calls `poll_readable`/
+# `need_readable` on `fuchsia_async::Socket` - the rwhandle readiness API,
+# which fuchsia-async gates on `#[cfg(target_os = "fuchsia")]` (its emulated
+# host backend does not implement the RWHandle trait). This is a fuchsia-async
+# host-portability gap, not fixable by a zx shim; belongs to a future
+# on-target (zircon-test) product.

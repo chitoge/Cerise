@@ -1,0 +1,52 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Keeps the FIDL endpoints created while configuring an interface alive for the
+# service that configured it. The crate is generic so it remains host-testable
+# and does not impose a particular FIDL or route implementation.
+rust_library(
+    name = "cerise_network_bootstrap",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_network_bootstrap",
+    edition = "2021",
+)
+
+rust_library(
+    name = "cerise_network_bootstrap_fuchsia",
+    srcs = ["src/fuchsia.rs"],
+    crate_name = "cerise_network_bootstrap_fuchsia",
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    aliases = {"//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head": "fidl_fuchsia_net_head"},
+    deps = [
+        ":cerise_network_bootstrap",
+        "//src/cerise/lib/dhcp:cerise_dhcp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fidl_fuchsia_device",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fidl_fuchsia_hardware_network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces.admin:fidl_fuchsia_net_interfaces_admin",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes:fidl_fuchsia_net_routes",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes.admin:fidl_fuchsia_net_routes_admin",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.resources:fidl_fuchsia_net_resources",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fidl_fuchsia_posix_socket",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket.packet:fidl_fuchsia_posix_socket_packet",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)
+
+rust_test(
+    name = "cerise_network_bootstrap_test",
+    crate = ":cerise_network_bootstrap",
+    edition = "2021",
+    target_compatible_with = ["@platforms//os:linux"],
+)

@@ -1,0 +1,89 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "kernel",
+    srcs = [
+        "brwlock.cc",
+        "cpu_distance_map.cc",
+        "cpu_search_set.cc",
+        "deadline.cc",
+        "debug.cc",
+        "dpc.cc",
+        "event.cc",
+        "idle_power_thread.cc",
+        "init.cc",
+        "lazy_owned_wait_queue.cc",
+        "mp.cc",
+        "mutex.cc",
+        "owned_wait_queue.cc",
+        "owned_wait_queue_pool.cc",
+        "percpu.cc",
+        "restricted.cc",
+        "restricted_state.cc",
+        "scheduler.cc",
+        "scheduler_pi.cc",
+        "scheduler_state.cc",
+        "semaphore.cc",
+        "task_runtime_stats.cc",
+        "thread.cc",
+        "timer.cc",
+        "wait.cc",
+    ],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "kernel_runtime_sources",
+    srcs = [
+        "brwlock.cc",
+        "cpu_distance_map.cc",
+        "cpu_search_set.cc",
+        "deadline.cc",
+        "debug.cc",
+        "dpc.cc",
+        "event.cc",
+        "idle_power_thread.cc",
+        "init.cc",
+        "lazy_owned_wait_queue.cc",
+        "mp.cc",
+        "mutex.cc",
+        "owned_wait_queue.cc",
+        "owned_wait_queue_pool.cc",
+        "percpu.cc",
+        "restricted.cc",
+        "restricted_state.cc",
+        "scheduler.cc",
+        "scheduler_pi.cc",
+        "scheduler_state.cc",
+        "semaphore.cc",
+        "task_runtime_stats.cc",
+        "thread.cc",
+        "timer.cc",
+        "wait.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+cc_library(
+    name = "kernel_tests",
+    testonly = True,
+    tags = ["manual"],
+    srcs = [
+        "mutex_tests.cc",
+        "semaphore_tests.cc",
+        "spinlock_tests.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        ":kernel",
+        "//zircon/kernel/lib/unittest:unittest",
+        "//:kernel_cc_headers",
+    ],
+)

@@ -1,0 +1,15 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "driver-unit-test",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.test.logger:fuchsia.driver.test.logger_cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        "//src/upstream/fuchsia/zircon/system/ulib/zxtest:zxtest",
+    ],
+)

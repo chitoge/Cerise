@@ -1,0 +1,47 @@
+load("//toolchain/rust:manifest.bzl", "rust_toolchain_manifest")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel", "x86_64-unknown-cerise.json"])
+
+# Flag-manifest for the cerise/user Rust toolchain.
+# Explicitly references the underlying rust_toolchain target so the manifest
+# can be built at any platform without toolchain resolution ambiguity.
+rust_toolchain_manifest(
+    name = "cerise_rust_x64_user_manifest",
+    toolchain = "@rust_linux_x86_64__x86_64-unknown-none__nightly_tools//:rust_toolchain",
+)
+
+# Cerise user platform Rust toolchain — x86_64 exec (remote workers).
+# Uses x86_64-unknown-none rust_toolchain implementation (no_std, abort-panic).
+# replaces with x86_64-unknown-cerise custom spec (pic relocation).
+toolchain(
+    name = "cerise_rust_x64_user",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+    toolchain = "@rust_linux_x86_64__x86_64-unknown-none__nightly_tools//:rust_toolchain",
+    toolchain_type = "@rules_rust//rust:toolchain",
+)
+
+# Cerise user platform Rust toolchain — aarch64 exec (local build host).
+toolchain(
+    name = "cerise_rust_x64_user_aarch64_exec",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "//platforms/os:cerise",
+        "//platforms/env:user",
+    ],
+    toolchain = "@rust_linux_aarch64__x86_64-unknown-none__nightly_tools//:rust_toolchain",
+    toolchain_type = "@rules_rust//rust:toolchain",
+)

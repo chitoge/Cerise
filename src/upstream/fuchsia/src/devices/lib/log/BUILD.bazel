@@ -1,0 +1,50 @@
+# Cerise BUILD (authored locally). src/devices/lib/log.
+#
+# Upstream (//src/devices/lib/log:log) is a single source_set consumed by BOTH the
+# driver_runtime (//src/devices/bin/*) and the compat shim (//src/devices/misc/drivers/compat:lib).
+# Cerise's P4b build replaced it with a header-only no-op stub (the ":headers" target)
+# so driver_runtime could compile before the syslog stack was vendored. The compat shim,
+# however, calls driver_logger::GetLogger().{GetSeverity,VLogWrite}() directly, which the
+# stub does not declare -> the real log is now vendored.
+#
+#   :log     — the real source_set (log.cc + log.h, full syslog deps); used by compat.
+#   :headers — header-only view of the real log.h (no log.cc) for driver_runtime, whose
+#              LOGF/VLOGF calls become undefined fdf_log::* refs resolved at load
+#              (libfdf is linked --allow-shlib-undefined).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Header deps that log.h textually requires (fuchsia_logging::Logger/LogBuffer,
+# zx::result, std::print polyfill).
+_LOG_HEADER_DEPS = [
+    "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+    "//src/upstream/fuchsia/src/lib/stdformat:stdformat",
+    "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+]
+
+cc_library(
+    name = "headers",
+    hdrs = ["log.h"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = _LOG_HEADER_DEPS,
+)
+
+cc_library(
+    name = "log",
+    srcs = ["log.cc"],
+    hdrs = ["log.h"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    tags = ["manual"],
+    deps = _LOG_HEADER_DEPS + [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+    ],
+)

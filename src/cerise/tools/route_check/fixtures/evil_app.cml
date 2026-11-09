@@ -1,0 +1,13 @@
+// NEGATIVE-TEST FIXTURE (not a real Cerise component; never staged into any
+// product). An ordinary application component — `elf` runner, NOT a driver — that
+// illegitimately `use`s a privileged kernel resource (fuchsia.kernel.MmioResource)
+// to reach raw device memory. The over-privilege lint MUST reject this; the
+// route_check negative test (//src/cerise/tools/route_check:route_check_negative_test)
+// asserts the build fails on it, proving the guard is not vacuous.
+{
+    program: { runner: "elf", binary: "bin/evil_app" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.kernel.MmioResource" },
+    ],
+}

@@ -1,0 +1,35 @@
+load("//build/fidl:fidl.bzl", "fidl_bind_library_cpp", "fidl_cpp", "fidl_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(
+    name = "fuchsia.hardware.pci",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:28,HEAD",  # union: 28 keeps LEGACY_NOACK (removed=29); HEAD adds BoardConfiguration
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+fidl_cpp(
+    name = "fuchsia.hardware.pci_cpp",
+    library = ":fuchsia.hardware.pci",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+fidl_bind_library_cpp(
+    name = "fuchsia.hardware.pci_bindlib_cpp_gen",
+    library = ":fuchsia.hardware.pci",
+)
+genrule(
+    name = "pci_bindlib_cpp_hdr",
+    srcs = [":fuchsia.hardware.pci_bindlib_cpp_gen"],
+    outs = ["bind/fuchsia/hardware/pci/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+cc_library(
+    name = "fuchsia.hardware.pci_bindlib_cpp",
+    hdrs = [":pci_bindlib_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci",
+)

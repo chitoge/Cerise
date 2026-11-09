@@ -1,0 +1,20 @@
+# Cerise BUILD (authored locally) — board/lib/smbios: x86 board SMBIOS helper
+# (wraps the zircon smbios ulib).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "smbios",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia",
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/smbios:smbios",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl:fzl",
+    ],
+)

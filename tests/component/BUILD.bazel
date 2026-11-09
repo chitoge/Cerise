@@ -1,0 +1,237 @@
+# service integration: a real CFv2 component test — a test realm that launches a subject and a
+# verifier and routes the capability-under-test between them, run on target under
+# component_manager, with the verdict on serial (CERISE-COMPONENT-TEST-OK).
+#
+# test_manager / RealmBuilder are NOT vendored in this tree, so this is the closest
+# real thing: a STATIC test realm authored as real `.cml` (the
+# cmc/cerise_component framework path), booted under the real
+# component_manager + elf_runner. The verifier (echo_check) connects to
+# cerise.echo.Echo — a capability component_manager ROUTES from the echo_server
+# child — calls it, asserts the round-trip, and only then emits the verdict.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//bazel:zircon_system.bzl", "zircon_system")
+load("//build:component.bzl", "cerise_component")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+# ── Rust bindings for cerise.echo.Echo (wraps the generated fidl_rust source) ──
+rust_library(
+    name = "fidl_cerise_echo",
+    srcs = ["//src/cerise/echo:echo_fidl_rs"],
+    crate_name = "fidl_cerise_echo",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# ── Subject: serves cerise.echo.Echo ──
+rust_binary(
+    name = "echo_server_bin",
+    srcs = ["echo_server.rs"],
+    crate_name = "echo_server",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":fidl_cerise_echo",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:futures",
+    ],
+)
+
+fuchsia_stripped(
+    name = "echo_server_bin_stripped.fuchsia",
+    src = ":echo_server_bin",
+)
+
+cerise_component(
+    name = "echo_server",
+    manifest = "meta/echo_server.cml",
+    binary = ":echo_server_bin_stripped.fuchsia",
+)
+
+# ── Verifier: connects to the routed cerise.echo.Echo and asserts ──
+rust_binary(
+    name = "echo_check_bin",
+    srcs = ["echo_check.rs"],
+    crate_name = "echo_check",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":fidl_cerise_echo",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+    ],
+)
+
+fuchsia_stripped(
+    name = "echo_check_bin_stripped.fuchsia",
+    src = ":echo_check_bin",
+)
+
+cerise_component(
+    name = "echo_check",
+    manifest = "meta/echo_check.cml",
+    binary = ":echo_check_bin_stripped.fuchsia",
+)
+
+# ── The test realm (component_manager root). Realm-only .cml: no program. ──
+cerise_component(
+    name = "component_test_root",
+    manifest = "meta/component_test_root.cml",
+)
+
+# ── Shared runtime binaries + lib closure (own stripped aliases; self-contained) ──
+fuchsia_stripped(
+    name = "component_manager_stripped.fuchsia",
+    src = "//src/upstream/fuchsia/src/sys/component_manager:component_manager",
+)
+
+fuchsia_stripped(
+    name = "cerise_logsink_stripped.fuchsia",
+    src = "//src/cerise/logsink:cerise_logsink",
+)
+
+# Distinct artifact aliases per bootfs destination (a single source file staged at
+# two dests must be two labels, else ctx.files depset dedups it — see composition.md).
+# "base" = the top-level bootfs lib/ closure component_manager itself loads via
+# its PT_INTERP (lib/ld.so.1) + DT_NEEDED; the others are per-package copies.
+[
+    fuchsia_stripped(
+        name = "libc_so_%s.fuchsia" % pkg,
+        src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+    )
+    for pkg in ["base", "logsink", "echo_server", "echo_check"]
+]
+
+[
+    fuchsia_stripped(
+        name = "libcxx_so_%s.fuchsia" % pkg,
+        src = "//src/cerise/runtime:libc++.so",
+    )
+    for pkg in ["base", "logsink", "echo_server", "echo_check"]
+]
+
+[
+    fuchsia_stripped(
+        name = "libfdio_so_%s.fuchsia" % pkg,
+        src = "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+    )
+    for pkg in ["base", "logsink"]
+]
+
+# The libm.so link stub is staged in
+# every package that stages ld.so.1 so `-lm`-linked components load (math lives in
+# libc.so; the stub only has to exist). Dest pkg dirs: pkg/cerise_logsink, etc.
+[
+    fuchsia_stripped(
+        name = "libm_so_%s.fuchsia" % pkg,
+        src = "//src/cerise/sysroot/libm-stub:libm.so",
+    )
+    for pkg in ["cerise_logsink", "echo_server", "echo_check"]
+]
+
+# ── Minimal component_manager product: NO drivers/netstack/storage — just the
+# component framework running the test realm. root.cm is our cmc-compiled realm. ──
+zircon_system(
+    name = "x64-component-test",
+    cmdline = [
+        "userboot.next=bin/component_manager+--boot",
+        "kernel.vdso.always_use_next=true",
+    ],
+    extra_bootfs = {
+        "bin/component_manager": ":component_manager_stripped.fuchsia",
+        # Top-level lib/ closure that component_manager (PT_INTERP lib/ld.so.1) loads.
+        "lib/ld.so.1": ":libc_so_base.fuchsia",
+        "lib/libc++.so.1": ":libcxx_so_base.fuchsia",
+        "lib/libfdio.so": ":libfdio_so_base.fuchsia",
+        "config/component_manager": "//src/cerise/cm_config:config/component_manager",
+        "config/build_info/minimum_utc_stamp": "//src/cerise/cm_config:config_build_info/minimum_utc_stamp",
+        # Root realm = our cmc-compiled test realm (.cm File from cerise_component).
+        "pkg/root/meta/root.cm": ":component_test_root_manifest",
+        # elf_runner (builtin runner declaration).
+        "pkg/elf_runner/meta/elf_runner.cm": "//src/cerise/realms:elf_runner_manifest",
+        # cerise_logsink package.
+        "pkg/cerise_logsink/meta/cerise_logsink.cm": "//src/cerise/realms:cerise_logsink_manifest",
+        "pkg/cerise_logsink/bin/cerise_logsink": ":cerise_logsink_stripped.fuchsia",
+        "pkg/cerise_logsink/lib/ld.so.1": ":libc_so_logsink.fuchsia",
+        "pkg/cerise_logsink/lib/libm.so": ":libm_so_cerise_logsink.fuchsia",
+        "pkg/cerise_logsink/lib/libc++.so.1": ":libcxx_so_logsink.fuchsia",
+        "pkg/cerise_logsink/lib/libfdio.so": ":libfdio_so_logsink.fuchsia",
+        # echo_server package (subject).
+        "pkg/echo_server/meta/echo_server.cm": ":echo_server_manifest",
+        "pkg/echo_server/bin/echo_server": ":echo_server_bin_stripped.fuchsia",
+        "pkg/echo_server/lib/ld.so.1": ":libc_so_echo_server.fuchsia",
+        "pkg/echo_server/lib/libm.so": ":libm_so_echo_server.fuchsia",
+        "pkg/echo_server/lib/libc++.so.1": ":libcxx_so_echo_server.fuchsia",
+        # echo_check package (verifier).
+        "pkg/echo_check/meta/echo_check.cm": ":echo_check_manifest",
+        "pkg/echo_check/bin/echo_check": ":echo_check_bin_stripped.fuchsia",
+        "pkg/echo_check/lib/ld.so.1": ":libc_so_echo_check.fuchsia",
+        "pkg/echo_check/lib/libm.so": ":libm_so_echo_check.fuchsia",
+        "pkg/echo_check/lib/libc++.so.1": ":libcxx_so_echo_check.fuchsia",
+    },
+)
+
+# ── Live boot gate: boot the product, assert the verifier's verdict on serial. ──
+# Reuses the tests/zircon direct-kernel boot harness.
+sh_test(
+    name = "component-test-boot",
+    srcs = ["//tests/zircon:zbi_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath :x64-component-test)",
+        "$(rootpath //tests/zircon:zbi_boot_test.py)",
+        "--marker=CERISE-COMPONENT-TEST-OK",
+        "--forbid=CERISE-COMPONENT-TEST-FAIL",
+        "--timeout-seconds=300",
+    ],
+    data = [
+        "//tests/zircon:zbi_boot_test.py",
+        ":x64-component-test",
+        "//build/phys:linux_x86_64_boot_shim",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)

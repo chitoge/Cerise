@@ -1,0 +1,64 @@
+# Bazel integration for this imported target.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.logger",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # Compiled at level 28 so the binding exposes LogSink.ConnectStructured,
+    # which Archivist's log container serves (src/logs/container.rs) but which is
+    # @available(removed=29). Upstream archivist (main included) uses the same
+    # method unconditionally, i.e. it builds its logger binding at <=28. Nothing
+    # in this library is added at 29/30/31, so level 28 is a strict superset of
+    # the level-30 default (it only *adds* ConnectStructured back); existing
+    # level-30 consumers (e.g. cerise_logsink's OnInit/IOBuffer path) are
+    # unaffected.
+    available = "fuchsia:28",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.logger_cpp",
+    library = ":fuchsia.logger",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.logger_rs",
+    library = ":fuchsia.logger",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_logger",
+    srcs = [":fuchsia.logger_rs"],
+    crate_name = "fidl_fuchsia_logger",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

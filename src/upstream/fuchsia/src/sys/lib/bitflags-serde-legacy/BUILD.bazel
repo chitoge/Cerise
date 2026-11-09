@@ -1,0 +1,15 @@
+# Bazel integration for this imported target.
+# This crate exports a macro_rules! macro that references ::bitflags and ::serde
+# via absolute paths at the call site — no direct runtime deps needed here.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "bitflags-serde-legacy",
+    srcs = ["src/lib.rs"],
+    crate_name = "bitflags_serde_legacy",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [],
+)

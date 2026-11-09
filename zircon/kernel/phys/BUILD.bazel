@@ -1,0 +1,273 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# framebuffer-console.cc is exported because the kernel proper compiles the
+# very same renderer into //zircon/kernel/lib/io; see that file's comment.
+exports_files([
+    "framebuffer-console.cc",
+    "phys-elf-module.ld",
+    "phys-end.ld",
+    "phys.ld",
+    "zbi-header.ld",
+])
+
+filegroup(
+    name = "phys_elf_module_linker_script",
+    srcs = ["phys-elf-module.ld"],
+)
+
+filegroup(
+    name = "physload_ld_scripts",
+    srcs = [
+        "phys-end.ld",
+        "phys.ld",
+        "zbi-header.ld",
+    ],
+)
+
+filegroup(
+    name = "boot_shim_ld_scripts",
+    srcs = [
+        "phys-end.ld",
+        "phys.ld",
+    ],
+)
+
+filegroup(
+    name = "physload_cxx_sources",
+    srcs = [
+        "address-space-map.cc",
+        "address-space.cc",
+        "allocation-init.cc",
+        "allocation.cc",
+        "boot-options.cc",
+        "elf-image-mapinto.cc",
+        "elf-image-self-vmos.cc",
+        "elf-image-vmos.cc",
+        "elf-image.cc",
+        "exception.cc",
+        "framebuffer-console-zbi.cc",
+        "framebuffer-console.cc",
+        "kernel-package.cc",
+        "log.cc",
+        "main-symbolize-cfi.cc",
+        "main-symbolize.cc",
+        "panic.cc",
+        "physload.cc",
+        "self-relocation.cc",
+        "stack.cc",
+        "stdio.cc",
+        "symbolize.cc",
+        "uart-console.cc",
+        "zbi-init-memory.cc",
+        "zbi-main.cc",
+        "zbi-memory.cc",
+        "zbitl-allocation.cc",
+    ],
+)
+
+# physboot module sources: physload_cxx_sources minus address-space.cc
+# (gAddressSpace stub provided by physload-module.cc, not the full implementation)
+filegroup(
+    name = "physboot_module_cxx_sources",
+    srcs = [
+        "address-space-map.cc",
+        "allocation.cc",
+        "boot-options.cc",
+        "elf-image-mapinto.cc",
+        "elf-image-self-vmos.cc",
+        "elf-image-vmos.cc",
+        "elf-image.cc",
+        "exception.cc",
+        "kernel-package.cc",
+        "log.cc",
+        "main-symbolize-cfi.cc",
+        "main-symbolize.cc",
+        "panic.cc",
+        "self-relocation.cc",
+        "stack.cc",
+        "stdio.cc",
+        "symbolize.cc",
+        "uart-console.cc",
+        "zbitl-allocation.cc",
+    ],
+)
+
+filegroup(
+    name = "physload_asm_sources",
+    srcs = ["zbi-header.S"],
+)
+
+filegroup(
+    name = "physboot_extra_cxx_sources",
+    srcs = [
+        "boot-zbi.cc",
+        "handoff-entropy.cc",
+        "handoff-prep-version.cc",
+        "handoff-prep-vm.cc",
+        "handoff-prep-zbi.cc",
+        "handoff-prep.cc",
+        "physboot.cc",
+        "physload-module.cc",
+    ],
+)
+
+filegroup(
+    name = "boot_shim_cxx_sources",
+    srcs = [
+        "acpi.cc",
+        "address-space.cc",
+        "address-space-map.cc",
+        "allocation-init.cc",
+        "allocation.cc",
+        "boot-options.cc",
+        "boot-zbi.cc",
+        "elf-image-mapinto.cc",
+        "elf-image-self-vmos.cc",
+        "elf-image.cc",
+        "framebuffer-console.cc",
+        "log.cc",
+        "main-symbolize-cfi.cc",
+        "main-symbolize.cc",
+        "panic.cc",
+        "self-relocation.cc",
+        "stack.cc",
+        "stdio.cc",
+        "symbolize.cc",
+        "uart-console.cc",
+        "zbitl-allocation.cc",
+    ],
+)
+
+filegroup(
+    name = "boot_shim_boot_shim_cxx_sources",
+    srcs = [
+        "//zircon/kernel/phys/lib/boot-shim:acpi.cc",
+        "//zircon/kernel/phys/lib/boot-shim:boot-shim.cc",
+        "//zircon/kernel/phys/lib/boot-shim:cmdline.cc",
+        "//zircon/kernel/phys/lib/boot-shim:pool-mem-config.cc",
+        "//zircon/kernel/phys/lib/boot-shim:test-serial-number.cc",
+        "//zircon/kernel/phys/lib/boot-shim:tty.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(
+        ["**/*"],
+        allow_empty = True,
+        exclude = ["include/**", "lib/memalloc/**"],
+    ),
+)
+
+# Bazel-native phys cc_library targets (compiled under x64-phys or x86_32-phys
+# platform transition applied by the link rules in //build/phys).
+
+cc_library(
+    name = "phys_boot_shim_headers",
+    deps = ["//zircon/kernel/phys/lib/boot-shim:boot_shim_headers"],
+)
+
+_PHYS_LIB_DEPS = [
+    "//build/phys:phys_include_overrides",
+    ":phys_boot_shim_headers",
+    "//:kernel_cc_headers",
+    "//src/lib/zbitl:phys_zbitl",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/kernel/lib/page:headers",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    "//:phys_elfldltl",
+    "//:symbolizer_markup_headers",
+    "//zircon/kernel/arch/x86:code_patches_arch_headers",
+    "//src/lib/trivial-allocator:trivial_allocator_headers",
+    "//zircon/system/ulib/region-alloc:region_alloc_headers",
+]
+
+_PHYS_PRIVATE_HDRS = glob(["*.h", "lib/boot-shim/*.h", "lib/boot-shim/include/**/*.h"], allow_empty = True)
+
+cc_library(
+    name = "phys_common_lib",
+    srcs = [
+        ":physload_cxx_sources",
+        ":physload_asm_sources",
+    ],
+    hdrs = _PHYS_PRIVATE_HDRS,
+    includes = ["."],
+    alwayslink = True,
+    deps = _PHYS_LIB_DEPS,
+)
+
+# physload module variant: excludes address-space.cc (stub in physload-module.cc)
+cc_library(
+    name = "physboot_phys_lib",
+    srcs = [
+        ":physboot_module_cxx_sources",
+        ":physload_asm_sources",
+    ],
+    hdrs = _PHYS_PRIVATE_HDRS,
+    includes = ["."],
+    alwayslink = True,
+    deps = _PHYS_LIB_DEPS,
+)
+
+cc_library(
+    name = "physboot_extra_lib",
+    srcs = [":physboot_extra_cxx_sources"],
+    hdrs = _PHYS_PRIVATE_HDRS,
+    includes = ["."],
+    copts = ["-DKERNEL_IMAGE_MAX_SIZE=67108864"],
+    alwayslink = True,
+    deps = _PHYS_LIB_DEPS,
+)
+
+cc_library(
+    name = "phys_boot_shim_lib",
+    srcs = [
+        ":boot_shim_cxx_sources",
+        ":boot_shim_boot_shim_cxx_sources",
+    ],
+    hdrs = _PHYS_PRIVATE_HDRS,
+    includes = [".", "lib/boot-shim/include"],
+    alwayslink = True,
+    deps = _PHYS_LIB_DEPS,
+)
+
+# Subset of phys sources that compile cleanly under the x64-efi toolchain
+# (--target=x86_64-unknown-uefi).  Excludes ELF/ZBI-specific assembly and
+# ZBI-format entry points that are not needed in the UEFI environment.
+cc_library(
+    name = "phys_efi_lib",
+    srcs = [
+        "boot-options.cc",
+        "boot-zbi.cc",
+        "elf-image-self-vmos.cc",
+        "log.cc",
+        "main-symbolize-cfi.cc",
+        "main-symbolize.cc",
+        "panic.cc",
+        "stack.cc",
+        "stdio.cc",
+        "symbolize.cc",
+        "uart-console.cc",
+        "zbitl-allocation.cc",
+    ],
+    hdrs = _PHYS_PRIVATE_HDRS,
+    includes = ["."],
+    alwayslink = True,
+    deps = [
+        "//build/phys:phys_include_overrides",
+        ":phys_boot_shim_headers",
+        "//:kernel_cc_headers",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/phys/lib/memalloc:memalloc",
+        "//zircon/kernel/lib/boot-options:phys_boot_options",
+        "//zircon/system/ulib/uart:uart",
+        "//zircon/system/ulib/explicit-memory:explicit-memory",
+        "//zircon/system/ulib/pretty:pretty",
+        "//:symbolizer_markup_headers",
+        "//src/lib/trivial-allocator:trivial_allocator_headers",
+    ],
+)

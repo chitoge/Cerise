@@ -1,0 +1,53 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# this whole library is @available(added=HEAD) at the library
+# level (overview.fidl) — it has no numbered-API-level shape at all, so bumping
+# straight to HEAD is safe (no existing narrower-level consumer to regress,
+# same precedent as fuchsia.fxfs's HEAD-only library).
+fidl_library(
+    name = "fuchsia.net.multicast.admin",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.multicast.admin_rs",
+    library = ":fuchsia.net.multicast.admin",
+    tags = ["manual"],
+)
+
+# this library is compiled at HEAD (see fidl_library above) and its client
+# (multicast_ext, part of netstack3-bindings' real closure) also needs HEAD-level
+# fuchsia.net types elsewhere - retargeted to :fidl_fuchsia_net_head (same
+# crate_name = "fidl_fuchsia_net", different compiled instance) rather than the
+# shared plain target, since fuchsia.net.multicast.admin has no other real
+# consumer (grepped) - same narrow-fix discipline already proven for
+# fuchsia.net.neighbor/.sockets/.udp/.tcp this phase.
+rust_library(
+    name = "fidl_fuchsia_net_multicast_admin",
+    srcs = [":fuchsia.net.multicast.admin_rs"],
+    crate_name = "fidl_fuchsia_net_multicast_admin",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-sync",
+    srcs = [
+        "src/condvar.rs",
+        "src/lib.rs",
+        "src/mutex.rs",
+        "src/rwlock.rs",
+    ],
+    crate_name = "fuchsia_sync",
+    edition = "2024",
+    deps = [
+        "@crates//:lock_api",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        ],
+        "//conditions:default": [
+            "@crates//:parking_lot",
+            "@crates//:parking_lot_core",
+        ],
+    }),
+)

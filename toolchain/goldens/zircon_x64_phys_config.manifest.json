@@ -1,0 +1,66 @@
+{
+	"asmopts": [],
+	"copts": [
+		"--target=x86_64-unknown-linux-gnu",
+		"-ffreestanding",
+		"-fno-builtin",
+		"-fno-stack-protector",
+		"-m64",
+		"-mcx16",
+		"-mno-mmx",
+		"-mno-sse",
+		"-mno-sse2",
+		"-fdata-sections",
+		"-ffunction-sections",
+		"-fPIC",
+		"-fvisibility=hidden",
+		"-mcmodel=small",
+		"-mno-red-zone",
+		"-nostdlibinc"
+	],
+	"cpu": "x64",
+	"cxxopts": [
+		"-fno-exceptions",
+		"-fno-rtti",
+		"-fno-threadsafe-statics",
+		"-nostdinc++"
+	],
+	"defines": [
+		"LK",
+		"ZIRCON_TOOLCHAIN",
+		"_KERNEL",
+		"_PHYS",
+		"DEBUG_PRINT_LEVEL=2",
+		"LK_DEBUGLEVEL=2"
+	],
+	"environment": "phys",
+	"feature_docs": {
+		"abi.x64.phys": "x64 physical-address bootstrap ABI.",
+		"cpu.x64.common": "Common x64 freestanding code-generation constraints.",
+		"debug.kernel_level_2": "Current kernel debug-level defines used by the x64 boot graph.",
+		"env.phys": "Phys environment definitions for early boot components.",
+		"lang.phys_cxx": "C++ restrictions expected by Zircon phys code.",
+		"link.freestanding": "Freestanding link baseline: no host startup files or default libraries.",
+		"stdlib.c_headers": "Hermetic C headers provided by the Zircon toolchain environment.",
+		"stdlib.cxx_headers": "Hermetic libc++ headers provided by the vendored LLVM overlay."
+	},
+	"features": [
+		"cpu.x64.common",
+		"abi.x64.phys",
+		"env.phys",
+		"lang.phys_cxx",
+		"stdlib.c_headers",
+		"stdlib.cxx_headers",
+		"debug.kernel_level_2",
+		"link.freestanding"
+	],
+	"linkopts": [
+		"-nostdlib",
+		"-nodefaultlibs",
+		"-nostartfiles"
+	],
+	"name": "zircon.x64.phys",
+	"stdlib_include_dirs": [
+		"@llvm-project//libcxx:libcxx_headers_include_search_directory"
+	]
+}

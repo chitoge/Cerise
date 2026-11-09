@@ -1,0 +1,19 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# link-only validation that the fuchsia toolchain resolves zx_* symbols
+# against the libzircon.so sysroot stub:
+#   bazel build //examples/fuchsia-link-probe:fuchsia_link_probe \
+#     --platforms=//platforms:x64-fuchsia
+# Freestanding (no crt/loader yet); proves linking, not running.
+cc_binary(
+    name = "fuchsia_link_probe",
+    srcs = ["probe.c"],
+    dynamic_deps = ["//src/cerise/sysroot/libzircon:libzircon"],
+    linkopts = [
+        "-nostdlib",
+        "-Wl,-e,_start",
+    ],
+    tags = ["manual"],
+)

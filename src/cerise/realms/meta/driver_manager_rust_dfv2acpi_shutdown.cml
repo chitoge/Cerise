@@ -1,0 +1,168 @@
+// driver_manager_rust_dfv2acpi_shutdown — a driver_manager realm variant for the
+// orderly-shutdown product. It is the driver_manager_rust_dfv2acpi realm PLUS the
+// three additions required to reach the vendored shutdown_manager's real poweroff path:
+//
+//   * program.lifecycle.stop_event = "notify" — so component_manager delivers a graceful
+//     Lifecycle Stop (via the process Lifecycle startup handle), which is what
+//     driver_manager's shutdown_manager reacts to (signal_boot_shutdown ->
+//     shutdown_all_drivers -> system_execute).
+//   * use fuchsia.kernel.MexecResource — system_execute requires BOTH MexecResource and
+//     PowerResource present, else it bails ("Assuming test") without any powerctl, for
+//     every target state including Poweroff.
+//   * use fuchsia.system.state.SystemStateTransition — read via GetTerminationSystemState
+//     to decide poweroff vs reboot; absent, it falls back to Reboot (which would reboot
+//     the guest instead of powering it off).
+//
+// Everything else is identical to driver_manager_rust_dfv2acpi.cml. This is a NEW realm
+// (no frozen decode_diff golden), used only by root_dfv2acpi_shutdown. See
+//
+// A product using this manifest must place driver_manager in a dedicated environment
+// whose component stop timeout exceeds the removal tracker's bounded acknowledgement
+// window. Otherwise component_manager can force-kill it before the lifecycle server
+// reports timeout or reaches the terminal platform call.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/driver_manager_rust_dfv2platbus",
+        lifecycle: { stop_event: "notify" },
+    },
+
+    // Structured-config schema — MUST mirror driver_manager_rust_dfv2acpi.cml
+    // exactly: the binary's driver_manager_config crate is generated from the
+    // BASE manifest, and both manifests resolve the same bundle-staged
+    // meta/driver_manager_rust_dfv2acpi.cvf in the shared
+    // pkg/driver_manager_rust_dfv2platbus package (post-#23 the binary
+    // fail-closes at start without the delivered VMO).
+    config: {
+        enable_test_shutdown_delays: { type: "bool" },
+        power_inject_offer: { type: "bool" },
+        power_suspend_enabled: { type: "bool" },
+        root_driver: { type: "string", max_size: 128 },
+    },
+
+    capabilities: [
+        {
+            runner: "driver",
+            path: "/svc/fuchsia.component.runner.ComponentRunner",
+        },
+        {
+            protocol: "fuchsia.driver.framework.CompositeNodeManager",
+        },
+        {
+            directory: "dev",
+            rights: ["r*"],
+            path: "/dev",
+        },
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceNames",
+            type: "vector",
+            element: { type: "string", max_size: 100 },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceIds",
+            type: "vector",
+            element: { type: "uint32" },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.driver.UseHardwareIommu",
+            type: "bool",
+            value: false,
+        },
+    ],
+
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.component.Realm", from: "framework" },
+        { protocol: "fuchsia.component.Introspector", from: "framework" },
+        { protocol: "fuchsia.component.sandbox.CapabilityStore", from: "framework" },
+        { protocol: "fuchsia.driver.index.DriverIndex" },
+        { protocol: "fuchsia.boot.Items" },
+        { protocol: "fuchsia.kernel.IommuResource" },
+        { protocol: "fuchsia.kernel.IoportResource" },
+        { protocol: "fuchsia.kernel.IrqResource" },
+        { protocol: "fuchsia.kernel.MmioResource" },
+        { protocol: "fuchsia.kernel.MsiResource" },
+        { protocol: "fuchsia.kernel.PowerResource" },
+        // additions: the second resource the powerctl guard requires, and the
+        // termination-state source that selects Poweroff.
+        { protocol: "fuchsia.kernel.MexecResource" },
+        { protocol: "fuchsia.system.state.SystemStateTransition" },
+    ],
+
+    collections: [
+        {
+            name: "boot-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+            allowed_offers: "static_and_dynamic",
+            allow_long_names: true,
+        },
+        {
+            name: "base-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+        },
+        {
+            name: "full-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+        },
+        {
+            name: "driver-hosts",
+            durability: "transient",
+            environment: "#driver-host-env",
+        },
+    ],
+
+    environments: [
+        {
+            name: "driver-env",
+            extends: "realm",
+            runners: [
+                { runner: "driver", from: "self" },
+            ],
+        },
+        {
+            name: "driver-host-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "parent" },
+            ],
+        },
+    ],
+
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: ["#boot-drivers", "#driver-hosts"],
+        },
+        { protocol: "fuchsia.boot.Items", from: "parent", to: "#boot-drivers" },
+        { config: "fuchsia.platform.bus.SoftwareDeviceNames", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.platform.bus.SoftwareDeviceIds", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.power.SuspendEnabled", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.driver.UseHardwareIommu", from: "self", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.IommuResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.IoportResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.IrqResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.MmioResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.MsiResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.PowerResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.driver.framework.CompositeNodeManager", from: "self", to: "#boot-drivers" },
+    ],
+
+    expose: [
+        { directory: "dev", from: "self", rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#boot-drivers" },
+        { service: "cerise.display.Service", from: "#boot-drivers" },
+    ],
+}

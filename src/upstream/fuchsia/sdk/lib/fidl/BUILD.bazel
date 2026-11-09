@@ -1,0 +1,24 @@
+# Bazel integration for this imported target. The C FIDL headers
+# (<lib/fidl/epitaph.h> etc.) used by the C++ binding runtime.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fidl_c_headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# fidl_epitaph_write: sends an epitaph (close-reason) message on a channel.
+# Vendored from upstream sdk/lib/fidl/epitaph.c (Fuchsia 0f3c21bc).
+cc_library(
+    name = "fidl_epitaph",
+    srcs = ["epitaph.c"],
+    tags = ["manual"],
+    deps = [
+        ":fidl_c_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

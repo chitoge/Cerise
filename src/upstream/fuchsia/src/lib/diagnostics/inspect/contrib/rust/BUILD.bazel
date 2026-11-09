@@ -1,0 +1,32 @@
+# Authored locally for Cerise (Phase 1 logging: Archivist import).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-inspect-contrib",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fuchsia_inspect_contrib",
+    edition = "2024",
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/derive:fuchsia-inspect-derive",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:lru-cache",
+        "@crates//:strum",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect",
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

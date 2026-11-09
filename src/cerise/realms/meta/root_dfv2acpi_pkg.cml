@@ -1,0 +1,81 @@
+// root_dfv2acpi_pkg — component_manager root for the x64-pkg product (packages foundation
+// +). The fshost realm topology PLUS the packages chain:
+//
+//   * fxfs_provisioner (first boot) lays down the Fxfs container + empty "blob" volume, releases
+//     the disk; fshost auto-mounts.
+//   * pkg_probe INGESTS a real Fuchsia package's blobs into the "blob" volume (via
+//     fuchsia.fxfs/BlobCreator, reached through fshost's exposed "fshost-fs" subtree), resolves it
+//     with the vendored package_directory crate, and reads a content blob THROUGH the served
+//     directory (NonMetaStorage::open de-stub).
+//   * pkg_probe then TRIGGERS the launch-from-disk: it binds pkg_hello's fuchsia.component.Binder,
+//     whose URL is fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm. component_manager resolves
+//     that URL via #pkg_resolver (registered for the fuchsia-pkg scheme in the #pkg-env
+//     environment), which serves pkg_hello's package directory (bin + lib/*) from the SAME fxfs
+//     "blob" volume — EXECUTABLE (it holds fuchsia.kernel.VmexResource). elf_runner loads the
+//     binary + shared libs from those disk blobs and starts pkg_hello => CERISE-PKG-RESOLVER-LAUNCHED.
+//
+// Ordering is a real routed dependency, not a timing guess: pkg_resolver + pkg_hello are BOTH Lazy
+// and only start after pkg_probe ingested + fshost mounted (pkg_probe drives the bind). No
+// Eager-before-storage hazard. Exactly one component touches the disk directly at a time
+// (provisioner -> release -> fshost). Excluded from the decode_diff golden set (a new topology);
+// route_check covers its routing (VmexResource -> pkg_resolver is the one permitted privileged use).
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netdev_probe", url: "fuchsia-boot:///netdev_probe#meta/netdev_probe.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fxfs_provisioner", url: "fuchsia-boot:///fxfs_provisioner#meta/fxfs_provisioner.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fshost", url: "fuchsia-boot:///fshost#meta/fshost.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "pkg_probe", url: "fuchsia-boot:///pkg_probe#meta/pkg_probe.cm", startup: "eager", environment: "#elf-env" },
+        // The fuchsia-pkg:// resolver (Lazy: component_manager connects to it on the first
+        // fuchsia-pkg resolve, which pkg_probe triggers AFTER ingest).
+        { name: "pkg_resolver", url: "fuchsia-boot:///pkg_resolver#meta/pkg_resolver.cm", startup: "lazy", environment: "#elf-env" },
+        // The demonstration package, resolved FROM DISK by #pkg_resolver and run by elf_runner.
+        // Lazy: started only when pkg_probe binds its Binder (post-ingest). Its manifest lives in
+        // the meta.far on the fxfs "blob" volume, NOT in bootfs.
+        { name: "pkg_hello", url: "fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm", startup: "lazy", environment: "#pkg-env" },
+    ],
+    environments: [
+        // pkg-env: the elf runner PLUS the fuchsia-pkg resolver, for disk-resolved packaged
+        // components. Registering a component-provided resolver needs no cm_config change — it is
+        // an ordinary capability referenced by scheme here.
+        {
+            name: "pkg-env",
+            extends: "realm",
+            runners: [{ runner: "elf", from: "#elf_runner", as: "elf" }],
+            resolvers: [{ resolver: "pkg-resolver", from: "#pkg_resolver", scheme: "fuchsia-pkg" }],
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netdev_probe", "#fxfs_provisioner", "#fshost", "#pkg_probe", "#pkg_resolver", "#pkg_hello"],
+        },
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: ["#netdev_probe", "#fxfs_provisioner", "#fshost", "#pkg_probe", "#pkg_resolver"],
+        },
+        { directory: "dev", from: "#driver_manager_rust", to: ["#netdev_probe", "#fshost"], rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: ["#fxfs_provisioner", "#fshost"] },
+        // Race-fix handoff: the provisioner's readiness directory. pkg_probe reads it before
+        // opening "fshost-fs", so fshost starts only after the provisioner released the disk.
+        { directory: "provisioned", from: "#fxfs_provisioner", to: "#pkg_probe" },
+        // fshost's exposed filesystem subtree (/fs -> blob + data). pkg_probe reaches
+        // /fshost-fs/blob/{svc/fuchsia.fxfs.BlobCreator, root/<hash>} through this; pkg_resolver
+        // reaches /fshost-fs/blob/svc/fuchsia.fxfs.BlobReader through it to serve package dirs.
+        { directory: "fshost-fs", from: "#fshost", to: ["#pkg_probe", "#pkg_resolver"] },
+        // Executability grant: the VMEX resource lets #pkg_resolver serve EXECUTABLE
+        // package blobs (a launched component's /pkg binary + libs) from the fxfs blob volume.
+        // route_check permits precisely this one privileged use; cm_config lists VmexResource as a
+        // builtin so it is routable from above-root.
+        { protocol: "fuchsia.kernel.VmexResource", from: "parent", to: "#pkg_resolver" },
+        // The launch trigger: pkg_probe binds pkg_hello's framework Binder AFTER ingesting the
+        // package, driving the resolve-and-launch-from-disk chain.
+        { protocol: "fuchsia.component.Binder", from: "#pkg_hello", to: "#pkg_probe" },
+    ],
+}

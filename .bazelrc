@@ -1,0 +1,47 @@
+common --enable_bzlmod
+
+# Never autodetect a host C++ toolchain (this machine has none).
+# Every cc action must resolve to the hermetic registered toolchains
+# (@llvm_toolchains for exec, zircon-* for targets); if resolution fails,
+# that is a real bug to fix, never something to paper over with PATH/CC
+# shims or ad-hoc flags.
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+build --incompatible_strict_action_env
+test --test_output=errors
+
+# Default target platform for host tools (fidlc, etc.).  Kernel/phys/user
+# builds override this with --platforms=//platforms:x64-kernel etc.
+build --platforms=//platforms:linux_x86_64
+common --@rules_rust//rust/toolchain/channel=nightly  # netstack3 + std build on the Fuchsia nightly Rust channel
+common --distdir=third_party/distfiles
+
+# The repository fidlc needs a newer glibc than some supported workstations.
+# Keep remote execution opt-in so local and public checkouts do not require a
+# configured remote executor. Maintained remote builds select this named
+# configuration explicitly.
+build:fidlc-remote-jammy --strategy=Fidlc=remote
+build:fidlc-remote-jammy --remote_default_exec_properties=container-image=docker://buildpack-deps:jammy
+
+# gRPC codegen: select protoc via @rules_proto//proto:toolchain_type
+# instead of the deprecated rust_prost_toolchain.proto_compiler attr.
+common --incompatible_enable_proto_toolchain_resolution
+
+# Required for the isolated @grpc / @grpc_tools crate universes:
+# use_extension(..., isolate = True).
+common --experimental_isolated_extension_usages
+
+# host-test debugging. `--config=debug` builds host targets
+# with full debug info and no optimization so gdb/lldb/rust-lldb land on real
+# source lines. Host binaries are already unstripped and fastbuild by default;
+# this just forces -c dbg for a deliberate interactive session. It does NOT
+# affect target (kernel/phys/fuchsia) builds — those pick their own
+# compilation_mode via platform config. Recipes:
+#   bazel test  --config=debug --run_under=gdb   //path/to:host_test
+#   bazel test  --config=debug --run_under='rust-lldb --' //path/to:rust_test
+#   bazel build --config=debug //src/cerise/tools/symbolize && \
+#     rust-lldb ./bazel-bin/src/cerise/tools/symbolize/symbolize -- <log>
+build:debug --compilation_mode=dbg
+# Keep the frame pointers / unwind tables gdb wants even at -c dbg.
+build:debug --copt=-fno-omit-frame-pointer
+test:debug --test_output=streamed

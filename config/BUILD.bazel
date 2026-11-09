@@ -1,0 +1,56 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
+
+package(default_visibility = ["//visibility:public"])
+
+int_flag(
+    name = "smp_max_cpus",
+    build_setting_default = 32,
+)
+
+int_flag(
+    name = "lk_debuglevel",
+    build_setting_default = 2,
+)
+
+int_flag(
+    name = "kernel_image_max_size",
+    build_setting_default = 67108864,
+)
+
+int_flag(
+    name = "vdso_max_page_size",
+    build_setting_default = 4096,
+)
+
+bool_flag(
+    name = "hypervisor",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "lk_debuglevel_1",
+    flag_values = {
+        ":lk_debuglevel": "1",
+    },
+)
+
+config_setting(
+    name = "lk_debuglevel_2",
+    flag_values = {
+        ":lk_debuglevel": "2",
+    },
+)
+
+config_setting(
+    name = "hypervisor_enabled",
+    flag_values = {
+        ":hypervisor": "true",
+    },
+)
+
+config_setting(
+    name = "hypervisor_disabled",
+    flag_values = {
+        ":hypervisor": "false",
+    },
+)

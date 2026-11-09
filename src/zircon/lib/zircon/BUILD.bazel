@@ -1,0 +1,33 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The link-time ABI interface (zx_* symbols) used to generate the libzircon.so
+# sysroot stub.
+exports_files(["zircon.ifs"])
+
+filegroup(
+    name = "public_headers",
+    srcs = [
+        "include/zircon/exception.h",
+        "include/zircon/status.h",
+    ],
+)
+
+cc_library(
+    name = "zircon",
+    hdrs = [":public_headers"],
+    includes = ["include"],
+    deps = ["//:vdso"],
+)
+
+cc_library(
+    name = "status_headers",
+    hdrs = ["include/zircon/status.h"],
+    includes = ["include"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

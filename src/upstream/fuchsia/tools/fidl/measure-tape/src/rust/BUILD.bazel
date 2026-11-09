@@ -1,0 +1,17 @@
+# Vendored for Cerise (Phase 2 logging: Archivist). measure-tape rust backend:
+# emits the Rust measuring-tape module for the target types.
+# Upstream: //tools/fidl/measure-tape/src/rust.
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "rust",
+    srcs = ["rust.go"],
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/rust",
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen",
+        "//src/upstream/fuchsia/tools/fidl/measure-tape/src/measurer:measurer",
+        "//src/upstream/fuchsia/tools/fidl/measure-tape/src/utils:utils",
+    ],
+)

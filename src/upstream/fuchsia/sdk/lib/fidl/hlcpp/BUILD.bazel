@@ -1,0 +1,19 @@
+# Integration target for the DFv2 HLCPP (high-level C++) FIDL runtime — the
+# older C++ binding family (sdk_name fidl_cpp) still used by parts of the DFv2 framework.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "hlcpp",
+    srcs = glob(["*.cc", "internal/*.cc"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/async-default:async-default",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_c_headers",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

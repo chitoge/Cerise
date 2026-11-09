@@ -1,0 +1,11 @@
+# Bazel integration for this imported target. symbolizer-markup:
+# header-only writer for the symbolizer markup log format (used by libc's ld/log).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "symbolizer-markup",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)

@@ -1,0 +1,89 @@
+# FIDL round-trip gate: FIDL Echo protocol for the C++ + Rust round-trip demo.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "echo_fidl",
+    srcs = ["echo.fidl"],
+)
+
+# C++ wire bindings for echo.fidl (used by the C++ server).
+fidl_cpp(
+    name = "echo_fidl_cpp",
+    library = ":echo_fidl",
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:shared_headers",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:fidl_base",
+    ],
+)
+
+# Rust bindings for echo.fidl (generated .rs source; caller wraps in rust_library).
+fidl_rust(
+    name = "echo_fidl_rs",
+    library = ":echo_fidl",
+)
+
+rust_library(
+    name = "fidl_cerise_echo",
+    srcs = [":echo_fidl_rs"],
+    crate_name = "fidl_cerise_echo",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# C++ echo demo: async-loop server + sync client, same process.
+# Prints "CERISE-FIDL-ROUNDTRIP-OK" to confirm the FIDL wire round-trip works.
+#
+# Link sysroot: the Fuchsia CC toolchain can't embed --sysroot in toolchain link
+# args (cycle: the sysroot contains libc++.so which is built by the toolchain).
+# Instead, per-binary we pass --sysroot via linkopts + additional_linker_inputs,
+# mirroring how hello-rust-std uses compile_data + rustc_flags -Clink-arg=--sysroot.
+cc_binary(
+    name = "echo_server",
+    srcs = ["server.cc"],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        # Redirect clang's resource-dir so it finds libclang_rt.builtins.a from
+        # our assembled sysroot (under lib/clang/22/lib/x86_64-unknown-fuchsia/).
+        # Without this, clang looks in its own installation dir which has no Fuchsia libs.
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        # Allow shared libs (libc++.so, libzircon.so) to have undefined references
+        # that will be resolved at runtime via the dynamic linker (ld.so.1 / libc.so).
+        # Fuchsia SDK application links use this pattern: transitive symbol resolution
+        # is deferred to the dynamic linker rather than verified at static link time.
+        "-Wl,--allow-shlib-undefined",
+        "-lc++",
+        "-lm",
+        "-lzircon",
+        "-lfdio",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":echo_fidl_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-default",
+        "//src/upstream/fuchsia/sdk/lib/fidl:fidl_epitaph",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)

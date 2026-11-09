@@ -1,0 +1,265 @@
+"""Board: cf-sz5 — Panasonic Let's Note CF-SZ5 (Skylake-U, vPro/AMT 11.8).
+
+Identical hardware posture to //boards/hw-x64 (generic UEFI + ACPI x86-64: GOP
+framebuffer, AHCI + NVMe, ACPI/PCI enumeration) — it shares that board's driver
+list, bootfs staging map and feature tokens verbatim. The ONE thing this board
+exists to change is the serial console, and that difference is load-bearing:
+
+  hw-x64 uses `kernel.serial=legacy`, an alias for the COM1-compatible legacy
+  UART at I/O port 0x3f8 IRQ 4 (uart::ns8250 kLegacyConfig). THE CF-SZ5 HAS NO
+  COM1. Booting it with `legacy` produces a completely silent machine, which is
+  indistinguishable from a hang — you cannot tell first light from a crash.
+
+  What it does have is Intel AMT Serial-over-LAN: the ME exposes PCI function
+  00:16.3 as a genuine 16550A whose bytes are tunnelled over the network to an
+  `amtterm` client. It is a PIO (not MMIO) UART, measured on the actual unit at
+  I/O port 0xf0a0, IRQ 19 — Linux enumerates it as ttyS4 `port=0xF0A0 type=4`
+  (PORT_16550A). The SOL function is port-mapped, so the PIO driver is the
+  correct one.
+
+  The matching cmdline is therefore `ioport,<base>,<irq>`:
+    * "ioport" is uart::ns8250::PioDriver's kConfigName (ns8250.h) — the config
+      name for ZBI_KERNEL_DRIVER_I8250_PIO_UART.
+    * the payload is zbi_dcfg_simple_pio_t, and its ParseConfig
+      (//zircon/system/ulib/uart/parse.cc) reads EXACTLY two integers in the
+      order (base, irq). Both accept 0x hex.
+
+  Serial is the ONLY console that leaves this machine remotely, so this board is
+  also what makes the CF-SZ5 debuggable at all: gop_display lights the internal
+  panel, but nobody is sitting in front of it.
+
+WHY THE IRQ FIELD IS 0 AND NOT 19 (measured, not stylistic):
+
+  The SOL function's interrupt really is GSI 19, but handing that to the kernel
+  as the UART IRQ PANICS IT before the console works. //zircon/kernel/platform/
+  pc/uart.cc feeds the configured IRQ to apic_io_isa_to_global(), which ASSERTs
+  `isa_irq < NUM_ISA_IRQS` (16) — GSI 19 is not a legacy ISA IRQ. Booting
+  `ioport,0xf0a0,19` dies at:
+
+    *** ASSERT FAILED at (zircon/kernel/arch/x86/ioapic.cc:406):
+            isa_irq < NUM_ISA_IRQS
+
+  (Reproduced under the //validation:cf-sz5-uefi-boot gate before this board was
+  ever put on hardware; that assert is a landmine for any PCI-function UART, and
+  pc/uart.cc now passes GSIs >= 16 through instead of asserting.)
+
+  irq=0 is not a workaround for that bug — it is the kernel's SUPPORTED polling
+  mode. platform/debug.cc's UartDriverHandoffLate treats a zero/absent IRQ as
+  "no interrupt" and starts gUartPollTimer, logging "UART: POLLING mode
+  enabled." That mode is fully bidirectional: TX already polls the line-status
+  register's tx_register_empty bit unconditionally (uart::ns8250 TxReady/Write,
+  so console output NEVER depended on the interrupt), and RX is drained by the
+  poll timer instead of an RX interrupt.
+
+  So the cost of irq=0 is input latency bounded by the poll period, not
+  functionality — a good trade for a machine whose only console is remote.
+  Moving to interrupt-driven RX additionally requires the IOAPIC entry for GSI
+  19 to be programmed with PCI trigger/polarity (level/low) rather than the
+  default edge/high, which cannot be rehearsed under QEMU (its ISA bus rejects
+  irqnum >= 16 outright), so it must be proven on the real unit first.
+
+Because AMT SOL is a real UART the kernel drives directly (not a firmware
+redirection service), the port stays open for the whole boot — including after
+ExitBootServices, where UEFI-console output would stop.
+
+STATUS ON REAL HARDWARE (2026-07-25) — READ BEFORE RETRYING:
+
+  The first attempts booted the unit but got NOTHING on Serial-over-LAN. The
+  cause was found and fixed; what follows is what was actually measured, so
+  the next attempt does not re-derive it (or re-chase the refuted theory at
+  the end):
+
+  * The image boots and keeps running. A plain reboot on this machine reaches
+    the fallback OS in 55s (measured baseline). Booting the first-light image
+    via a one-shot UEFI BootNext left the machine powered On and it NEVER came
+    back to the fallback OS — twice, >4 minutes each. A boot loader that failed
+    would have returned an error and fallen through in ~55-75s, which is exactly
+    what the roughly 8 MB smoke image did. The image that keeps
+    running is the one that starts component_manager and never terminates.
+
+  * The SOL capture path itself WORKS, and this was proved on the same boots,
+    not assumed: with Linux running, ModemManager's probe of /dev/ttyS4 shows up
+    byte-for-byte in `amtterm` ("AT^SQPORT?", "AT"...). So bytes written to
+    0xf0a0 by a host OS do reach the network. Cerise's do not.
+
+  * ROOT CAUSE (found, measured on the unit, and fixed) — FIRMWARE HANDS THE OS
+    PCI 00:16.3 WITH ITS I/O DECODE TURNED OFF. Instrumented physboot reported,
+    on the machine:
+
+      base=0xf0a0 irq=0 IER=ff IIR=ff LCR=ff MCR=ff LSR=ff MSR=ff SCR=ff
+      pci 00:16.3 id=9d3d8086 cmd=0000 bar0=0000f0a1 pmcap=50 pmcsr=0008
+
+    BAR0 is programmed (0xf0a1 → base 0xf0a0) and the function is in D0, but
+    COMMAND = 0x0000, so nothing answers at 0xf0a0. An unclaimed x86 I/O port
+    reads all-ones, so LSR bit 5 (tx-empty) looks permanently set, TxReady()
+    returns true immediately, and every byte goes into a port nobody owns with
+    no error reported anywhere.
+
+    Proven in the same boot by setting the COMMAND I/O-enable bit through
+    legacy 0xcf8/0xcfc config access and re-probing: the window came alive
+    (IER=00 IIR=01 LCR=03 MCR=00 LSR=00 MSR=bb) and Cerise's own bytes reached
+    amtterm for the first time. Corroborated from the other direction: forcing
+    00:16.3 to D3hot from Ubuntu makes all seven registers read 0xff, and
+    returning it to D0 makes them read real values again.
+
+    Fixed in //zircon/kernel/phys/uart-console.cc, which enables the decode
+    before Init() when a port-mapped UART reads back as an empty bus. QEMU
+    cannot reproduce the failure — isa-serial has no PCI function behind it —
+    which is why //validation:cf-sz5-uefi-boot passed while the real machine
+    stayed silent, and also why the fix is a no-op under that gate.
+
+    Linux only looks like it prints from [0.000000] on this machine because
+    printk REPLAYS its ring buffer when ttyS4 registers at [0.446722], after
+    the PCI core enabled the device at [0.425151] ("enabling device
+    (0001 -> 0003)"). Nothing was on the wire before that either.
+
+  * REFUTED, do not resurrect: "the ME holds the SOL port in loopback until a
+    host OS programs the divisor". amtterm does say "SOL device is running in
+    loopback mode" at session start, but that flag is SOL_CONTROLS_FROM_HOST
+    (0x29) reporting LOOPBACK_ACTIVE (0x02), which mirrors the HOST's own
+    MCR-LOOP bit — Linux's serial8250 autoconfig scratch test, asserted and
+    cleared within milliseconds. The ME does not gate forwarding on it, and
+    Cerise's silence had nothing to do with the divisor. ns8250's Init does now
+    program 115200 8N1 on PIO ports, because that matches Linux and is what the
+    rest of Zircon assumes, but it is not the fix and never was.
+
+  * Ruled out by measurement, do not re-investigate: the I/O base (firmware
+    assigns BAR0 = io 0xf0a0-0xf0a7 and Linux never moves it); the cmdline
+    grammar and precedence (ZBI driver items are applied before ZBI cmdline
+    items, so kernel.serial wins — the QEMU gate confirms the console lands on
+    0xf0a0); ZBI structure (item[0] is KRNL); the ESP layout (the shim opens
+    \bootx64.zbi from the volume root of its own loaded image); Secure Boot
+    (disabled, platform in Setup Mode); and the boot entry's load options
+    (empty, so the shim uses its DEFAULT_ZBI_FILENAME).
+
+  * Also worth knowing: the pre-kernel shim prints on the UEFI console, and this
+    machine's firmware does not redirect POST/UEFI output to SOL. So even on a
+    fully working boot, the FIRST thing expected on SOL is the kernel's own
+    "physload: Console configured as kernel.serial=ioport,0xf0a0,0" — never the
+    shim's CERISE-SHIM-GOP-FB. Its absence is not evidence of a shim failure.
+"""
+
+load("//assembly:defs.bzl", "cerise_board")
+load(
+    "//boards/hw-x64:drivers.bzl",
+    "HW_X64_BOOTFS",
+    "HW_X64_BOOT_DRIVERS",
+    "HW_X64_PROVIDED_FEATURES",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+cerise_board(
+    name = "cf-sz5",
+    platform = "//platforms:x64-fuchsia",
+    # The hw-x64 boot-driver list, e1000 INCLUDED. Getting back to this plain
+    # form is deliberate and was earned; the history matters, because the
+    # failure it recovers from costs a hands-on power cycle.
+    #
+    # On the CF-SZ5 the I219-LM at 00:1f.6 is not just a NIC, it is the path AMT
+    # Serial-over-LAN and the AMT web/KVM interfaces ride on: the ME has no
+    # independent MAC/PHY on I219, it is muxed through this same LAN controller.
+    # (Direct evidence: the ARP entry for the AMT address 192.168.3.69 carries
+    # a8:13:74:92:54:8e, the I219-LM's own MAC, and Linux's own link-local
+    # address on enp0s31f6 is fe80::aa13:74ff:fe92:548e — the same MAC.) So
+    # whatever the host driver does to this device, it does to the only remote
+    # console this machine has.
+    #
+    # WHAT WENT WRONG (measured, 2026-07-25): booted with e1000 indexed, the
+    # driver bound to 00_1f_6, identified the part correctly (mac_type=25 =
+    # e1000_pch_spt, did=0x156f) and ran e1000_reset_hw + e1000_init_hw +
+    # e1000_setup_link on it. The boot itself was fine (`driver_manager: Bootup
+    # completed.`, 6292 lines over SOL), but AMT then went away entirely — the
+    # address stopped answering ICMP and the :16992 web UI stopped serving, so
+    # power control was gone too and the unit needed a physical power cycle. The
+    # CONTRASTING boot is what makes this attributable rather than coincidence:
+    # the immediately preceding boot of the SAME image, differing only in that
+    # e1000 faulted its driver host before touching the device, left AMT
+    # completely healthy.
+    #
+    # THE ACTUAL CAUSE was not a missing manageability handshake but a plain
+    # ORDERING BUG in the driver, and the same bug also explains the
+    # 00:00:00:00:00:00 MAC this board reported. e1000_init_hw_ich8lan calls
+    # e1000_init_rx_addrs_generic (e1000_ich8lan.c:5081), which programs
+    # hw->mac.addr into RAR[0] and zeroes RAR[1..11] (e1000_mac.c:381-386). The
+    # driver called e1000_read_mac_addr() AFTER init_hw, so hw->mac.addr was
+    # still all-zero at that moment: init_hw faithfully wrote 00:00:00:00:00:00
+    # into RAR[0] and, because e1000_rar_set_pch_lpt only sets the Address Valid
+    # bit for a non-zero address (e1000_ich8lan.c:2088), left RAR[0] INVALID. On
+    # a part where AMT shares the host's unicast address that deletes the only
+    # receive filter AMT's packets match. RAR[1..11] are the SHRA entries the
+    # vendored code itself documents as "shared between the Host and
+    # manageability engine (ME)" (e1000_ich8lan.c:2069-2071).
+    #
+    # WHAT THE DRIVER DOES NOW (src/cerise/drivers/e1000/e1000.cc InitHardware):
+    #   * sets CTRL_EXT.DRV_LOAD before the reset and clears it on Stop() —
+    #     e1000e's get_hw_control()/release_hw_control();
+    #   * logs FWSM, check_mng_mode and check_reset_block as CERISE-E1000-MNG;
+    #   * snapshots only RAR[0] as a fallback for recovering the permanent MAC;
+    #   * reads the MAC BEFORE init_hw, so init_hw REPROGRAMS RAR[0] with the
+    #     real address (AV set) instead of destroying it;
+    #   * leaves SHRA ownership to the shared code, whose rar_set path consults
+    #     WLOCK_MAC and takes the ICH software semaphore before every host write;
+    #   * never treats a later RSPCIPHY transition as permission to run the
+    #     reset-time setup_link sequence against a live interface.
+    #
+    # Reverting to this list without those driver changes will take AMT out again.
+    #
+    # MEASURED WITH THE MAC-ORDERING FIX, on the unit, over six boots
+    # (2026-07-25). AMT was verified healthy before each and after each — ICMP,
+    # the :16992 web UI answering an authenticated digest request with HTTP 200,
+    # and AMT power commands still executing. This is the historical log format
+    # from that validation:
+    #   CERISE-E1000-MNG fwsm=e001c21c fw_valid=1 mng=1 reset_block=12 wlock_mac=4
+    #   CERISE-E1000-RAR0 pre=80008e54:927413a8 post-reset=80008e54:927413a8
+    #   CERISE-E1000-RAR restored=0 of rar_count=12 post-init rar0=80008e54:927413a8
+    #   e1000: MAC a8:13:74:92:54:8e
+    #   CERISE-E1000-LINK status=00080483 lu=1 speed=1000 duplex=full
+    # RAR[0] is byte-identical before and after the reset, which also PROVES the
+    # reset never cleared it — init_hw was the destructive step, exactly as
+    # described above. The zero restore count is also why removing the raw SHRA
+    # replay does not change the validated path: WLOCK_MAC=4 made the shared code
+    # leave the ME-reserved entries alone, while RAR[0] was reprogrammed correctly
+    # because the MAC was read first.
+    #
+    # RESOLVED 2026-07-25 evening — NETWORKING WORKS ON THIS BOARD. Measured on
+    # the unit: cerise booted from its own SSD, the driver bound the I219-LM,
+    # netstack3 brought `lan-eth0` up with 172.20.10.120/24 obtained by DHCP
+    # (a packet capture logged the ACK to a8:13:74:92:54:8e), NUD reached
+    # Reachable for the gateway, and a test client completed a TCP connection
+    # to the file server on
+    # :50051. A TCP handshake and a DHCP exchange both require transmit, so the
+    # descriptor stall described below is gone. AMT stayed up on the same wire
+    # throughout, so the manageability coexistence holds too.
+    #
+    # What fixed it is not recorded here — only that the symptom is measurably
+    # absent. If the stall returns, the diagnosis below is still the best map of
+    # what was ruled out. Do not treat the paragraph below as current state; it
+    # can waste substantial debugging time if read as if it were.
+    #
+    # HISTORICAL — the transmit stall as originally measured:
+    # The driver binds, reports the right MAC, and brings the link up at
+    # 1000/full, and netstack3 creates the interface — but DHCP DISCOVER times
+    # out because THE TRANSMITTER NEVER CONSUMES DESCRIPTORS. Measured across
+    # three boots: TDH stays pinned at 0 while TDT advances (e.g. 7 -> 10 -> 11)
+    # and RX works throughout (RDH advances 2 -> 4 -> 5, mpc=0, rnbc=0,
+    # crcerrs=0). Ruled out by direct register readback: TCTL=000400fa (EN|PSP,
+    # CT/COLD set), TDBAL/TDLEN/TXDCTL correct, TIPG=00602008, link up, and both
+    # halves of the i219 Tx-hang errata now applied (TARC0 2-request + IOSFPC
+    # RDMTS + FEXTNVM11 DISABLE_MULR_FIX — all three were vendored in the shared
+    # code but never applied by it). GPTC still counts packets, which is the ME
+    # transmitting over the same MAC, so the MAC's transmit path itself is alive
+    # and only the HOST descriptor queue is unserviced.
+    #
+    # That gap was a plain data-path bug, NOT a manageability one: it was present
+    # with the ME quiescent or busy, and it cost nothing but throughput. The
+    # driver was indexed here even while it persisted, because it is provably
+    # safe to bind on this machine — which is the property that was actually
+    # missing. (End of historical section; see RESOLVED above for current state.)
+    boot_drivers = HW_X64_BOOT_DRIVERS,
+    provided_features = HW_X64_PROVIDED_FEATURES,
+    # AMT Serial-over-LAN 16550A at PIO 0xf0a0 (measured on the unit). IRQ field
+    # is 0 = the kernel's polling mode; the real GSI is 19, see the docstring.
+    kernel_cmdline = ["kernel.serial=ioport,0xf0a0,0"],
+    bootfs = HW_X64_BOOTFS,
+)

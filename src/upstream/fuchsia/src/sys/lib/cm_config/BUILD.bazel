@@ -1,0 +1,37 @@
+# Bazel integration for this imported target.
+# serde feature is host-only in GN; guarded by #[cfg(feature = "serde")] in source.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cm_config",
+    srcs = ["src/lib.rs"],
+    crate_name = "cm_config",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/src/fidl/fuchsia.component.internal:fidl_fuchsia_component_internal",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust:version-history",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:anyhow",
+        "@crates//:camino",
+        "@crates//:log",
+        "@crates//:thiserror",
+    ],
+)
+
+# Host-runnable unit tests (rung 1, zero new external crates).
+rust_test(
+    name = "cm_config_test",
+    crate = ":cm_config",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "@crates//:assert_matches",
+    ],
+)

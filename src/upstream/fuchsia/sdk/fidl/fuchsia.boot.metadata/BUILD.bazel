@@ -1,0 +1,30 @@
+# Authored locally for Cerise (C7 Step 4). fuchsia.boot.metadata FIDL + C++ bindings.
+# Used by platform-bus PlatformDevice (MetadataServer) for ZBI partition/MAC/serial metadata.
+# The entire library is @available(added=HEAD).
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.boot.metadata",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.boot.metadata_cpp",
+    library = ":fuchsia.boot.metadata",
+    tags = ["manual"],
+    deps = [
+        # fuchsia.boot.metadata imports fuchsia.net; the generated C++ includes
+        # <fidl/fuchsia.net/cpp/common_types.h> which comes from fuchsia.net_cpp.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

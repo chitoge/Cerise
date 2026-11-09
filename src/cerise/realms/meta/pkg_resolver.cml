@@ -1,0 +1,40 @@
+// pkg_resolver leaf (packages) — the fuchsia-pkg:// component resolver for the
+// x64-pkg product. Serves fuchsia.component.resolution.Resolver for fuchsia-pkg://cerise/<name>
+// URLs backed by the fxfs "blob" volume: on Resolve it serves the package's directory
+// (package_directory over fxfs BlobReader) EXECUTABLE and returns the decoded manifest + package
+// dir, so component_manager's elf_runner launches the packaged component from disk blobs.
+// See //src/cerise/pkg_resolver/src/main.rs.
+//
+// Registered as the "fuchsia-pkg" resolver in the x64-pkg realm's #pkg-env environment.
+{
+    program: { runner: "elf", binary: "bin/pkg_resolver" },
+    capabilities: [
+        // A component-provided resolver capability. Per cml: the target of `path` MUST speak
+        // fuchsia.component.resolution.Resolver.
+        {
+            resolver: "pkg-resolver",
+            path: "/svc/fuchsia.component.resolution.Resolver",
+        },
+        // The SAME served protocol, also exposed as a plain protocol capability (default path
+        // /svc/fuchsia.component.resolution.Resolver — identical to the resolver's path)
+        // routes this to pkg_fetcher so it can drive the verified-exec identity NEGATIVE test
+        // (resolve a lying index entry directly and assert rejection).
+        {
+            protocol: "fuchsia.component.resolution.Resolver",
+        },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        // The VMEX resource — to grant EXECUTE rights to blobs served as a launched component's
+        // /pkg (binary + libs). Offered from parent (a component_manager builtin) by the realm.
+        // route_check permits precisely this (pkg_resolver + VmexResource) privileged use.
+        { protocol: "fuchsia.kernel.VmexResource" },
+        // fshost's exposed blob subtree: /fshost-fs/blob/svc/fuchsia.fxfs.BlobReader is the blob
+        // source the served package directories read from (merkle-verified page-in).
+        { directory: "fshost-fs", rights: ["r*"], path: "/fshost-fs" },
+    ],
+    expose: [
+        { resolver: "pkg-resolver", from: "self" },
+        { protocol: "fuchsia.component.resolution.Resolver", from: "self" },
+    ],
+}

@@ -1,0 +1,40 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# fxfs_crypt_common - the real key-wrapping logic behind the Crypt
+# service (AES256-GCM-SIV wrap/unwrap of Fxfs volume keys). Pulled in via
+# fidl_fuchsia_fxfs, which is @available(added=HEAD) - HEAD flags required.
+rust_library(
+    name = "fxfs_crypt_common",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_crypt_common",
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    proc_macro_deps = [
+        "@crates//:async-trait",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        "//src/upstream/fuchsia/src/storage/lib/fscrypt:fscrypt",
+        "@crates//:aes-gcm-siv",
+        "@crates//:rand",
+    ],
+)
+
+# Host-runnable unit tests (rung 1, zero new external crates). Only real zx
+# usage here is zx_status (portable error codes, aliased `as zx`) - no real
+# zx::Vmo/Channel handles, unlike vfs/fs_management/block_client/storage_device
+# /key-bag/zxcrypt (all excluded elsewhere for exactly that reason). Confirmed
+# by direct build: the plain library already builds clean for host.
+rust_test(
+    name = "fxfs_crypt_common_test",
+    crate = ":fxfs_crypt_common",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    deps = ["//src/upstream/fuchsia/src/lib/fuchsia:fuchsia"],
+)

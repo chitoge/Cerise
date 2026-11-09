@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# utf_conversion: UTF-8 ↔ UTF-16 conversion for host-side EFI test builds.
+# The header is published as <src/lib/utf_conversion/utf_conversion.h> via
+# include_prefix so consumers can use that path without workspace-root in -I.
+cc_library(
+    name = "utf_conversion",
+    srcs = ["utf_conversion.cc"],
+    hdrs = ["utf_conversion.h"],
+    include_prefix = "src/lib/utf_conversion",
+    deps = ["//zircon/system/public:public"],
+)

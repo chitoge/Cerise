@@ -1,0 +1,9 @@
+# Authored locally for Cerise. board/lib/acpi: i2c.businfo_cpp.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(name = "fuchsia.hardware.i2c.businfo", srcs = glob(["*.fidl"], allow_empty = True), tags = ["manual"], available = "fuchsia:HEAD", deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c"])
+fidl_cpp(name = "fuchsia.hardware.i2c.businfo_cpp", library = ":fuchsia.hardware.i2c.businfo", tags = ["manual"], deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp", "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",])

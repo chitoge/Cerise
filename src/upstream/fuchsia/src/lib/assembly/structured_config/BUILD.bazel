@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "structured_config",
+    srcs = ["src/lib.rs"],
+    crate_name = "assembly_structured_config",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/assembly/validate_util:validate_util",
+        "//src/upstream/fuchsia/src/lib/directed_graph:directed_graph",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/config_encoder:config_encoder",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "//src/upstream/fuchsia/tools/lib/config_value_file:config_value_file",
+        "@crates//:anyhow",
+        "@crates//:camino",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ],
+)

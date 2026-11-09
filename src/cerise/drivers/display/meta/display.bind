@@ -1,0 +1,27 @@
+// Cerise display driver: COMPOSITE bind rules for the QEMU stdvga PCI device (1234:1111).
+//
+// Structure copied from src/cerise/drivers/e1000/meta/e1000.bind (proven composite spec
+// matching on this exact bus-0 QEMU config), retargeted to the stdvga VID/DID. See that
+// file's header for WHY a composite (not direct/isolate) bind: bus-pci publishes EVERY
+// PCI device as BOTH an isolate child node AND a composite node spec, and driver-index
+// prioritizes the composite spec — so a composite driver is the only one that can bind.
+//
+// Parent count: the stdvga device sits on the same q35 PCI bus 0 as e1000, whose spec
+// carries an acpi parent (has_acpi=true). QEMU q35 gives cold-plugged bus-0 devices ACPI
+// companions, so the stdvga composite spec likewise has a pci + acpi parent pair.
+composite display;
+
+using fuchsia.acpi;
+using fuchsia.pci;
+using fuchsia.hardware.pci;
+
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_VID == 0x1234;
+  fuchsia.BIND_PCI_DID == 0x1111;
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.PCI;
+}

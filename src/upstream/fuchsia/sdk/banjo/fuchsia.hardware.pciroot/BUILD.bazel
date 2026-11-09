@@ -1,0 +1,86 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "fidl_banjo_c", "fidl_banjo_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.pciroot",
+    srcs = ["pciroot.fidl"],
+    available = "fuchsia:HEAD",
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_banjo_c(
+    name = "fuchsia.hardware.pciroot_banjo_c_gen",
+    library = ":fuchsia.hardware.pciroot",
+)
+
+# Copy the generated header to the canonical include path:
+# <fuchsia/hardware/pciroot/c/banjo.h>
+genrule(
+    name = "pciroot_banjo_hdr",
+    srcs = [":fuchsia.hardware.pciroot_banjo_c_gen"],
+    outs = ["fuchsia/hardware/pciroot/c/banjo.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.pciroot_banjo_c",
+    hdrs = [":pciroot_banjo_hdr"],
+    # Strip the package prefix so the header is available as
+    # <fuchsia/hardware/pciroot/c/banjo.h>
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot",
+)
+
+# C++ banjo (ddktl protocol/client classes), consumed by board/lib/acpi as
+# fuchsia.hardware.pciroot_banjo_cpp. The cpp header includes "banjo-internal.h", so both
+# the cpp and cpp_internal backends are generated and placed side by side.
+fidl_banjo_cpp(
+    name = "fuchsia.hardware.pciroot_banjo_cpp_gen",
+    library = ":fuchsia.hardware.pciroot",
+    backend = "cpp",
+)
+
+fidl_banjo_cpp(
+    name = "fuchsia.hardware.pciroot_banjo_cpp_internal_gen",
+    library = ":fuchsia.hardware.pciroot",
+    backend = "cpp_internal",
+)
+
+genrule(
+    name = "pciroot_banjo_cpp_hdr",
+    srcs = [":fuchsia.hardware.pciroot_banjo_cpp_gen"],
+    outs = ["fuchsia/hardware/pciroot/cpp/banjo.h"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "pciroot_banjo_cpp_internal_hdr",
+    srcs = [":fuchsia.hardware.pciroot_banjo_cpp_internal_gen"],
+    outs = ["fuchsia/hardware/pciroot/cpp/banjo-internal.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.pciroot_banjo_cpp",
+    hdrs = [
+        ":pciroot_banjo_cpp_hdr",
+        ":pciroot_banjo_cpp_internal_hdr",
+    ],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot",
+    deps = [
+        # The C++ banjo header wraps the C banjo header + ddktl protocol classes.
+        ":fuchsia.hardware.pciroot_banjo_c",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+    ],
+)
+
+# Compile probe: ensure the generated C++ banjo header actually compiles.
+cc_library(
+    name = "banjo_cpp_probe",
+    srcs = ["banjo_cpp_probe.cc"],
+    tags = ["manual"],
+    deps = [":fuchsia.hardware.pciroot_banjo_cpp"],
+)

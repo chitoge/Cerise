@@ -1,0 +1,25 @@
+# Authored locally for Cerise. fscrypt: fscrypt-compatible filename
+# encryption primitives (Linux fscrypt INO_LBLK32 mode), used by fxfs/crypto.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fscrypt",
+    srcs = [
+        "src/direntry.rs",
+        "src/hkdf.rs",
+        "src/lib.rs",
+        "src/proxy_filename.rs",
+    ],
+    crate_name = "fscrypt",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:base64",
+        "@crates//:hmac",
+        "@crates//:sha2",
+        "@crates//:siphasher",
+        "@crates//:zerocopy",
+    ],
+)

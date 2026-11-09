@@ -1,0 +1,25 @@
+package(default_visibility = ["//visibility:public"])
+
+# Guest blob exercising virtio-console (port 0x5000) and virtio-net (port 0x5001).
+
+genrule(
+    name = "guest_virtio_elf",
+    srcs = ["guest_virtio.S"],
+    outs = ["guest_virtio.elf"],
+    cmd = """
+        $(execpath //toolchain:linux_x86_64/bin/clang.prebuilt) \
+            --target=x86_64-unknown-elf \
+            -nostdlib -ffreestanding -static -fPIC \
+            -Wl,--Ttext=0x1000 -Wl,--no-dynamic-linker \
+            -o $@ $(SRCS)
+    """,
+    tools = ["//toolchain:linux_x86_64/bin/clang.prebuilt"],
+)
+
+genrule(
+    name = "guest_virtio_blob",
+    srcs = [":guest_virtio_elf"],
+    outs = ["guest_virtio.bin"],
+    cmd = "$(execpath //toolchain:llvm_objcopy) -O binary --only-section=.text $< $@",
+    tools = ["//toolchain:llvm_objcopy"],
+)

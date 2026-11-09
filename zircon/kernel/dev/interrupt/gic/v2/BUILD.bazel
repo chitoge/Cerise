@@ -1,0 +1,26 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "gicv2",
+    srcs = [
+        "arm_gicv2.cc",
+        "arm_gicv2.h",
+        "arm_gicv2m.cc",
+        "arm_gicv2m_msi.cc",
+        "arm_gicv2m_pcie.cc",
+        "arm_gicv2m_pcie.h",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/kernel/dev/interrupt/gic/common:gic_common",
+        "//zircon/kernel/lib/kpci:kpci",
+        "//zircon/kernel/lib/pow2_range_allocator:pow2_range_allocator",
+        "//zircon/kernel/dev/pcie",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)

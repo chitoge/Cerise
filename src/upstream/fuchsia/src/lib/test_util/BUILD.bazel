@@ -1,0 +1,25 @@
+# vendored here (verbatim, from
+# https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/lib/test_util/src/lib.rs)
+# to unblock netstack3-ip's own #[cfg(test)] mods, which do
+# `use test_util::assert_lt;` / `use test_util::assert_geq;` - this crate
+# was missing entirely from the curated src/upstream tree (upstream itself
+# marks it `testonly` - it's test-infra, not production code, same category
+# as `teststd`/`ip-test-macro`/`proptest-support`). Zero deps.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "test_util",
+    srcs = ["src/lib.rs"],
+    crate_name = "test_util",
+    edition = "2024",
+)
+
+# The crate's own #[cfg(test)] mod needs nothing beyond std (uses
+# std::thread/std::sync::mpsc directly).
+rust_test(
+    name = "test_util_test",
+    crate = ":test_util",
+    edition = "2024",
+)

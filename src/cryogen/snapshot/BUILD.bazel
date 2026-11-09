@@ -1,0 +1,29 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Turning a discarded scratch overlay into a new `.cryostore` generation.
+#
+# `no_std` (needs `alloc`) and does no I/O, for the same reason
+# `//src/cryogen/format` is: a snapshot can be admitted by a host tool with a
+# file open, or by the process hosting the guest with the overlay in RAM, and
+# both must produce the same bytes. The base image and the pack sink are traits
+# the caller supplies.
+rust_library(
+    name = "cryogen_snapshot",
+    srcs = ["lib.rs"],
+    crate_name = "cryogen_snapshot",
+    edition = "2021",
+    deps = ["//src/cryogen/format:cryogen_format"],
+)
+
+# Host unit tests: the scratch container round-trips and refuses malformed
+# input; a one-sector write costs one page and one entry; a fully written page
+# costs no base read; a page the guest zeroed reads as zero rather than as the
+# parent's stale bytes; rewritten-identical and relocated content cost no pack
+# bytes; an erased tail tombstones what the parent had; and snapshots chain.
+rust_test(
+    name = "cryogen_snapshot_test",
+    crate = ":cryogen_snapshot",
+    edition = "2021",
+)

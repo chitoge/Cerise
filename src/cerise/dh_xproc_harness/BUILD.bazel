@@ -1,0 +1,45 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+# driver-host Step 0: minimal faithful caller for the separate-process DFv2 driver host test.
+# Connects to its static child driver_host's DriverHost and calls Start with a cloned
+# /svc (carrying LogSink) so the driver loaded in the SEPARATE driver_host process can
+# run. Emits CERISE-DH-XPROC-HARNESS-OK.
+rust_binary(
+    name = "dh_xproc_harness",
+    srcs = ["src/main.rs"],
+    crate_name = "dh_xproc_harness",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/echo:fidl_cerise_echo",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fidl_fuchsia_component_runner",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.host:fidl_fuchsia_driver_host",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+    ],
+)
+
+# Staged STRIPPED into the dh-xproc ZBI (~47 MB unstripped). --strip-all keeps the
+# allocated .dynsym (libc/libc++ dynamic binding); only .symtab/.strtab/debug go.
+fuchsia_stripped(
+    name = "dh_xproc_harness.fuchsia",
+    src = ":dh_xproc_harness",
+)

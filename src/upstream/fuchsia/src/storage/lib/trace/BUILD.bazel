@@ -1,0 +1,18 @@
+# Authored locally for Cerise.
+# Built without the "tracing" feature (noop mode) — matches the host/non-tracing
+# path from the upstream BUILD.gn. The tracing feature requires fuchsia_trace which
+# we do not vendor; noop is sufficient for vfs compilation.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "storage_trace",
+    srcs = [
+        "src/lib.rs",
+        "src/noop.rs",
+    ],
+    crate_name = "storage_trace",
+    edition = "2024",
+    deps = [],
+)

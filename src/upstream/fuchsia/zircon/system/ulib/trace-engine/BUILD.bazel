@@ -1,0 +1,54 @@
+# trace-engine headers (driver_runtime uses -DNTRACE so macros are no-ops
+# there; only the header declarations were needed for that consumer).
+#
+# storage: the real compiled implementation, vendored for block_server's Rust
+# "trace" crate (fuchsia_trace::duration!/flow_step! macros used unconditionally
+# in block_server's production code path — see src/lib/trace/rust). This is real,
+# genuine trace-engine behavior, not a stub: when no trace collector is attached
+# (the normal case here — no trace-manager component exists in Cerise), the
+# engine's own state machine reports TRACE_STARTED=false and the macros are cheap
+# no-ops by design, not because anything was patched out.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+cc_library(
+    name = "trace-engine",
+    srcs = [
+        "buffer.cc",
+        "context.cc",
+        "context_api.cc",
+        "engine.cc",
+        "nonce.cc",
+        "rolling_buffer.cc",
+    ],
+    hdrs = [
+        "buffer.h",
+        "context_impl.h",
+        "hash_table.h",
+        "rolling_buffer.h",
+    ],
+    copts = [
+        # Upstream sources #include their own siblings via full workspace-root-
+        # relative paths (e.g. "zircon/system/ulib/trace-engine/rolling_buffer.h"),
+        # but the vendored tree lives one level down — established pattern (see
+        # network-device's device/BUILD.bazel).
+        "-Isrc/upstream/fuchsia",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":headers",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)

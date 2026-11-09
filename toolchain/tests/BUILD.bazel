@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "kernel_probe.c",
+    "layering_probe_good.c",
+    "layering_probe_good.h",
+    "layering_probe_bad.c",
+    "stdlib_provenance_probe.cc",
+])
+
+cc_library(
+    name = "kernel_probe",
+    srcs = ["kernel_probe.c"],
+)
+
+cc_library(
+    name = "phys_probe",
+    srcs = ["kernel_probe.c"],
+)
+
+cc_library(
+    name = "x86_32_phys_probe",
+    srcs = ["kernel_probe.c"],
+)
+
+cc_library(
+    name = "efi_probe",
+    srcs = ["kernel_probe.c"],
+)
+
+cc_library(
+    name = "user_probe",
+    srcs = ["kernel_probe.c"],
+)
+
+cc_library(
+    name = "layering_probe_good",
+    srcs = ["layering_probe_good.c"],
+    hdrs = ["layering_probe_good.h"],
+)
+
+cc_library(
+    name = "layering_probe_bad",
+    srcs = ["layering_probe_bad.c"],
+    deps = [],
+)
+
+cc_library(
+    name = "stdlib_provenance_probe",
+    srcs = ["stdlib_provenance_probe.cc"],
+    copts = ["-std=c++20"],
+)

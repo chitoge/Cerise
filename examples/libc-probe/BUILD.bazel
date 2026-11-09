@@ -1,0 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# probe: compile a trivial .c against the assembled libc sysroot headers
+# (musl + llvm-libc shared) for the fuchsia target:
+#   bazel build //examples/libc-probe:libc_probe --platforms=//platforms:x64-fuchsia
+cc_library(
+    name = "libc_probe",
+    srcs = ["probe.c"],
+    deps = ["//src/cerise/sysroot:libc_sysroot_headers"],
+)

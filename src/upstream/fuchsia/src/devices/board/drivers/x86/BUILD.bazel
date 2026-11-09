@@ -1,0 +1,207 @@
+# Cerise BUILD (authored locally) — the x86 board driver (ACPI -> platform bus -> PCI
+# enumeration). The last compile before the runtime PCI-enum gate.
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+load("//build:structured_config.bzl", "compiled_manifest", "fuchsia_structured_config_cpp_elf_lib")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/platform-bus-x86.cml"])
+
+# Driver component manifest -> platform-bus-x86.cm (pkg/platform-bus-x86/meta/...).
+compiled_manifest(
+    name = "platform-bus-x86-manifest",
+    src = "meta/platform-bus-x86.cml",
+    output_name = "platform-bus-x86.cm",
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    tags = ["manual"],
+)
+
+# Bind rules -> platform-bus-x64.bindbc (referenced by the driver CML's bind: field).
+driver_bind_rules(
+    name = "x64-bind",
+    rules = "meta/x64.bind",
+    output_name = "platform-bus-x64.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.intel.platform:fuchsia.intel.platform.bind",
+    ],
+    tags = ["manual"],
+)
+
+# Structured config: cmc compiles meta/platform-bus-x86.cml (whose `use: config`
+# declares `use_hardware_iommu`) and configc generates x86_config::Config, which
+# init.cc reaches via #include "src/devices/board/drivers/x86/x86_config.h".
+fuchsia_structured_config_cpp_elf_lib(
+    name = "x86-config",
+    manifest = "meta/platform-bus-x86.cml",
+    namespace = "x86_config",
+    include_prefix = "src/devices/board/drivers/x86",
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)
+
+# FIDL C++ bindings whose OUT-OF-LINE template-instantiation objects must be
+# whole-archived into platform-bus-x86.so.  All fidl_cpp targets carry
+# alwayslink=True; cc_binary(-shared) honors DIRECT alwayslink, not transitive
+# (cc_shared_library doesn't honor transitive alwayslink at all).  Both the :x86
+# cc_library AND the final cc_binary list these so that:
+#   1. The cc_library compiles cleanly (headers visible, targets reachable).
+#   2. The cc_binary whole-archives their objects (out-of-line wire symbols embedded).
+X86_FIDL_ALWAYSLINK_DEPS = [
+    # --- FIDL cpp bindings already used for compilation in :x86 ---
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.acpi:fuchsia.hardware.acpi_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.acpi.tables:fuchsia.acpi.tables_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp",
+    # --- Additional FIDL cpp bindings (UND in the .so; must be embedded) ---
+    # fuchsia.io (WireServer<fuchsia_io::File/Node/Directory>::dispatch_message etc.)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    # fuchsia.logger (WireUnownedResult<LogSink::WaitForInterestChange> etc.)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+    # fuchsia.hardware.spi.businfo / i2c.businfo (board metadata types)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
+    # fuchsia.driver.test.logger (via driver-unit-test; TestCaseResult etc.)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.test.logger:fuchsia.driver.test.logger_cpp",
+    # fuchsia.hardware.interrupt (interrupt provider protocol)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
+    # fuchsia.driver.metadata (WireServer<fuchsia_driver_metadata::Metadata>::dispatch_message)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
+    # fuchsia.driver.framework (DeviceAddress/BusInfo natural types; via ddktl)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    # fuchsia.mem (wire::Range — referenced by fuchsia.hardware.acpi resources)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+    # fuchsia.diagnostics.types (via fuchsia.logger -> fuchsia.diagnostics chain)
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_cpp",
+    # ddktl:fidl — provides ddk::FromDeviceFIDLTransaction (alwayslink=True)
+    "//src/upstream/fuchsia/src/lib/ddktl:fidl",
+]
+
+cc_library(
+    name = "x86",
+    srcs = glob(
+        ["*.cc", "acpi-dev/*.cc"],
+        exclude = ["**/*-test.cc", "**/*-tests.cc", "**/*test*.cc"],
+        allow_empty = True,
+    ),
+    hdrs = glob(["*.h", "include/**/*.h", "acpi-dev/*.h"], allow_empty = True),
+    # Repo-relative includes ("src/devices/...") resolve via the workspace-root -I; the
+    # driver also uses package-local bare includes ("acpi-private.h" from include/,
+    # "acpi-dev/dev-ec.h" from the package dir).
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-Isrc/upstream/fuchsia/src/devices/board/drivers/x86",
+        "-Isrc/upstream/fuchsia/src/devices/board/drivers/x86/include",
+    ],
+    deps = X86_FIDL_ALWAYSLINK_DEPS + [
+        # structured config (x86_config::Config::CreateFromVmo)
+        ":x86-config",
+        # bind-library C++ (FIDL-derived)
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.goldfish:fuchsia.hardware.goldfish_bindlib_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.goldfish.pipe:fuchsia.hardware.goldfish.pipe_bindlib_cpp",
+        # bind-library C++ (hand-written)
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.intel.platform:fuchsia.intel.platform_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.google.platform:fuchsia.google.platform_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.goldfish.platform:fuchsia.goldfish.platform_cpp",
+        # banjo (pciroot — C and C++)
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_c",
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
+        # DFv2 framework
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//sdk/lib/fit:fit",
+        # board libs + ACPICA + PCI + iommu
+        "//src/upstream/fuchsia/src/devices/board/lib/acpi:acpi",
+        "//src/upstream/fuchsia/src/devices/board/lib/smbios:smbios",
+        "//src/upstream/fuchsia/src/devices/lib/iommu:iommu-x86",
+        # NOTE: do NOT add devices/lib/driver:driver here. That library is a
+        # stub shim (all functions return ZX_ERR_NOT_SUPPORTED) intended for
+        # DFv2-only unit tests; it is NOT appropriate for legacy DFv1 drivers
+        # loaded via compat. When linked into platform-bus-x86.so and made
+        # LOCAL by the version script (local:*), the stub is called directly
+        # instead of the real compat.so implementation, causing
+        # device_connect_fragment_runtime_protocol → ZX_ERR_NOT_SUPPORTED.
+        # All 29 DFv1 ABI symbols (device_add_from_driver, get_*_resource,
+        # device_connect_fragment_*_protocol, driver_log*) are exported by
+        # compat.so (compat.ld) and resolve at dlopen time — no static stub
+        # needed here.
+        "//src/upstream/fuchsia/src/devices/pci/lib/pci:pci",
+        "//src/upstream/fuchsia/third_party/acpica-migrating/src:acpica",
+        # ACPICA OS-Services Layer (OSL): provides all AcpiOs* implementations
+        # (AcpiOsFree, AcpiOsAllocate, AcpiOsMapMemory, AcpiOsAcquireLock, etc.)
+        # that the ACPICA core calls at runtime.  Without this dep the driver
+        # links with --allow-shlib-undefined but dlopen relocation fails.
+        "//src/upstream/fuchsia/zircon/system/ulib/acpica:acpica_fuchsia",
+        # ddk + zircon ulibs
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk-deprecated-binding-headers",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/zircon/system/ulib/ddk-platform-defs:ddk-platform-defs",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/lazy_init:lazy_init",
+        "//src/upstream/fuchsia/zircon/system/ulib/region-alloc:region-alloc",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/driver-unit-test:driver-unit-test",
+    ],
+)
+
+# Self-contained legacy driver .so — built as cc_binary(-shared) so that DIRECT
+# alwayslink deps (the FIDL *_cpp targets in X86_FIDL_ALWAYSLINK_DEPS) are
+# whole-archived, embedding the out-of-line wire/natural template-instantiation
+# symbols INTO the .so.  cc_shared_library does NOT honor transitive alwayslink,
+# which left those symbols UND and caused dlopen relocation failures.
+#
+# compat.so is loaded RTLD_GLOBAL and exports ONLY the 29 DFv1 ABI C symbols
+# (via its version script local:*). driver_host_dfv2 exports fdf_*/fuchsia_logging
+# via -rdynamic. ALL C++ FIDL binding symbols are board-specific and must live IN
+# this .so — compat.so and driver_host_dfv2 do NOT export them.
+#
+# The ZIRCON_DRIVER macro (x86.cc) emits __zircon_driver_note__ and
+# __zircon_driver_rec__ with STV_DEFAULT; the version script exports ONLY those
+# two so cerise_load_compat_module()'s dlsym can locate them, while hiding the
+# ~354k FIDL/ACPICA/ddk globals that --export-dynamic formerly re-exported.
+# Without the restriction FindRestrictedSymbols (symbols.cc:179) called one
+# zx_vmo_read SYSCALL per dynamic symbol → ~354k syscalls → 60-second hang.
+# The version script's local:* collapses .dynsym to ~2 DEFINED exports + the
+# legitimate UND imports (libc/libc++/vDSO/compat-ABI/fdf) — runtime cost is
+# milliseconds. -u force-keeps both against any accidental --gc-sections pass.
+cc_binary(
+    name = "platform-bus-x86.so",
+    additional_linker_inputs = ["platform-bus-x86.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,platform-bus-x86.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # Root the ZIRCON_DRIVER symbols: prevent GC.
+        "-Wl,-u,__zircon_driver_note__",
+        "-Wl,-u,__zircon_driver_rec__",
+        # Export ONLY __zircon_driver_note__ + __zircon_driver_rec__; hide all
+        # other DEFINED globals (FIDL wire/natural vtables, ACPICA, ddk helpers).
+        # Replaces --export-dynamic which exported ALL ~354k defined symbols.
+        "-Wl,--version-script=$(location platform-bus-x86.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [":x86"] + X86_FIDL_ALWAYSLINK_DEPS + [
+        # 128-bit arithmetic helpers (__umodti3 etc.) used by FIDL code; excluded
+        # by -nodefaultlibs.  Same lib as compat.so / minimal_driver.
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

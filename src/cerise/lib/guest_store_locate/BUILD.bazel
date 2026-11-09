@@ -1,0 +1,68 @@
+# guest_store_locate — WHICH partition, on WHICH disk, holds the guest image.
+#
+# A pure library so the decision can be unit-tested on the host against inputs a
+# live boot could never be made to produce: a GPT with two matching partitions, a
+# header whose CRC is authentic over an entry array that is not, a partition that
+# is arithmetically valid and off the end of the device. Same split the file
+# server uses for claim.rs, the provisioner for layout.rs/ownership.rs and the
+# updater for esp.rs — the consuming binary depends on this crate rather than
+# re-`mod`ing the source, so there is one compilation of the logic and no drift
+# between what the tests check and what ships.
+#
+# No zx, no FIDL, no async, and no dependency on the guest-image format. The I/O
+# half (a range reader over a whole-disk block client, with a base offset and a
+# length bound) is a separate concern and does not belong in a crate that has to
+# be host-testable.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "guest_store_locate",
+    srcs = ["src/lib.rs"],
+    crate_name = "guest_store_locate",
+    edition = "2021",
+    deps = [
+        # The GPT header/geometry validator and CRC-32, SHARED with the component
+        # that WRITES partition tables, the one that must not destroy them, and
+        # the updater that writes an OS image into one of them. A second GPT
+        # validator in this tree would drift from the first, and the components
+        # that must never disagree about "is this a valid table" are exactly
+        # these. The guest-image type GUID lives there for the same reason.
+        "//src/cerise/fxfs_provisioner:boot_layout",
+    ],
+)
+
+# Host unit tests. What they cover, and why each is not a restatement of the
+# implementation:
+#
+#   * a clean table locates the guest partition, AND the same table asked for the
+#     ESP type gives a different range — so "found it" cannot mean "found the
+#     first partition".
+#   * the THREE evidence states stay distinct: no signature and a valid table
+#     with no match are Absent; a damaged header, a damaged entry array, absurd
+#     geometry and an off-device range are Damaged. Collapsing the second group
+#     into the first is how an unreadable disk becomes a blank guest disk, and
+#     `is_inconclusive` is asserted directly.
+#   * two matching partitions on one device, and two matching devices, are each
+#     REFUSED rather than resolved by taking the first. The second is the decoy
+#     case the file server's own selection bug was found by.
+#   * ambiguity outranks inconclusiveness, and a positive match survives an
+#     unreadable sibling — the deliberate asymmetry that inconclusive evidence
+#     can only undermine a NEGATIVE conclusion.
+#   * an empty survey is NOT "nothing found": the first is a retry condition, the
+#     second a verdict, and conflating them makes a component that started before
+#     the block driver bound conclude there is no guest image.
+#   * the store-length rule accepts a store SMALLER than its partition. The
+#     BOOTFS path asserts exact equality, which is correct there and would reject
+#     every correctly-sized partition here.
+#
+# The fixture builder computes both CRCs correctly by construction, so a test
+# asserting a refusal is refusing for the reason it names rather than because the
+# fixture was malformed some other way.
+rust_test(
+    name = "guest_store_locate_test",
+    crate = ":guest_store_locate",
+    edition = "2021",
+    size = "small",
+)

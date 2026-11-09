@@ -1,0 +1,37 @@
+// fileserver leaf — gRPC file server over netstack3 + Fxfs (bin/fileserver). Uses dev,
+// netstack3's Installer/socket.Provider, the aggregate block.volume Service, and
+// crypt_fxfs's Crypt protocols.
+{
+    program: { runner: "elf", binary: "bin/fileserver" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        {
+            protocol: "fuchsia.net.routes.admin.RouteTableV4",
+            availability: "optional",
+        },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+        { protocol: "fuchsia.fxfs.Crypt" },
+        { protocol: "fuchsia.fxfs.CryptManagement" },
+    ],
+    // The file server OWNS the disk-claim decision (survey -> open / format / refuse),
+    // so it is the only component entitled to say what the storage state is. It
+    // publishes that decision here rather than leaving it in the serial log, so the
+    // status console can render it WITHOUT holding a block capability or re-deriving
+    // the answer for itself. Two components deciding what the disk is would give two
+    // notions of truth that can disagree.
+    capabilities: [
+        { protocol: "cerise.network.HostConfiguration" },
+        { protocol: "cerise.storage.Status" },
+        { protocol: "cerise.storage.Lifecycle" },
+    ],
+    expose: [
+        { protocol: "cerise.network.HostConfiguration", from: "self" },
+        { protocol: "cerise.storage.Status", from: "self" },
+        { protocol: "cerise.storage.Lifecycle", from: "self" },
+    ],
+}

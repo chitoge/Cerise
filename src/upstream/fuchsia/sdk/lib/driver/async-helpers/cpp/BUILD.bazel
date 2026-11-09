@@ -1,0 +1,20 @@
+# Cerise BUILD (authored locally). //sdk/lib/driver/async-helpers/cpp:cpp —
+# async task / task_group helpers. Pulled in by sdk/lib/driver/compat/cpp.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/src/devices/lib/driver:driver",
+    ],
+)

@@ -1,0 +1,47 @@
+# Bazel integration for this imported target. sdk/lib/async-loop: the
+# message-loop dispatcher implementation (loop.c) + C++ wrapper. The runnable
+# heart of the async runtime. Compiles against the sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "async-loop",
+    srcs = ["loop.c"],
+    hdrs = glob(["include/lib/async-loop/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+cc_library(
+    name = "async-loop-default",
+    srcs = ["default.c"],
+    hdrs = ["include/lib/async-loop/default.h"],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        ":async-loop",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/sdk/lib/async-default:async-default",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)
+
+cc_library(
+    name = "async-loop-cpp",
+    srcs = ["loop_wrapper.cc"],
+    hdrs = glob(["include/lib/async-loop/cpp/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        ":async-loop",
+        "//src/upstream/fuchsia/sdk/lib/async:async",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

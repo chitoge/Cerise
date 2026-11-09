@@ -1,0 +1,37 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "hw_rng",
+    srcs = [
+        "debug.cc",
+        "hw_rng.cc",
+    ] + select({
+        "@platforms//cpu:x86_64": ["intel_rng/intel-rng.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "debug.cc",
+        "hw_rng.cc",
+        "intel_rng/intel-rng.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

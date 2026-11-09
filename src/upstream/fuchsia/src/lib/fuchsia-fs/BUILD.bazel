@@ -1,0 +1,45 @@
+# Authored locally for Cerise. fuchsia-fs: async filesystem
+# utilities for fuchsia.io Directory/File/Node operations. Uses the non-fdomain
+# flex transport (flex_fuchsia_io + flex_client shims).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fuchsia-fs",
+    srcs = [
+        "src/directory.rs",
+        "src/directory/watcher.rs",
+        "src/file.rs",
+        "src/file/async_read_at.rs",
+        "src/file/async_read_at_ext.rs",
+        "src/file/async_reader.rs",
+        "src/file/buffered_async_read_at.rs",
+        "src/lib.rs",
+        "src/node.rs",
+    ],
+    crate_name = "fuchsia_fs",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:flex_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-status-ext:zx-status-ext",
+        "//src/upstream/fuchsia/src/lib/fdomain/client:flex_fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:futures",
+        "@crates//:pin-project",
+        "@crates//:rand",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        ],
+        "//conditions:default": [],
+    }),
+)

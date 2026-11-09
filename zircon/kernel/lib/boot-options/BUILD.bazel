@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "boot_options",
+    srcs = [
+        "boot-options.cc",
+        "word-view.cc",
+    ],
+    hdrs = glob(["include/**/*.h", "include/**/*.inc"]) + ["enum.h"],
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/system/ulib/uart:uart",
+        "//:kernel_cc_headers",
+    ],
+)
+
+# Phys variant: same as boot_options but with the phys assert.h override so
+# ZX_PANIC → __zx_panic (defined in phys/panic.cc) instead of panic().
+cc_library(
+    name = "phys_boot_options",
+    srcs = [
+        "boot-options.cc",
+        "word-view.cc",
+    ],
+    hdrs = glob(["include/**/*.h", "include/**/*.inc"]) + ["enum.h"],
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/system/ulib/uart:uart",
+        "//:kernel_cc_headers",
+        "//build/phys:phys_include_overrides",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "boot-options.cc",
+        "word-view.cc",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h", "include/**/*.inc"], allow_empty = True) + ["enum.h"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

@@ -1,0 +1,60 @@
+// Cerise minimal display/framebuffer protocol.
+//
+// A native DFv2 display driver (src/cerise/drivers/display) owns the hardware
+// (QEMU stdvga, PCI 1234:1111): it maps the device's BARs via the PCI protocol,
+// programs the Bochs VBE mode, and SERVES this protocol — handing out the writable
+// linear-framebuffer VMO plus its geometry. A client (the status_console) holds NO
+// hardware capability: it connects to cerise.display.Service, learns the geometry,
+// maps the VMO writable, and paints text. Deliberately minimal — geometry + the
+// backing VMO is all a text/status console needs.
+library cerise.display;
+
+using zx;
+
+/// Pixel layout of the linear framebuffer. Only the format QEMU stdvga scans out
+/// today is defined; the enum is flexible so new formats can be added later.
+type PixelFormat = flexible enum : uint32 {
+    /// 32 bits per pixel. In memory each pixel is a little-endian uint32 of the
+    /// form 0x00RRGGBB (bytes B, G, R, X); the alpha/X byte is ignored on scanout.
+    /// This is exactly what QEMU stdvga presents at 32bpp.
+    X8R8G8B8 = 1;
+};
+
+/// Geometry of the framebuffer backing store returned by `Framebuffer.GetInfo`.
+type Info = struct {
+    /// Visible width in pixels.
+    width uint32;
+    /// Visible height in pixels.
+    height uint32;
+    /// Row stride in BYTES (>= width * bytes_per_pixel). A client advances one row
+    /// by adding `stride_bytes` to a byte pointer.
+    stride_bytes uint32;
+    /// Bytes per pixel (4 for X8R8G8B8).
+    bytes_per_pixel uint32;
+    /// Pixel layout of each `bytes_per_pixel`-sized pixel.
+    format PixelFormat;
+};
+
+/// A single whole-screen linear framebuffer a console can map writable and scan out.
+closed protocol Framebuffer {
+    /// Returns the framebuffer geometry. The dimensions are fixed for the lifetime
+    /// of the driver, so a client may cache the result.
+    strict GetInfo() -> (struct {
+        info Info;
+    });
+
+    /// Returns a duplicate handle to the writable VMO backing the linear framebuffer.
+    /// The VMO is device memory scoped to the display's BAR (handed to the driver by
+    /// the PCI bus, not ambient MMIO). Writes to a mapping of this VMO are scanned out
+    /// by the display hardware. At least `Info.stride_bytes * Info.height` bytes are
+    /// backed.
+    strict GetBuffer() -> (resource struct {
+        buffer zx.Handle:VMO;
+    });
+};
+
+/// The aggregated service the display driver publishes and driver_manager routes to
+/// framebuffer clients (e.g. status_console).
+service Service {
+    framebuffer client_end:Framebuffer;
+};

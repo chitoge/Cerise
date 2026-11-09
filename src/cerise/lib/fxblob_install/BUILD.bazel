@@ -1,0 +1,16 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_fxblob_install",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_fxblob_install",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/cerise/stubs/delivery_blob:delivery_blob",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "@crates//:anyhow",
+    ],
+)

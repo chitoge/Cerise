@@ -1,0 +1,44 @@
+// root_dfv2acpi_fshost — component_manager root for x64-fshost / qemu-x64-storage.
+// SHARD A (incl netdev_probe) + the storage children. fshost owns the disk lifecycle:
+// a first-boot fxfs_provisioner (Eager) lays down the Fxfs container + "blob" volume on a
+// virgin disk and then RELEASES it; fshost_probe gates on the provisioner's "provisioned"
+// readiness directory before opening "/fshost-fs", which Lazy-starts fshost and lets it
+// auto-mount. Exactly one component touches the disk at a time — the old fxfs_probe-vs-fshost
+// device-contention race is dissolved by a real routed capability dependency.
+//
+// This realm uses fxfs_provisioner instead of fxfs_probe; crypt_fxfs top-level child
+// dropped — fshost spawns its OWN crypt children dynamically in its #fxfs-crypt collection,
+// and the provisioner needs no crypt, so this realm is no longer decode-diff-identical and
+// is excluded from the decode_diff golden set. route_check still covers its routing.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netdev_probe", url: "fuchsia-boot:///netdev_probe#meta/netdev_probe.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fxfs_provisioner", url: "fuchsia-boot:///fxfs_provisioner#meta/fxfs_provisioner.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fshost", url: "fuchsia-boot:///fshost#meta/fshost.cm", startup: "lazy", environment: "#elf-env" },
+        { name: "fshost_probe", url: "fuchsia-boot:///fshost_probe#meta/fshost_probe.cm", startup: "eager", environment: "#elf-env" },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netdev_probe", "#fxfs_provisioner", "#fshost", "#fshost_probe"],
+        },
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: ["#netdev_probe", "#fxfs_provisioner", "#fshost", "#fshost_probe"],
+        },
+        { directory: "dev", from: "#driver_manager_rust", to: ["#netdev_probe", "#fshost"], rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: ["#fxfs_provisioner", "#fshost"] },
+        // race-fix handoff: the provisioner's readiness directory. fshost_probe reads
+        // it before opening "fshost-fs", so fshost starts only after the provisioner has
+        // released the disk.
+        { directory: "provisioned", from: "#fxfs_provisioner", to: "#fshost_probe" },
+        { directory: "fshost-fs", from: "#fshost", to: "#fshost_probe" },
+    ],
+}

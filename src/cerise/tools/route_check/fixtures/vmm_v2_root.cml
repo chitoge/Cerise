@@ -1,0 +1,20 @@
+// NEGATIVE-TEST FIXTURE root realm (not a real product). Hosts the second VMM as
+// a child and dutifully OFFERS it everything it uses, including both privileged
+// kernel resources. Routing completeness is therefore satisfied, so the only
+// findings the checker may report are the two OVER-PRIVILEGE violations — which
+// isolates the least-privilege lint from the routing check exactly as
+// evil_root.cml does.
+//
+// The child URL's meta-name is what the checker keys the allowlist on, so
+// `cryogen_vmm_v2` here is the whole point: the permitted pairs name
+// `cryogen_vmm` with `==`, and this must not match.
+{
+    children: [
+        { name: "cryogen_vmm_v2", url: "fuchsia-boot:///cryogen_vmm_v2#meta/cryogen_vmm_v2.cm", startup: "eager" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "parent", to: "#cryogen_vmm_v2" },
+        { protocol: "fuchsia.kernel.HypervisorResource", from: "parent", to: "#cryogen_vmm_v2" },
+        { protocol: "fuchsia.kernel.VmexResource", from: "parent", to: "#cryogen_vmm_v2" },
+    ],
+}

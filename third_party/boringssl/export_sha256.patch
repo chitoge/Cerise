@@ -1,0 +1,69 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -213,3 +213,43 @@
+         "@googletest//:gtest",
+     ],
+ )
++
++exports_files(
++    ["crypto/sha/sha256.cc"],
++    visibility = ["//visibility:public"],
++)
++
++filegroup(
++    name = "all_headers",
++    srcs = glob(["include/**/*.h"], allow_empty = True),
++    visibility = ["//visibility:public"],
++)
++
++filegroup(
++    name = "all_sources",
++    srcs = glob(["**/*"], allow_empty = True, exclude = ["**/BUILD.bazel"]),
++    visibility = ["//visibility:public"],
++)
++
++# Minimal boringssl subset for use in the Fuchsia kernel.
++# Provides: CRYPTO_chacha_20, SHA256_Init/Update/Final/SHA256, OPENSSL_cleanse.
++# Must be compiled with the kernel toolchain (no pthreads, no libc).
++load("@rules_cc//cc:defs.bzl", "cc_library")
++
++cc_library(
++    name = "kernel_crypto",
++    srcs = [
++        "crypto/chacha/chacha.cc",
++        "crypto/sha/sha256.cc",
++        "crypto/fipsmodule/kernel_sha256_bcm.cc",
++    ],
++    hdrs = crypto_headers + bcm_internal_headers + crypto_internal_headers,
++    includes = ["include"],
++    copts = [
++        "-DOPENSSL_NO_ASM",
++        "-DOPENSSL_NO_THREADS_CORRUPT_MEMORY_AND_LEAK_SECRETS_IF_THREADED",
++        "-DBORINGSSL_IMPLEMENTATION",
++    ],
++    alwayslink = True,
++    visibility = ["//visibility:public"],
++)
+diff --git a/crypto/fipsmodule/kernel_sha256_bcm.cc b/crypto/fipsmodule/kernel_sha256_bcm.cc
+new file mode 100644
+--- /dev/null
++++ b/crypto/fipsmodule/kernel_sha256_bcm.cc
+@@ -0,0 +1,18 @@
++// Copyright 2024 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// Provides BCM SHA-256 implementations for the Fuchsia kernel.
++// This compiles sha256.cc.inc without the full FIPS/BCM module, providing
++// BCM_sha224_init, BCM_sha256_init, BCM_sha256_update, BCM_sha256_final, etc.
++// that are called by crypto/sha/sha256.cc.
++
++#include "sha/sha256.cc.inc"
++
++// OPENSSL_cleanse is declared in <openssl/mem.h> and used by sha256.cc.
++// Kernel-safe volatile-byte-loop avoids optimizing-out the zero fill.
++#include <string.h>
++extern "C" void OPENSSL_cleanse(void *ptr, size_t len) {
++  volatile unsigned char *p = static_cast<volatile unsigned char *>(ptr);
++  while (len-- != 0) *p++ = 0;
++}

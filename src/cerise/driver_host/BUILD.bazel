@@ -1,0 +1,117 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+# driver_host: Rust binary serving fuchsia.driver.host.DriverHost.
+# Spawned dynamically by driver_manager in the "driver-hosts" collection.
+# Start() prints CERISE-DRIVER-HOST-BOUND and CERISE-DRIVER-OK.
+rust_binary(
+    name = "driver_host",
+    srcs = ["src/main.rs"],
+    crate_name = "driver_host",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.host:fidl_fuchsia_driver_host",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:futures",
+    ],
+)
+
+fuchsia_artifact(
+    name = "driver_host.fuchsia",
+    src = ":driver_host",
+)
+
+# driver-host Step 0: the FAITHFUL separate-process DFv2 driver host (Branch A). Unlike the
+# stub above (which only ACKs Start), on DriverHost.Start this brings up the fdf
+# runtime IN THIS PROCESS, dlopens the staged driver .so, calls
+# __fuchsia_driver_registration__.v1.initialize on the driver dispatcher, and drives
+# the fdf fuchsia.driver.framework/Driver.Start with the forwarded DriverStartArgs ->
+# MinimalDriver::Start() runs here -> CERISE-DH-XPROC-FDF-OK + CERISE-DFV2-DRIVER-OK.
+#
+# Link config is identical to driver_manager_rust_dfv2 (the proven in-process loader):
+# the C driver_runtime (libfdf) + the C++ in-process loader FFI + -rdynamic so the
+# dlopen'd driver .so binds its UND fdf/libc++/fuchsia_logging refs against this one
+# statically-linked runtime, with -u to force-keep the out-of-line symbols before
+# --gc-sections so -rdynamic can export them.
+rust_binary(
+    name = "driver_host_dfv2",
+    srcs = ["src/dfv2_main.rs"],
+    crate_name = "driver_host_dfv2",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+        "-Clink-arg=-rdynamic",
+        "-Clink-arg=-Wl,-u,_ZN3fdf15ProtocolReceiveEN2zx7channelE",
+        "-Clink-arg=-Wl,-u,_ZNK15fuchsia_logging6Logger11FlushBufferERNS_9LogBufferE",
+        "-Clink-arg=-Wl,-u,_ZN15fuchsia_logging6Logger6CreateERKNS_14RawLogSettingsEPNSt3__16atomicIhEE",
+        "-Clink-arg=-Wl,-u,_ZN15fuchsia_logging9LogBuffer11BeginRecordEhNSt3__18optionalINS1_17basic_string_viewIcNS1_11char_traitsIcEEEEEEjS7_jmm",
+        "-Clink-arg=-Wl,-u,_ZN15fuchsia_logging9LogBuffer13WriteKeyValueENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.host:fidl_fuchsia_driver_host",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust:fdf",
+        "//src/upstream/fuchsia/sdk/lib/async/rust:rust",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        # Link the C driver_runtime (libfdf) so fdf_channel_create/write and the
+        # fdf_env_* hooks resolve at final-binary link time.
+        "//src/upstream/fuchsia/src/devices/bin/driver_runtime:driver_runtime_impl",
+        # driver_runtime_impl references fdf_log::GetLogger / log_with_source but only
+        # deps the log :headers; the final binary must link the log implementation.
+        "//src/upstream/fuchsia/src/devices/lib/log:log",
+        # The C++ in-process loader FFI (dlopen + initialize).
+        "//src/cerise/dfv2_inproc_loader:dfv2_inproc_loader",
+        # Provide (so -rdynamic can export) the fdf C++ wrapper + fuchsia_logging
+        # out-of-line symbols the dlopen'd driver .so leaves UND.
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@crates//:anyhow",
+        "@crates//:futures",
+    ],
+)
+
+# Staged STRIPPED into the dh-xproc ZBI: this -rdynamic rust binary is ~187 MB
+# unstripped. --strip-all keeps the allocated .dynsym, so the symbols the dlopen'd
+# driver .so binds against (the -u force-kept fdf/fuchsia_logging exports) remain
+# DEFINED+exported; only .symtab/.strtab/debug are removed.
+fuchsia_stripped(
+    name = "driver_host_dfv2.fuchsia",
+    src = ":driver_host_dfv2",
+)
+
+sh_test(
+    name = "driver_lifetime_source_test",
+    size = "small",
+    srcs = ["driver_lifetime_source_test.sh"],
+    data = [
+        "src/dfv2_main.rs",
+        "//src/cerise/dfv2_inproc_loader:loader.cc",
+        "//src/cerise/dh_xproc_harness:src/main.rs",
+        "//src/cerise/minimal_driver:minimal_driver.cc",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/composite:src/spec.rs",
+        "//src/upstream/fuchsia/src/devices/misc/drivers/compat:device.cc",
+        "//validation:run-qemu.sh",
+    ],
+)

@@ -1,0 +1,103 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "compat_header_files",
+    srcs = glob(["include/**/*.h"]),
+)
+
+cc_library(
+    name = "compat_headers",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+)
+
+# Scoped stub headers for kernel builds: only the stubs that have no real
+# counterpart in kernel_cc_headers (fxt, jitterentropy, llvm-profdata).
+# strip_include_prefix creates a virtual include dir so only these stubs are
+# exposed — uart/fit/stdcompat/etc. real headers are not shadowed.
+cc_library(
+    name = "kernel_compat_stub_headers",
+    hdrs = glob([
+        "include/fidl/**/*.h",
+        "include/lib/elfldltl/**/*.h",
+        "include/lib/fxt/**/*.h",
+        "include/lib/jitterentropy/**/*.h",
+        "include/lib/llvm-profdata/**/*.h",
+    ]),
+    strip_include_prefix = "include",
+)
+
+
+# Root build adaptation: fidlc source filegroups are defined here because the files
+# moved to tools/fidl/fidlc/ which is inside this package.
+filegroup(
+    name = "fidlc_cc_sources",
+    srcs = glob(["fidlc/src/*.cc"]),
+    visibility = [":__pkg__"],
+)
+
+filegroup(
+    name = "fidlc_headers",
+    srcs = glob([
+        "fidlc/src/*.h",
+        "fidlc/src/*.inc",
+    ]),
+    visibility = [":__pkg__"],
+)
+
+filegroup(
+    name = "fidlc_main_source",
+    srcs = ["fidlc/cmd/fidlc/main.cc"],
+    visibility = [":__pkg__"],
+)
+
+filegroup(
+    name = "fidlc_schema_json",
+    srcs = ["fidlc/schema.json"],
+    visibility = [":__pkg__"],
+)
+
+filegroup(
+    name = "fidlc_json_schema_generator",
+    srcs = ["fidlc/gen-json-schema.sh"],
+    visibility = [":__pkg__"],
+)
+
+genrule(
+    name = "fidlc_json_schema_cc",
+    srcs = [":fidlc_schema_json"],
+    outs = ["json_schema.cc"],
+    cmd = "bash $(location :fidlc_json_schema_generator) $@ $<",
+    tools = [":fidlc_json_schema_generator"],
+)
+
+cc_library(
+    name = "fidlc_lib",
+    srcs = [
+        "//sdk/lib/zircon-assert:zx_panic_libc.cc",
+        ":fidlc_cc_sources",
+        ":fidlc_json_schema_cc",
+    ],
+    hdrs = [
+        ":fidlc_headers",
+    ],
+    copts = ["-std=c++23"],
+    includes = [
+        "fidlc/src",
+    ],
+    deps = [
+        ":compat_headers",
+        "//zircon/system/public:public",
+        "@boringssl//:crypto",
+        "@re2//:re2",
+    ],
+)
+
+cc_binary(
+    name = "fidlc",
+    srcs = [":fidlc_main_source"],
+    copts = ["-std=c++23"],
+    deps = [":fidlc_lib"],
+)

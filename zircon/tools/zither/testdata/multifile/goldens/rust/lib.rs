@@ -1,0 +1,22 @@
+// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// DO NOT EDIT.
+// Generated from FIDL library `zither.multifile` by zither, a Fuchsia platform tool.
+
+// The following `use ... as _;` declarations satisfy any unused-crate-dependencies
+// errors for unconditionally depended-on crates.
+use {bitflags as _, zerocopy as _};
+
+mod a;
+#[allow(unused)]
+pub use a::*;
+
+mod b;
+#[allow(unused)]
+pub use b::*;
+
+mod c;
+#[allow(unused)]
+pub use c::*;

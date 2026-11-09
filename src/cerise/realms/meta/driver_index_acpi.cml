@@ -1,0 +1,55 @@
+// driver_index_acpi leaf — the DFv2 driver index (bin/driver_index). Uses LogSink and
+// the -boot-renamed Resolver; serves fuchsia.driver.index.DriverIndex.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/driver_index",
+        lifecycle: { stop_event: "notify" },
+    },
+
+    // Structured-config schema (config-literal burn-down): replaces the
+    // retired src/cerise/stubs/driver_index_config crate whose boot-driver list
+    // was a compile-time vec![] behind crate features. boot_drivers is BOARD
+    // DATA now: cerise_board.boot_drivers flows through the product rule into
+    // the generated meta/driver_index.cvf (the driver_framework bundle's
+    // AIBInfo.configs entry declares boot_drivers_field = "boot_drivers").
+    // The driver_index_config Rust crate is generated FROM THIS compiled
+    // manifest — checksum identity with the delivered .cvf by construction.
+    config: {
+        enable_ephemeral_drivers: { type: "bool" },
+        bind_eager: {
+            type: "vector",
+            element: { type: "string", max_size: 150 },
+            max_count: 200,
+        },
+        disabled_drivers: {
+            type: "vector",
+            element: { type: "string", max_size: 150 },
+            max_count: 200,
+        },
+        boot_drivers: {
+            type: "vector",
+            element: { type: "string", max_size: 150 },
+            max_count: 200,
+        },
+        base_drivers: {
+            type: "vector",
+            element: { type: "string", max_size: 150 },
+            max_count: 200,
+        },
+        enable_driver_load_fuzzer: { type: "bool" },
+        delay_fallback_until_base_drivers_indexed: { type: "bool" },
+        driver_load_fuzzer_max_delay_ms: { type: "int64" },
+        stop_on_idle_timeout_millis: { type: "int64" },
+    },
+    capabilities: [
+        { protocol: "fuchsia.driver.index.DriverIndex" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.component.resolution.Resolver-boot" },
+    ],
+    expose: [
+        { protocol: "fuchsia.driver.index.DriverIndex", from: "self" },
+    ],
+}

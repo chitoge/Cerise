@@ -1,0 +1,24 @@
+# Vendored from upstream (faithful port). fidl_driver: the parallel Rust FIDL
+# bindings runtime that supports driver (fdf) transport. Required by the Rust
+# bindings that fidlgen_rust emits for @transport("Driver") protocols (e.g.
+# fuchsia.driver.framework.Driver) when -include-drivers is enabled.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_driver",
+    srcs = [
+        "src/encoding.rs",
+        "src/endpoints.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fidl_driver",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust:fdf",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)

@@ -1,0 +1,23 @@
+# Authored locally for Cerise (board/driver x86 closure).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "bind_library_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+bind_library_cpp(
+    name = "fuchsia.goldfish.platform_cpp_gen",
+    src = "fuchsia.goldfish.platform.bind",
+)
+
+genrule(
+    name = "fuchsia.goldfish.platform_cpp_hdr",
+    srcs = [":fuchsia.goldfish.platform_cpp_gen"],
+    outs = ["bind/fuchsia/goldfish/platform/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.goldfish.platform_cpp",
+    hdrs = [":fuchsia.goldfish.platform_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/src/devices/bind/fuchsia.goldfish.platform",
+)

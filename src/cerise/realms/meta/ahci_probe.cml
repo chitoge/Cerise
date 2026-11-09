@@ -1,0 +1,9 @@
+// ahci_probe leaf — real block read/write/readback via AHCI's aggregate-exposed
+// block.volume Service.
+{
+    program: { runner: "elf", binary: "bin/ahci_probe" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
+}

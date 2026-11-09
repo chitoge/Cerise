@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+    ],
+)

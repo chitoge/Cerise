@@ -1,0 +1,43 @@
+# Authored locally for Cerise. FIDL + C++ wire + bind-library C++ for
+# fuchsia.hardware.interrupt, consumed by board/lib/acpi (interrupt_cpp + interrupt_bindlib_cpp).
+load("//build/fidl:fidl.bzl", "fidl_bind_library_cpp", "fidl_cpp", "fidl_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.interrupt",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    available = "fuchsia:HEAD",  # FIDL is @available(added=HEAD)
+    deps = ["//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.interrupt_cpp",
+    library = ":fuchsia.hardware.interrupt",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_bind_library_cpp(
+    name = "fuchsia.hardware.interrupt_bindlib_cpp_gen",
+    library = ":fuchsia.hardware.interrupt",
+)
+
+genrule(
+    name = "interrupt_bindlib_cpp_hdr",
+    srcs = [":fuchsia.hardware.interrupt_bindlib_cpp_gen"],
+    outs = ["bind/fuchsia/hardware/interrupt/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.hardware.interrupt_bindlib_cpp",
+    hdrs = [":interrupt_bindlib_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.interrupt",
+)

@@ -1,0 +1,49 @@
+# Bazel integration for this imported target. Real fuchsia.tracing FIDL
+# library — dependency of the real fuchsia.tracing.provider/provider.fidl (used by
+# zircon/system/ulib/trace-provider), replacing an earlier earlier minimal stub of
+# fuchsia.tracing.provider that never referenced this library.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.tracing",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [],
+)
+
+fidl_cpp(
+    name = "fuchsia.tracing_cpp",
+    library = ":fuchsia.tracing",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.tracing_rs",
+    library = ":fuchsia.tracing",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_tracing",
+    srcs = [":fuchsia.tracing_rs"],
+    crate_name = "fidl_fuchsia_tracing",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

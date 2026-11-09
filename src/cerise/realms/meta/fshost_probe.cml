@@ -1,0 +1,25 @@
+// fshost_probe leaf — reads/writes a real file through fshost's exposed "fshost-fs"
+// directory, proving fshost's automatic device discovery + Fxfs auto-mount. Gates on the
+// fxfs_provisioner's "provisioned" readiness directory before triggering fshost's
+// Lazy start, so the provisioner has released the disk first (see src/main.rs). The
+// "provisioned" use is new, so this realm is excluded from the decode golden.
+{
+    program: { runner: "elf", binary: "bin/fshost_probe" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "fshost-fs", rights: ["rw*"], path: "/fshost-fs" },
+        // race-fix gate: read this before opening "/fshost-fs" (which Lazy-starts
+        // fshost). The provisioner serves it only after format+close, so fshost never
+        // races the provisioner for the disk. `optional` because fshost_probe is ALSO a
+        // child of the x64-pci root, which has no provisioner (fxfs_probe is its flagship
+        // mount path there and fshost markers are not required) — component_manager treats
+        // the unrouted optional dir as absent there. In x64-fshost the realm DOES offer it,
+        // so the gate is fully real (an offered optional use still routes + blocks normally).
+        {
+            directory: "provisioned",
+            rights: ["r*"],
+            path: "/provisioned",
+            availability: "optional",
+        },
+    ],
+}

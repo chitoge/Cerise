@@ -1,0 +1,107 @@
+// root_dfv2acpi_conformance — component_manager root for qemu-x64-conformance
+// (runtime-conformance boot gate). Same lean base as
+// root_dfv2acpi_diagnostics (base driver stack SHARD A + the Archivist as the
+// LogSink sink) but instead of archivist_reader it stages the three
+// runtime-conformance probes (C / C++ / Rust) as independent eager children.
+//
+// Each probe emits its CERISE-CONF-{C,CXX,RUST}-* markers straight to serial via
+// zx_debug_write, so the boot gate never depends on the log pipeline. The
+// Archivist is present because each probe's final printf exercises the LogSink
+// path (elf_runner's fd1 StreamSink socket -> fuchsia.logger.LogSink), the same
+// path posix_probe proved end-to-end; conformance only asserts the local
+// fflush()==0 success, it does not re-query the record.
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "archivist",
+            url: "fuchsia-boot:///archivist#meta/archivist.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+
+        // The three runtime-conformance probes.
+        {
+            name: "conformance_c",
+            url: "fuchsia-boot:///conformance_c#meta/conformance_c.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "conformance_cxx",
+            url: "fuchsia-boot:///conformance_cxx#meta/conformance_cxx.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "conformance_rust",
+            url: "fuchsia-boot:///conformance_rust#meta/conformance_rust.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        // Archivist is the LogSink sink for the userspace probes' printf path.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#archivist",
+            to: ["#conformance_c", "#conformance_cxx", "#conformance_rust"],
+        },
+
+        {
+            event_stream: "capability_requested",
+            from: "parent",
+            to: "#archivist",
+        },
+
+        {
+            config: [
+                "fuchsia.diagnostics.AllowSerialLogs",
+                "fuchsia.diagnostics.BindServices",
+                "fuchsia.diagnostics.ComponentInitialInterests",
+                "fuchsia.diagnostics.DenySerialLogs",
+                "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
+                "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
+            ],
+            from: "void",
+            to: "#archivist",
+            availability: "optional",
+        },
+
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: [
+                "#archivist",
+                "#conformance_c",
+                "#conformance_cxx",
+                "#conformance_rust",
+            ],
+        },
+
+    ],
+}

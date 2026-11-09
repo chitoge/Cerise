@@ -1,0 +1,131 @@
+"""Staged artifacts owned by reusable assembly bundles."""
+
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+fuchsia_stripped(
+    name = "component_manager_stripped.fuchsia",
+    src = "//src/upstream/fuchsia/src/sys/component_manager:component_manager",
+)
+
+fuchsia_stripped(
+    name = "cerise_logsink_stripped.fuchsia",
+    src = "//src/cerise/logsink:cerise_logsink",
+)
+
+fuchsia_stripped(
+    name = "driver_manager_rust_dfv2platbus_stripped.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust:driver_manager_rust_dfv2platbus",
+)
+
+fuchsia_stripped(
+    name = "driver_index_stripped.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/bin/driver-index:driver_index",
+)
+
+fuchsia_stripped(
+    name = "compat_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/misc/drivers/compat:compat.so",
+)
+
+[
+    fuchsia_stripped(
+        name = _name,
+        src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+    )
+    for _name in [
+        "libc_so.fuchsia",
+        "libc_so_logsink_pkg.fuchsia",
+        "libc_so_driver_manager_pkg.fuchsia",
+        "libc_so_dhxhost_pkg.fuchsia",
+        "libc_so_di_pci_pkg.fuchsia",
+        "libc_so_netdev_probe_pkg.fuchsia",
+        "libc_so_nvme_probe_pkg.fuchsia",
+        "libc_so_ahci_probe_pkg.fuchsia",
+        "libc_so_crypt_fxfs_pkg.fuchsia",
+        "libc_so_fxfs_probe_pkg.fuchsia",
+        "libc_so_fxfs_provisioner_pkg.fuchsia",
+        "libc_so_fshost_probe_pkg.fuchsia",
+        "libc_so_fshost_pkg.fuchsia",
+        "libc_so_fxfs_bin_pkg.fuchsia",
+        "libc_so_netstack3_probe_pkg.fuchsia",
+    ]
+]
+
+[
+    fuchsia_stripped(
+        name = _name,
+        src = "//src/cerise/runtime:libc++.so",
+    )
+    for _name in [
+        "libcxx_so.fuchsia",
+        "libcxx_so_logsink_pkg.fuchsia",
+        "libcxx_so_driver_manager_pkg.fuchsia",
+        "libcxx_so_dhxhost_pkg.fuchsia",
+        "libcxx_so_di_pci_pkg.fuchsia",
+        "libcxx_so_netdev_probe_pkg.fuchsia",
+        "libcxx_so_nvme_probe_pkg.fuchsia",
+        "libcxx_so_ahci_probe_pkg.fuchsia",
+        "libcxx_so_crypt_fxfs_pkg.fuchsia",
+        "libcxx_so_fxfs_probe_pkg.fuchsia",
+        "libcxx_so_fxfs_provisioner_pkg.fuchsia",
+        "libcxx_so_fshost_probe_pkg.fuchsia",
+        "libcxx_so_fshost_pkg.fuchsia",
+        "libcxx_so_fxfs_bin_pkg.fuchsia",
+        "libcxx_so_netstack3_probe_pkg.fuchsia",
+    ]
+]
+
+[
+    fuchsia_stripped(
+        name = _name,
+        src = "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+    )
+    for _name in [
+        "libfdio_so.fuchsia",
+        "libfdio_so_logsink_pkg.fuchsia",
+        "libfdio_so_driver_manager_pkg.fuchsia",
+        "libfdio_so_dhxhost_pkg.fuchsia",
+        "libfdio_so_di_pci_pkg.fuchsia",
+    ]
+]
+
+[
+    fuchsia_stripped(
+        name = "libm_so_%s_pkg.fuchsia" % _package,
+        src = "//src/cerise/sysroot/libm-stub:libm.so",
+    )
+    for _package in [
+        "ahci_probe",
+        "apptier_fetcher",
+        "archivist",
+        "archivist_reader",
+        "cerise_logsink",
+        "conformance_c",
+        "conformance_cxx",
+        "conformance_rust",
+        "crypt_fxfs",
+        "driver_host",
+        "driver_index",
+        "driver_manager_rust_dfv2platbus",
+        "fasync_tcp_spike",
+        "fb_spike",
+        "fileserver",
+        "fshost",
+        "fshost_probe",
+        "fxfs",
+        "fxfs_probe",
+        "fxfs_provisioner",
+        "netdev_probe",
+        "netstack3",
+        "netstack3_probe",
+        "nvme_probe",
+        "pkg_fetcher",
+        "pkg_probe",
+        "pkg_resolver",
+        "posix_probe",
+        "shutdown_trigger",
+        "status_console",
+    ]
+]

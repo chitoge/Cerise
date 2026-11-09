@@ -1,0 +1,48 @@
+# Authored locally for Cerise. fdio: Rust bindings for
+# libfdio — the POSIX fd/socket-to-Zircon-channel bridge. libfdio.so is
+# provided by the sysroot and resolved at final binary link time.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fdio",
+    srcs = [
+        "src/fdio_sys.rs",
+        "src/lib.rs",
+        "src/spawn_builder.rs",
+    ],
+    crate_name = "fdio",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:bitflags",
+        "@crates//:thiserror",
+    ],
+)
+
+# fdio_zxio: the zxio-backed variant of the fdio bindings (upstream
+# //src/lib/fdio/rust:fdio_zxio). Archivist's binary links this for its zxio
+# fd bridging. Distinct crate from :fdio — FFIs into libzxio (sdk/lib/zxio)
+# via the generated zxio_sys bindings rather than libfdio.
+rust_library(
+    name = "fdio_zxio",
+    srcs = [
+        "src/fdio_sys.rs",
+        "src/fdio_zxio.rs",
+        "src/zxio_sys.rs",
+    ],
+    crate_name = "fdio_zxio",
+    crate_root = "src/fdio_zxio.rs",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/zxio:zxio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+    ],
+)

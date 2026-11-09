@@ -1,0 +1,879 @@
+module(
+    name = "cerise",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "boringssl", version = "0.20260526.0")
+
+single_version_override(
+    module_name = "boringssl",
+    patches = ["//third_party/boringssl:export_sha256.patch"],
+    patch_strip = 1,
+)
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "llvm", version = "0.8.3")
+
+# Register cerise-overlay-exports.patch into the llvm module's
+# _LLVM_22_SOURCE_PATCHES so the LLVM-22 libcxx/libunwind overlay BUILDs
+# exports_files their src/**. src/cerise/runtime cross-compiles libc++/libunwind
+# for Fuchsia from those raw overlay sources, and Bazel 9 strict file visibility
+# requires them exported (the upstream 22.x patch list dropped the 21.x treatment).
+single_version_override(
+    module_name = "llvm",
+    patches = ["//third_party/llvm:llvm22-add-overlay-exports.patch"],
+    patch_strip = 1,
+)
+
+bazel_dep(name = "re2", version = "2025-11-05.bcr.1")
+bazel_dep(name = "rules_cc", version = "0.2.18")
+bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_rust", version = "0.66.0")
+
+# Go SDK for fidlgen_cpp + fidlgen_rust host tools.
+# 1.24.x is the latest stable at our knowledge cutoff; only stdlib + internal
+# imports used (no external go.mod deps), so the exact patch is not critical.
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.24.0")
+# For copy_to_directory (assembling the fuchsia libc sysroot include dir). Already
+# in the transitive graph (via the llvm toolchain); declared direct so //... can
+# load it as a direct dependency.
+bazel_dep(name = "bazel_lib", version = "3.2.2")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "stardoc", version = "0.7.2", dev_dependency = True)
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
+
+# gRPC codegen: protoc built from source via the
+# hermetic C++ exec toolchain, driven by rules_rust's prost/tonic toolchain.
+# 33.4 is what MVS resolves here (the transitive graph requires >= 33.4), and it
+# builds protoc from source cleanly against Bazel 9.2 + rules_cc 0.2.18; pinning
+# the direct dep to the effective version keeps --check_direct_dependencies
+# quiet. Proto toolchain resolution is enabled in .bazelrc
+# (--incompatible_enable_proto_toolchain_resolution) so protoc is selected via
+# @rules_proto//proto:toolchain_type rather than the deprecated proto_compiler attr.
+bazel_dep(name = "protobuf", version = "33.4")
+
+# rules_rust's prost/tonic extension is a separate BCR module in 0.66
+# (rules_rust/extensions/prost carries its own MODULE.bazel, so it is a repo
+# boundary, not a package of @rules_rust). Provides rust_prost_library /
+# rust_prost_toolchain and the prost toolchain_type.
+bazel_dep(name = "rules_rust_prost", version = "0.66.0")
+
+# Live-boot tests under `bazel test`: UEFI QEMU harness. Pin the Git revision so
+# fresh and public checkouts resolve the same dependency without requiring a
+# sibling workspace.
+bazel_dep(name = "rules_ostest", version = "0.1.0")
+git_override(
+    module_name = "rules_ostest",
+    commit = "fa50bab32fba58e0f26059a12f40068b2a49115f",
+    remote = "https://github.com/chitoge/rules_ostest.git",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "zr_llvm_toolchain_minimal_linux_amd64",
+    build_file = "@llvm//toolchain/llvm:llvm_release.BUILD.bazel",
+    sha256 = "379f4a009e873c7dc0a9ef2593dab44d3da48ee5c4f05db1382f8cd18779d26d",
+    urls = [
+        "https://github.com/hermeticbuild/hermetic-llvm/releases/download/llvm-22.1.4-1/llvm-toolchain-minimal-22.1.4-linux-amd64-musl.tar.zst",
+    ],
+)
+
+# Pinned QEMU for the UEFI live-boot tests. Prebuilt
+# static binary + data (BIOS blobs, firmware descriptors). Archives are
+# pre-staged in third_party/distfiles (--distdir) to sidestep the intermittent
+# GitHub-downloader 404s on this host.
+http_archive(
+    name = "qemu_x86_64",
+    build_file_content = """package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "qemu-system-x86_64",
+    srcs = ["bin/qemu-system-x86_64"],
+)
+""",
+    sha256 = "31399af8d874176f104679c6aae8c8741bcd86283dbc8de1fce8a140f67f1448",
+    urls = [
+        "https://github.com/hermeticbuild/qemu-prebuilt/releases/download/11.0.0.1/qemu-system-bin-linux-amd64-x86_64-softmmu-11.0.0.1.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "qemu_x86_64_data",
+    build_file_content = """package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "data",
+    srcs = glob(["share/qemu/**"]),
+)
+""",
+    sha256 = "27e5a04a32d56783ebf8277140ec52304dd2376f97a1c01c36982bd228f37cfc",
+    urls = [
+        "https://github.com/hermeticbuild/qemu-prebuilt/releases/download/11.0.0.1/qemu-system-data-linux-amd64-11.0.0.1.tar.gz",
+    ],
+)
+
+# Pinned qemu-system-aarch64 for the arm64 direct-kernel boot gates.
+# Same hermeticbuild/qemu-prebuilt 11.0.0.1 release
+# and static-binary layout as @qemu_x86_64 above (the aarch64-softmmu artifact
+# from the same org/tag). The arm64 //validation gates boot the qemu_arm64_boot_shim
+# + product ZBI directly via `-machine virt -kernel <shim> -initrd <zbi> -net none`;
+# with -net none no option-ROM/BIOS blobs are touched, so NO firmware or qemu data
+# archive is needed (the direct-kernel/-kernel shim path is NOT UEFI — that is a
+# later phase). Pre-staged in third_party/distfiles (--distdir) to sidestep the
+# intermittent GitHub-downloader 404s on this host, same as the x86_64 archives.
+http_archive(
+    name = "qemu_aarch64",
+    build_file_content = """package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "qemu-system-aarch64",
+    srcs = ["bin/qemu-system-aarch64"],
+)
+""",
+    sha256 = "e98a793c46e1568b972304ea68b41e9cbbe99f960af151a089a4c6736def62f0",
+    urls = [
+        "https://github.com/hermeticbuild/qemu-prebuilt/releases/download/11.0.0.1/qemu-system-bin-linux-amd64-aarch64-softmmu-11.0.0.1.tar.gz",
+    ],
+)
+
+# OVMF UEFI firmware, unpacked from a pinned Debian .deb (see //bazel:ovmf.bzl).
+ovmf_repository = use_repo_rule("//bazel:ovmf.bzl", "ovmf_repository")
+ovmf_repository(
+    name = "ovmf",
+    sha256 = "b234a835e6bbbf5e45b71166b3155f28e0e125c59056419fbab599d03756bdc4",
+    urls = ["https://snapshot.debian.org/file/62eb2eb5f64e98224eab7ee81e5a72bd6478ebd2"],
+)
+
+# The canonical exec platform; registered so evidence commands never need an
+# ad-hoc --extra_execution_platforms flag.
+register_execution_platforms(
+    "//platforms:linux_x86_64",
+    "//platforms:linux_aarch64",
+)
+
+register_toolchains(
+    "//toolchain/rust:cerise_rust_x64_user",
+    "//toolchain/rust:cerise_rust_x64_user_aarch64_exec",
+    # Native host toolchains for proc-macro compilation (exec == target == Linux).
+    # Must be listed before @rust_toolchains//:all so they win over the
+    # fuchsia/none cross-compilation toolchains when resolving proc-macros.
+    "@rust_toolchains//:rust_linux_aarch64__aarch64-unknown-linux-gnu__nightly",
+    "@rust_toolchains//:rust_linux_x86_64__x86_64-unknown-linux-gnu__nightly",
+    "@rust_toolchains//:all",
+    "//toolchain:exec_x86_64_cc_toolchain_registration",
+    # stand-in cc toolchain for os:fuchsia (rlib compile only).
+    "//toolchain/fuchsia:fuchsia_x86_64_cc_toolchain",
+    "//toolchain/fuchsia:fuchsia_x86_64_cc_toolchain_aarch64_exec",
+    "@llvm_toolchains//:all",
+    "//toolchain:zircon_x64_kernel_toolchain",
+    "//toolchain:zircon_x64_phys_toolchain",
+    "//toolchain:zircon_x86_32_phys_toolchain",
+    "//toolchain:zircon_x64_efi_toolchain",
+    "//toolchain:zircon_x64_user_toolchain",
+    "//toolchain:zircon_x64_phys_cc_toolchain_registration",
+    "//toolchain:zircon_x86_32_phys_cc_toolchain_registration",
+    "//toolchain:zircon_x64_efi_cc_toolchain_registration",
+    "//toolchain:zircon_x64_user_cc_toolchain_registration",
+    "//toolchain:zircon_arm64_kernel_toolchain",
+    "//toolchain:zircon_arm64_kernel_cc_toolchain_registration",
+    "//toolchain:zircon_x64_kernel_env_toolchain",
+    "//toolchain:zircon_arm64_kernel_env_toolchain",
+    "//toolchain:zircon_arm64_phys_toolchain",
+    "//toolchain:zircon_arm64_phys_cc_toolchain_registration",
+)
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    # Nightly pin (deliberate, owner-approved): netstack3-core uses unstable Rust
+    # APIs (MaybeUninit::write_copy_of_slice etc.). 2025-09-18 is in rules_rust 0.66's
+    # known_shas (incl x86_64-unknown-fuchsia + aarch64-linux-gnu exec). Select it via
+    # `--@rules_rust//rust/toolchain/channel=nightly` (set in .bazelrc). Unstable
+    # features enabled per-target via -Zcrate-attr on the netstack3 rust_library targets.
+    versions = ["nightly/2025-09-18"],
+    extra_target_triples = ["x86_64-unknown-none", "x86_64-unknown-fuchsia"],
+)
+use_repo(
+    rust,
+    "rust_toolchains",
+    "rust_linux_x86_64__x86_64-unknown-none__nightly_tools",
+    "rust_linux_aarch64__x86_64-unknown-none__nightly_tools",
+)
+
+# third-party Rust crate closure for netstack3-core via
+# crate_universe. Inline specs (no separate Cargo.toml in the build graph);
+# the resolved lock is a regeneration input (repin with CARGO_BAZEL_REPIN=1).
+# Starting minimal (no_std leaf crates) to validate the mechanism, then expand
+# to netstack3-core's full closure.
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.spec(
+    default_features = False,
+    package = "arrayvec",
+    version = "0.7",
+)
+crate.spec(
+    package = "static_assertions",
+    version = "1.1",
+)
+crate.spec(
+    package = "assert_matches",
+    version = "1.5",
+)
+crate.spec(
+    package = "rand",
+    version = "0.9",
+)
+crate.spec(
+    package = "byteorder",
+    version = "1",
+)
+crate.spec(
+    # use_core makes derivative emit ::core:: paths (netstack3 crates are no_std).
+    features = ["use_core"],
+    package = "derivative",
+    version = "2",
+)
+crate.spec(
+    package = "either",
+    version = "1",
+)
+crate.spec(
+    features = ["kv_std"],
+    package = "log",
+    version = "0.4",
+)
+crate.spec(
+    # thiserror 2.x supports no_std (emits core::error::Error on Rust >=1.81);
+    # 1.x is std-only and breaks the no_std netstack3 crates.
+    package = "thiserror",
+    version = "2",
+)
+crate.spec(
+    default_features = False,
+    features = ["derive"],
+    package = "zerocopy",
+    version = "0.8",
+)
+crate.spec(
+    package = "zerocopy-derive",
+    version = "0.8",
+)
+crate.spec(
+    # Derives packed bitfield accessors. Used by the imported virtualization
+    # definitions, whose register and descriptor layouts are expressed as
+    # bitfields.
+    package = "bitfield-struct",
+    version = "0.11",
+)
+crate.spec(
+    # Structured diagnostics used throughout the imported virtualization crates.
+    package = "tracing",
+    version = "0.1",
+)
+crate.spec(
+    # Subscriber side of the above; env-filter is the selection mechanism those
+    # crates expect to configure.
+    features = ["env-filter"],
+    package = "tracing-subscriber",
+    version = "0.3",
+)
+crate.spec(
+    # Filesystem wrappers whose errors name the offending path. Used by the
+    # imported crates that read host topology.
+    package = "fs-err",
+    version = "3.1",
+)
+crate.spec(
+    package = "proc-macro2",
+    version = "1",
+)
+crate.spec(
+    package = "quote",
+    version = "1",
+)
+crate.spec(
+    features = [
+        "full",
+        "extra-traits",
+        "visit",
+        "visit-mut",
+    ],
+    package = "syn",
+    version = "2",
+)
+crate.spec(package = "arc-swap", version = "1")
+crate.spec(package = "bitflags", version = "2")
+crate.spec(package = "cfg-if", version = "1")
+crate.spec(default_features = False, features = ["std"], package = "hmac", version = "0.12")
+crate.spec(package = "lru-cache", version = "0.1")
+crate.spec(package = "once_cell", version = "1")
+crate.spec(package = "ref-cast", version = "1")
+crate.spec(default_features = False, package = "sha2", version = "0.10")
+# OS-self-OTA (src/cerise/ota_updater): pure-Rust FAT driver over std
+# Read+Write+Seek traits — no OS deps — used to write the inactive slot's ZBI
+# and \abr into the ESP FAT filesystem via a block-client adapter. 0.3.6 is the
+# current stable rafalh/rust-fatfs; std default features (the updater is a std
+# Fuchsia component).
+crate.spec(package = "fatfs", version = "0.3")
+crate.spec(default_features = False, package = "siphasher", version = "1")
+crate.spec(features = ["const_generics", "union"], package = "smallvec", version = "1")
+crate.spec(default_features = False, package = "strum", version = "0.26")
+crate.spec(package = "strum_macros", version = "0.26")
+# Rust async + FIDL crate closure (net-new entries only;
+# thiserror, proc-macro2, quote, syn, zerocopy, static_assertions already above).
+crate.spec(package = "futures", version = "0.3")
+crate.spec(package = "pin-project-lite", version = "0.2")
+crate.spec(package = "crossbeam", version = "0.8")
+crate.spec(package = "libc", version = "0.2")
+crate.spec(package = "rustc-hash", version = "2")
+crate.spec(features = ["all"], package = "socket2", version = "0.5")
+crate.spec(package = "bstr", version = "1")
+crate.spec(package = "slab", version = "0.4")
+crate.spec(package = "lock_api", version = "0.4")
+crate.spec(package = "async-trait", version = "0.1")
+crate.spec(features = ["derive"], package = "serde", version = "1")
+# process_builder import: ELF/runtime crates needed by elf_parse + fuchsia-runtime.
+crate.spec(package = "anyhow", version = "1")
+crate.spec(package = "num-derive", version = "0.4")
+crate.spec(package = "num-traits", version = "0.2")
+# parking_lot: needed by fuchsia-sync on non-Fuchsia hosts (mutex fallback path).
+crate.spec(package = "parking_lot", version = "0.12")
+crate.spec(package = "parking_lot_core", version = "0.9")
+# fuchsia-async host path uses tokio + futures-lite
+# for its portable executor (portable.rs, socket.rs, udp.rs).
+crate.spec(
+    features = ["rt", "rt-multi-thread", "net", "time", "io-util", "sync"],
+    package = "tokio",
+    version = "1",
+)
+crate.spec(package = "futures-lite", version = "2")
+# (vfs + runtime_capabilities fuchsia closure).
+crate.spec(package = "pin-project", version = "1")
+crate.spec(package = "scopeguard", version = "1")
+# cm_types, cm_rust, cm_graph, moniker, cm_config closure.
+crate.spec(features = ["serde"], package = "flyweights", version = "0.1")
+crate.spec(package = "url", version = "2")
+crate.spec(features = ["serde1"], package = "camino", version = "1")
+crate.spec(package = "itertools", version = "0.13")
+crate.spec(package = "darling", version = "0.20")
+crate.spec(package = "darling_core", version = "0.20")
+crate.spec(package = "darling_macro", version = "0.20")
+crate.spec(package = "serde_json", version = "1")
+crate.spec(package = "hex", version = "0.4")
+# rand 0.9: used by component_id_index for instance ID generation.
+crate.spec(package = "rand", version = "0.9")
+# version-history/rust (dep of cm_config) needs chrono for NaiveDate.
+crate.spec(package = "chrono", version = "0.4")
+# component_manager model/actions/start.rs uses num_traits::cast::FromPrimitive.
+crate.spec(package = "num-traits", version = "0.2")
+# fidl_next_codec needs munge for in-place initialization.
+# Pin to 0.4.4 — matches upstream; 0.4.7+ changed union safety semantics.
+crate.spec(package = "munge", version = "=0.4.4")
+# async-utils needs async-lock.
+crate.spec(package = "async-lock", version = "3")
+# diagnostics/inspect + diagnostics/hierarchy transitive crates.
+crate.spec(package = "paste", version = "1")
+crate.spec(package = "fragile", version = "2")
+crate.spec(package = "maplit", version = "1")
+crate.spec(package = "base64", version = "0.22")
+# Note: bitfield != bitflags; this is the bitfield proc-macro for log/encoding.
+crate.spec(package = "bitfield", version = "0.16")
+crate.spec(package = "tempfile", version = "3")
+# diagnostics/log/rust needs regex for log filtering.
+crate.spec(package = "regex", version = "1")
+# utf8_path (fuchsia-pkg dep) needs pathdiff with camino feature for Utf8Path support.
+crate.spec(features = ["camino"], package = "pathdiff", version = "0.2")
+# fuchsia-url uses percent_encoding for URL parsing.
+crate.spec(package = "percent-encoding", version = "2")
+# driver_manager_rust/node and devfs use phf (perfect hash function) for static maps.
+# The macros feature enables phf_map!/phf_set! proc-macros via phf_macros.
+crate.spec(package = "phf", version = "0.11", features = ["std", "macros"])
+# fuchsia init macro crate uses argh for CLI argument parsing.
+crate.spec(package = "argh", version = "0.1")
+# diagnostics/selectors uses winnow for parsing selector expressions.
+crate.spec(package = "winnow", version = "0.7")
+# bind crate (driver bind rule compiler) uses nom parser combinators.
+# nom_locate 4 pulls in nom 7.1.3 as its transitive dep, so we pin to nom 7.
+# The bind crate source uses nom 8 associated-type Parser syntax; patched to
+# nom 7 positional Parser<I, O, E> in parser/common.rs and parser/bind_library.rs.
+crate.spec(package = "nom", version = "7")
+crate.spec(package = "nom_locate", version = "4")
+# bind crate uses regex-lite for identifier validation.
+crate.spec(package = "regex-lite", version = "0.1")
+# fidlgen_banjo (banjo C/C++ header generator) + fidl-ir (FIDL JSON IR parser).
+# heck: string case conversion (snake_case/CamelCase). clap: CLI arg parsing with derive.
+crate.spec(package = "heck", version = "0.5")
+crate.spec(features = ["derive"], package = "clap", version = "4")
+# valico (JSON schema validation) — needed by bind::test, which bindc's compile/debug/
+# test commands use. Fuchsia pins 2.4.2.
+crate.spec(package = "valico", version = "2.4.2")
+# structured-config pipeline (cmc/configc/cml) crate deps.
+crate.spec(features = ["serde"], package = "indexmap", version = "2.13.0")
+crate.spec(package = "json5format", version = "0.2.6")
+crate.spec(package = "serde_json5", version = "0.2.1")
+crate.spec(package = "strsim", version = "0.11.1")
+crate.spec(package = "handlebars", version = "4.3.5")
+# storage (NVMe): block_server's decompression path (real production feature —
+# ActiveRequestsInner::complete in src/storage/lib/block_server/src/lib.rs — not
+# test-only, despite zstd also appearing in the crate's cfg(test) decompression_tests.rs
+# module). zstd-sys's default "bundled" feature compiles a real, unmodified vendored
+# copy of the zstd C library from its own crates.io package via a cc-crate build
+# script — this is the actual C library the user approved vendoring, sourced through
+# this repo's existing crates_vendor/crate_universe path rather than Fuchsia's internal
+# third_party/zstd GN submodule + custom zstd-sys fork (which don't apply to a Bazel
+# monorepo with no GN). API surface used (zstd::bulk::Decompressor) is stable across
+# zstd crate versions, not tied to Fuchsia's exact pinned zstd release.
+crate.spec(package = "zstd", version = "0.13")
+# storage: storage_device (block_server dep) needs event-listener + num.
+crate.spec(package = "event-listener", version = "5")
+crate.spec(package = "num", version = "0.4")
+# storage: block_client's Cache (src/storage/lib/block_client/rust/src/cache.rs)
+# needs linked-hash-map for its LRU eviction order. Real production dependency
+# (Cache::new/get/insert), not test-only.
+crate.spec(package = "linked-hash-map", version = "0.5")
+# async-ringbuf, real production dep of netstack3's
+# common_deps (BUILD.gn). Version matches Fuchsia's own
+# third_party/rust_crates/Cargo.toml pin at the same commit exactly.
+crate.spec(package = "async-ringbuf", version = "0.3.5")
+# 4 real production deps of fxfs_deps (src/storage/fxfs/BUILD.gn)
+# not covered by any existing crate above. Versions match Fuchsia's own
+# third_party/rust_crates/Cargo.toml pins at the same commit exactly (not guessed).
+crate.spec(package = "bincode", version = "1.3.3")
+crate.spec(features = ["serde"], package = "bit-vec", version = "0.9.1")
+# Fuchsia vendors this via a local "fork" (third_party/rust_crates/forks/rapidhash-1.4.0)
+# but its README.fuchsia states the only change from upstream crates.io is removing an
+# unrelated benchmark file (benches/quality.rs) - functionally identical, safe to take
+# straight from crates.io like every other crate here.
+crate.spec(features = ["unsafe"], package = "rapidhash", version = "1.4.0")
+crate.spec(features = ["serde", "v4"], package = "uuid", version = "1.1.2")
+# fxfs_trace_macros (src/storage/fxfs/trace/macros) is a proc-macro
+# crate providing the #[trace] attribute fxfs's core source applies pervasively -
+# required for fxfs to compile at all, not optional instrumentation. Versions match
+# Fuchsia's own third_party/rust_crates/Cargo.toml pins at this commit exactly.
+crate.spec(features = ["span-locations"], package = "proc-macro2", version = "1.0.106")
+crate.spec(package = "quote", version = "1.0.45")
+crate.spec(features = ["full", "visit", "visit-mut", "extra-traits"], package = "syn", version = "2.0.117")
+# fxfs/crypto's real cipher implementations (src/cipher.rs,
+# src/cipher/fxfs.rs, src/cipher/fscrypt_ino_lblk32.rs) - AES256-XTS + ChaCha20
+# key wrapping, not test-only. Versions + features match Fuchsia's own
+# third_party/rust_crates/Cargo.toml pins at this commit exactly. aes has an
+# aarch64-only `--cfg=aes_armv8` rustflag upstream that doesn't apply to this
+# x86_64 target, so it's omitted here.
+crate.spec(package = "aes", version = "0.8.4")
+crate.spec(features = ["derive"], package = "arbitrary", version = "1.4.2")
+crate.spec(package = "cbc", version = "0.1.2")
+crate.spec(package = "chacha20", version = "0.9.1")
+# crypt/fxfs/common needs AES256-GCM-SIV to wrap/
+# unwrap Fxfs volume keys. Version + features match Fuchsia's own
+# third_party/rust_crates/Cargo.toml pin at this commit exactly.
+crate.spec(features = ["std"], package = "aes-gcm-siv", version = "0.11.1")
+# fxfs/unicode's host-only unicode_gen_builder tool (src/generator.rs)
+# parses UCD.zip via the `zip` crate to produce unicode_gen.rs at build time - not
+# shipped to the fuchsia target, host-platform only. Version + feature set match
+# Fuchsia's own third_party/rust_crates/Cargo.toml pin at this commit exactly.
+crate.spec(default_features = False, features = ["deflate"], package = "zip", version = "0.5.5")
+# fxfs/platform's real dependency closure (src/fuchsia/*.rs) -
+# Versions + features match Fuchsia's own third_party/rust_crates/Cargo.toml pins
+# at this commit exactly.
+crate.spec(package = "arrayref", version = "0.3.9")
+crate.spec(package = "async-channel", version = "1.8.0")
+crate.spec(package = "either", version = "1.15.0")
+crate.spec(features = ["kv", "std"], package = "log", version = "0.4.29")
+crate.spec(package = "static_assertions", version = "1.1.0")
+# delivery_blob's real compression closure (src/compression.rs).
+# Versions match Fuchsia's own third_party/rust_crates/Cargo.toml pins at this
+# commit exactly. rayon/crc's own transitive deps (rayon-core, crossbeam-*) are
+# resolved automatically by crate_universe, no separate spec needed.
+crate.spec(package = "crc", version = "3.4.0")
+crate.spec(package = "rayon", version = "1.10.0")
+# fshost: zxcrypt's client lib (src/lib.rs) needs hkdf for key derivation.
+# Version matches Fuchsia's own third_party/rust_crates/Cargo.toml pin at this
+# commit exactly. (crypt_policy, zxcrypt's other new dep, needs no new crates
+# after removing its TEE/keymint-specific code. The removal rationale:
+# no TEE/TrustZone hardware exists on any Cerise target, and Policy::Null - a
+# real, first-class upstream policy, not a fallback - is what Cerise configures.)
+crate.spec(package = "hkdf", version = "0.12.4")
+# fshost: key-bag's on-disk key-bag file format (src/lib.rs) needs openat
+# for directory-relative file ops. Version matches Fuchsia's own
+# third_party/rust_crates/Cargo.toml pin at this commit exactly.
+crate.spec(package = "openat", version = "0.1.21")
+# Test infrastructure: parameterized-case + property-based testing harnesses used
+# by upstream Fuchsia unit test suites being wired up as rust_test targets. No
+# upstream pin found in the vendored upstream context, so track latest
+# 3.x / 1.x (crate_universe resolves the concrete point release into the lock).
+crate.spec(package = "test-case", version = "3")
+crate.spec(package = "proptest", version = "1")
+# unlocks for the next batch of vendored crates'
+# own #[cfg(test)] modules. Versions tracked at the latest series compatible
+# with our already-pinned rand 0.9 / no upstream Fuchsia Cargo.lock pin found
+# in the vendored upstream context for any of these three (same
+# situation as test-case/proptest above); crate_universe resolves the
+# concrete point release into the lock.
+# internet-checksum's and netstack3-core's test modules do
+# `use rand_xorshift::XorShiftRng;` for a deterministic RNG in property tests.
+crate.spec(package = "rand_xorshift", version = "0.4")
+# cm_rust's #[cfg(test)] mod (src/lib.rs) does `use difference::Changeset;`
+# for diff-based assertions on its serde round-trip tests.
+crate.spec(package = "difference", version = "2")
+# netstack3-core subcrates' test modules use futures-test's mock/pending-once
+# executor helpers alongside futures.
+crate.spec(package = "futures-test", version = "0.3")
+# fuchsia-pkg's src/package_manifest.rs #[cfg(test)] mod does
+# `use pretty_assertions::assert_eq;` for readable diff output on struct
+# mismatches. Same class of test-only unlock as difference above (no
+# upstream Fuchsia Cargo.lock pin found in the vendored upstream
+# context), discovered while wiring sys/pkg libs' own tests.
+crate.spec(package = "pretty_assertions", version = "1")
+# netstack3-core/base's `pub mod testutil` (shared by every other
+# netstack3-core subcrate's own tests via the `testutils` Cargo feature -
+# see netstack3-base_testutils in core/base/BUILD.bazel) does
+# `pub use criterion::Bencher as RealBencher;` unconditionally in
+# testutil/benchmarks.rs (upstream's own BUILD.gn lists it as a real,
+# unconditional test_dep, not gated behind `cfg(benchmark)` - only the
+# generated benchmark **functions** are). No upstream Fuchsia Cargo.lock pin
+# found in the vendored upstream context. Pinned to the 0.2.x series
+# (not latest 0.5.x, nor even 0.3.x): testutil/benchmarks.rs's `impl Bencher
+# for RealBencher` has no lifetime/generic parameter on `RealBencher`, and
+# criterion's `Bencher` picked up a lifetime (`Bencher<'a>`, for the
+# `Measurement` trait generalization) as of 0.3.0 - confirmed against
+# github.com/bheisler/criterion.rs tags: 0.2.11's `Bencher` (and its
+# `iter`/`black_box` signatures, which this file's `impl Bencher for
+# RealBencher` matches) has no lifetime param; 0.3.0 onward does.
+crate.spec(package = "criterion", version = "0.2")
+# logging (Archivist import): Archivist's diagnostics dep closure
+# (diagnostics-data, diagnostics-message, diagnostics-reader) needs these four
+# crates that no existing spec covers. Versions + features match Fuchsia's own
+# third_party/rust_crates/Cargo.toml pins at commit
+# 0f3c21bc890c06e8549431abf9d333fbc581937d exactly (not guessed):
+#   - ciborium: CBOR (de)serialization used by diagnostics-reader's formatter.
+#   - termion: terminal styling for diagnostics-data's human-readable Text output.
+#   - bumpalo: bump-allocator arena used by diagnostics-message's decode path.
+#   - async-stream: async generator macros used by diagnostics-reader's subscription.
+crate.spec(features = ["std"], package = "ciborium", version = "0.2.2")
+crate.spec(package = "termion", version = "1.5.3")
+crate.spec(features = ["collections"], package = "bumpalo", version = "3.20.2")
+crate.spec(package = "async-stream", version = "0.3.6")
+
+# cryogen: third-party crates the imported virtualization closure needs that no
+# existing spec covers. Versions match the upstream workspace's own pins.
+#   - getrandom: GUID generation and mesh node-id seeding.
+#   - filepath: inspect's `filepath` feature, resolving a fd back to a path.
+#   - bitvec: VTL/SINT bitmaps in hv1_structs. Upstream pins a fork; we take
+#     the crates.io release instead.
+#   - linkme: vm_resource's distributed slice of resource-kind registrations.
+#   - iced-x86: instruction decoder behind the x86 emulator used on MMIO exits.
+#   - jiff: civil-time arithmetic for local_clock (the RTC's time base).
+#   - caps, seccompiler, landlock: process-sandbox primitives used by pal's
+#     Linux child-process launcher.
+crate.spec(features = ["sys_rng"], package = "getrandom", version = "0.4")
+crate.spec(package = "filepath", version = "0.2")
+crate.spec(package = "bitvec", version = "1")
+crate.spec(package = "linkme", version = "0.3.9")
+crate.spec(
+    default_features = False,
+    features = [
+        "std",
+        "decoder",
+        "instr_info",
+        # Intel-syntax formatter, additive to the decoder/instr_info the MMIO
+        # emulator already uses, so the gateway can render guest code as text.
+        # Note: crate_universe unifies features across the single @crates
+        # universe, so the MMIO x86 emulator compiles this formatter too; the
+        # added compile/binary cost is a small, accepted formatter module.
+        "intel",
+    ],
+    package = "iced-x86",
+    version = "1.17",
+)
+crate.spec(package = "jiff", version = "0.2.14")
+crate.spec(package = "caps", version = "0.5")
+crate.spec(package = "seccompiler", version = "0.5")
+crate.spec(package = "landlock", version = "0.4.1")
+
+# cryogen (vm_gateway on-machine scripting plane): rhai is the embedded script
+# engine over the SAME gateway-brokered VMI/control surface -- a tree-walking
+# interpreter (no JIT, safe on Zircon) whose built-in operation/depth/size
+# limits are the runaway guard. Default features keep the CHECKED engine (never
+# the `unchecked` feature); `sync` makes Engine/AST/Dynamic Send+Sync so the
+# executor can build and run a script inside a blocking `fuchsia_async::unblock`
+# closure while host functions bridge back to the async gateway. Pinned exactly
+# to match the resolved lock; new transitive leaves: rhai_codegen, smartstring,
+# thin-vec, ahash (compile-time RNG), num-traits, bitflags, smallvec.
+crate.spec(
+    features = ["serde", "sync"],
+    package = "rhai",
+    version = "=1.25.1",
+)
+
+# cryogen (runtime/pal_async): the async executor's own third-party
+# leaves. Net-new only — async-channel (1.8.0), socket2 (0.5),
+# slab, once_cell, cfg-if, futures, libc and parking_lot are already specified
+# above and pal_async builds against those pins unchanged.
+#   - async-task: the raw Runnable/Task pair the pal_async task pool schedules.
+#   - smallbox: inline-or-boxed storage for the driver trait objects the
+#     `Driver` spawn path erases.
+#   - io-uring: Linux-only submission/completion ring, reached exclusively from
+#     `src/io_uring.rs` + `src/unix/epoll_uring.rs`, both already
+#     `#[cfg(target_os = "linux")]` upstream, so it never instantiates for the
+#     fuchsia or none triples.
+crate.spec(package = "async-task", version = "4.4")
+crate.spec(package = "smallbox", version = "0.8")
+crate.spec(package = "io-uring", version = "0.7.11")
+
+# cryogen: leaves needed by the storage resource types, loader_defs,
+# uefi_specs, vfio_sys and vmcore. Versions and feature selections match the
+# upstream workspace's own pins exactly.
+#   - futures-concurrency: vmcore's VmTaskDriverSource combinators (join/race
+#     over heterogeneous futures) used by vm_task.
+#   - igvm_defs: IGVM file-format constants loader_defs re-exports for the
+#     boot-parameter block layouts; default-features off (no igvm parser, just
+#     the wire constants).
+#   - wchar: UTF-16 string-literal macro used unconditionally (not just on a
+#     Windows path) by uefi_specs for UEFI variable names.
+#   - nix, vfio-bindings: vfio_sys's raw /dev/vfio ioctls. nix needs only the
+#     `ioctl` feature (request_code_none!/ioctl_*_bad! macros); default
+#     features off. Host-only — see vfio_sys/BUILD.bazel for why the crate
+#     itself is gated off target_os = "fuchsia".
+crate.spec(package = "futures-concurrency", version = "7.6.3")
+crate.spec(default_features = False, package = "igvm_defs", version = "0.4.0")
+crate.spec(package = "wchar", version = "0.11")
+crate.spec(default_features = False, features = ["ioctl"], package = "nix", version = "0.30.1")
+crate.spec(package = "vfio-bindings", version = "0.4.0")
+
+# cryogen: disk_backend and scsi_core's fixed-capacity async-trait-object return type (no heap alloc per call on
+# the storvsp I/O hot path).
+crate.spec(package = "stackfuture", version = "0.3")
+
+# cryogen: storvsp's own leaf.
+#   - unicycle: the FuturesUnordered-like pinned-stream pool storvsp's
+#     multi-worker/multi-subchannel model polls concurrently.
+crate.spec(package = "unicycle", version = "0.10.2")
+
+# cryogen: disk_file's blocking-pool
+# offload for synchronous file I/O off the async executor thread.
+crate.spec(package = "blocking", version = "1.6.2")
+
+# Guest networking dependencies for the in-process NetVSP backend. `smoltcp`
+# provides packet wire formats and DHCP/DNS/NAT machinery; it does not expose
+# a host network interface itself.
+crate.spec(default_features = False, package = "heapless", version = "0.8")
+crate.spec(package = "resolv-conf", version = "0.7")
+crate.spec(
+    default_features = False,
+    features = [
+        "proto-ipv4",
+        "proto-ipv6",
+        "proto-dns",
+        "medium-ethernet",
+        "socket-raw",
+        "std",
+        "proto-dhcpv4",
+    ],
+    package = "smoltcp",
+    version = "0.12.0",
+)
+
+# cryogen (the firmware_uefi/vmotherboard/vmm_core chain to a runnable VM).
+# Versions and feature selections copied verbatim from the upstream workspace's
+# own root Cargo.toml [workspace.dependencies] (not guessed).
+#   - range_map_vec: loader's IGVM address-range bookkeeping.
+#   - igvm, object, crc32fast: loader's IGVM-file / ELF-loader / checksum
+#     leaves.
+#   - signal-hook: hypervisor/kvm's SIGBUS/SIGSEGV-on-userfault plumbing —
+#     NOT part of this target chain (virt_kvm/kvm are out of scope for the
+#     firmware_uefi path) but pinned here for completeness with the upstream
+#     manifest; unreferenced until virt_kvm is imported.
+#
+# The RustCrypto/CMS stack itself (der, cms, pkcs1, pkcs8, rsa, sha1,
+# signature, spki, x509-cert) is NOT here — see the isolated `crypto_ext`
+# universe below. It needs sha2 0.11 (digest-0.11 generation, matching der
+# 0.8/signature 3.0/spki 0.8), and this workspace already pins sha2 0.10
+# (default-features off) for the OS-self-OTA FAT driver, which needs
+# digest 0.10. First attempt added a second bare `crate.spec(package =
+# "sha2", version = "0.11.0")` inline here; crate_universe did not keep both
+# versions the way `virt_kvm`-style genuinely-independent crates do — it
+# silently collapsed the whole universe's "sha2" alias onto 0.11.0 and
+# dropped the 0.10 repository entirely, which would have re-pointed
+# ota_updater (and netstack3/context-authenticator/fscrypt/zxcrypt, all of
+# which reference the bare `@crates//:sha2` label) at a different major
+# version with no source change of their own — precisely the silent-pin-bump
+# the hard rule forbids. Reverted; see the isolated universe instead, which
+# is this repo's own established pattern (grpc_ext below) for exactly this
+# shape of problem.
+crate.spec(package = "range_map_vec", version = "0.2.0")
+crate.spec(package = "igvm", version = "0.4.0")
+crate.spec(default_features = False, features = ["elf", "std", "read_core"], package = "object", version = "0.37.3")
+crate.spec(default_features = False, package = "crc32fast", version = "1.3.2")
+crate.spec(default_features = False, package = "signal-hook", version = "0.3")
+# The managed image importer persists SHA-256 chaining state at durability
+# boundaries. This render-only annotation exposes RustCrypto's compression
+# primitive without re-resolving or upgrading the crate graph.
+crate.annotation(crate = "sha2", crate_features = ["compress"])
+crate.from_specs(
+    # The crate targets must be compatible with our targets (fuchsia, none) and
+    # the host triples (for proc-macros / build scripts). The rules_rust default
+    # list omits these.
+    supported_platform_triples = [
+        "x86_64-unknown-fuchsia",
+        "x86_64-unknown-none",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "crates")
+
+# ---------------------------------------------------------------------------
+# gRPC server stack. Second, ISOLATED crate universe.
+#
+# Rationale (the two-universe split): inline crate.spec
+# features are unconditional across every triple in a universe. The existing
+# @crates pins tokio with [net,...], which is latent-unbuilt on fuchsia today;
+# pulling h2 -> tokio into @crates would instantiate mio for the fuchsia triple
+# and break the build (mio has no fuchsia selector). isolate=True gives @grpc a
+# private tokio[io-util]-only closure. The only concrete type crossing the
+# @crates/@grpc seam is fuchsia_async::net::TcpStream (no generic trait bound
+# crosses), so the two universes never need to agree on a shared version.
+#
+# use_repo name is `grpc`, so the crates are @grpc//:tonic, @grpc//:h2, etc.
+grpc_ext = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate", isolate = True)
+# tonic 0.12 (the design called for 0.13): NO
+# protoc-gen-tonic plugin targets tonic-build 0.13 — the plugin ecosystem
+# jumped 0.4.1 (tonic-build 0.12) straight to 0.5.0 (tonic-build 0.14.1),
+# skipping 0.13 entirely (crates.io index verified). tonic-build 0.12 codegen
+# against a 0.13 runtime fails to compile (empty_body/UnsyncBoxBody moved). 0.12
+# is the minimal-deviation resolution: it keeps the task's explicit "0.4.x"
+# plugin, and its codegen re-exports (empty_body, BoxBody) are UNGATED in
+# codegen.rs — transport-independent exactly as the design's [codegen,prost]
+# thesis requires (no `server` feature, so no tokio/net -> mio on fuchsia). The
+# rest of the stack (prost 0.13, hyper 1, h2 0.4, http 1, tower 0.5) is
+# unchanged from the design.
+grpc_ext.spec(default_features = False, features = ["codegen", "prost"], package = "tonic", version = "0.12")
+grpc_ext.spec(default_features = False, features = ["std", "derive"], package = "prost", version = "0.13")
+# prost-types: reexported as the toolchain's prost_types crate.
+grpc_ext.spec(package = "prost-types", version = "0.13")
+# hyper[http1, http2, server, client]. HTTP/2 carries target-local gRPC; HTTP/1
+# is the browser-facing server in the on-target management component.
+# `client` is the other direction and it is NOT symmetric with it: hyper's
+# client half is a different code path (`hyper::client::conn::http2`), and
+# whether it compiles for x86_64-unknown-fuchsia was an open risk rather than a
+# corollary of the server working.
+# `//src/cerise/lib/hyper_rt:hyper_client_compile_probe` is the answer: it
+# builds and links for the fuchsia platform.
+#
+# A feature added to the EXISTING spec, not a second `crate.spec` for hyper: a
+# duplicate spec does not error, it silently collapses the alias and can
+# repoint unrelated targets at a different version.
+grpc_ext.spec(features = ["http1", "http2", "server", "client"], package = "hyper", version = "1")
+grpc_ext.spec(package = "h2", version = "0.4")
+# hyper-util[service]: only for TowerToHyperService. Kept in the fuchsia graph
+# only if the fuchsia-triple build proves it pulls no tokio net/mio (design
+# risk #3); otherwise dropped in favor of the hand-rolled bridge.
+grpc_ext.spec(default_features = False, features = ["service"], package = "hyper-util", version = "0.1")
+grpc_ext.spec(package = "http", version = "1")
+grpc_ext.spec(package = "http-body", version = "1")
+grpc_ext.spec(package = "http-body-util", version = "0.1")
+grpc_ext.spec(default_features = False, package = "tower", version = "0.5")
+grpc_ext.spec(package = "bytes", version = "1")
+# tokio[io-util] ONLY — pure buffer helpers, no mio/net; safe for fuchsia.
+grpc_ext.spec(default_features = False, features = ["io-util"], package = "tokio", version = "1")
+grpc_ext.spec(package = "futures", version = "0.3")
+# Executor-neutral deadline future for the raw h2c clients. These clients do
+# not use tonic::transport::Channel, so they do not inherit Channel's timeout
+# layer and must bound an unanswered RPC themselves.
+grpc_ext.spec(package = "futures-timer", version = "3")
+grpc_ext.spec(package = "async-trait", version = "0.1")
+grpc_ext.spec(package = "pin-project-lite", version = "0.2")
+grpc_ext.from_specs(
+    supported_platform_triples = [
+        "x86_64-unknown-fuchsia",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ],
+)
+use_repo(grpc_ext, grpc = "crates")
+
+# gRPC protoc plugins: HOST-ONLY isolated universe. protoc-gen-prost /
+# protoc-gen-tonic are rust_binary tools that run on the exec platform only, so
+# their triples are the host triples (no fuchsia). gen_binaries exposes the
+# plugin binaries as @grpc_tools//:protoc-gen-prost__protoc-gen-prost etc.
+grpc_tools_ext = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate", isolate = True)
+grpc_tools_ext.spec(package = "protoc-gen-prost", version = "0.4")
+grpc_tools_ext.spec(package = "protoc-gen-tonic", version = "0.4")
+grpc_tools_ext.annotation(crate = "protoc-gen-prost", gen_binaries = ["protoc-gen-prost"])
+grpc_tools_ext.annotation(crate = "protoc-gen-tonic", gen_binaries = ["protoc-gen-tonic"])
+grpc_tools_ext.from_specs(
+    supported_platform_triples = [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ],
+)
+use_repo(grpc_tools_ext, grpc_tools = "crates")
+
+# ---------------------------------------------------------------------------
+# RustCrypto/CMS stack for cryogen's support/crypto. Third, ISOLATED
+# crate universe, same shape as grpc_ext above and for the same reason: it
+# needs sha2 0.11 (der 0.8/signature 3.0/spki 0.8 are the digest-0.11
+# generation of RustCrypto), and @crates already pins sha2 0.10 for the
+# OS-self-OTA FAT driver (digest 0.10) — two incompatible 0.x majors, not a
+# version to guess-reconcile. Isolating keeps @crates's sha2 0.10 untouched.
+#
+# support/crypto's public error types embed `der::Error` directly under
+# --cfg=rust (`Pkcs7Error(#[source] der::Error, ...)` in pkcs7/mod.rs), so
+# every direct consumer of that surface must resolve `der` (and friends) to
+# this SAME instance, not @crates's. firmware_uefi is the one such consumer
+# here: it depends on @crypto_crates//:der, not @crates//:der.
+#
+# Versions and feature selections copied verbatim from the upstream workspace's
+# own root Cargo.toml [workspace.dependencies].
+crypto_ext = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate", isolate = True)
+crypto_ext.spec(features = ["derive", "alloc", "oid"], package = "der", version = "0.8")
+crypto_ext.spec(default_features = False, package = "cms", version = "0.3.0-pre.2")
+crypto_ext.spec(package = "pkcs1", version = "0.8.0-rc.4")
+crypto_ext.spec(features = ["alloc"], package = "pkcs8", version = "0.11.0")
+crypto_ext.spec(default_features = False, features = ["encoding", "sha2"], package = "rsa", version = "0.10.0-rc.18")
+crypto_ext.spec(default_features = False, features = ["oid"], package = "sha1", version = "0.11.0")
+crypto_ext.spec(default_features = False, package = "sha2", version = "0.11.0")
+crypto_ext.spec(default_features = False, features = ["alloc"], package = "signature", version = "3.0.0")
+crypto_ext.spec(default_features = False, features = ["alloc"], package = "spki", version = "0.8.0")
+crypto_ext.spec(default_features = False, package = "x509-cert", version = "0.3.0-rc.4")
+# getrandom is ALSO duplicated here (same version/features as @crates's own
+# pin) even though support/crypto originally listed only "@crates//:getrandom".
+# Reason, found only by building: `crypto::rsa::rust` implements
+# `rsa::rand_core::{CryptoRng,TryRng}` (rsa's re-export of the isolated
+# universe's `rand_core`) directly on `getrandom::SysRng`. If `getrandom`
+# stays in @crates, its transitive `rand_core` is a SEPARATE compilation from
+# @crypto_crates's `rand_core` (two isolated Cargo/crate_universe graphs never
+# unify a shared transitive dep, even at the identical pinned version), so
+# `SysRng: rsa::rand_core::TryRng` fails to typecheck — "multiple different
+# versions of crate `rand_core`". Every other @crates pin used by
+# support/crypto (anyhow, thiserror) and by firmware_uefi (tracing, zerocopy,
+# jiff, async-trait) stays put: none of them is reached through rsa's trait
+# bridge, only getrandom is.
+crypto_ext.spec(features = ["sys_rng"], package = "getrandom", version = "0.4")
+crypto_ext.from_specs(
+    supported_platform_triples = [
+        "x86_64-unknown-fuchsia",
+        "x86_64-unknown-none",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    ],
+)
+use_repo(crypto_ext, crypto_crates = "crates")
+
+# Rust prost/tonic codegen toolchain (build/grpc:prost_toolchain). Listed before
+# @rust_toolchains so it is the resolved prost toolchain.
+register_toolchains("//build/grpc:prost_toolchain")
+
+llvm_repo = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+use_repo(llvm_repo, "llvm-project")
+
+# Hosted hermetic cc toolchain for host tools (fidlc, etc.)
+# Declares linux_x86_64_to_linux_x86_64 for builds on x86_64 exec (remote workers)
+# and linux_aarch64_to_linux_x86_64 for builds on aarch64 exec (this host local).
+llvm_toolchain_ext = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
+llvm_toolchain_ext.exec(os = "linux", arch = "x86_64")
+llvm_toolchain_ext.exec(os = "linux", arch = "aarch64")
+llvm_toolchain_ext.target(os = "linux", arch = "x86_64")
+use_repo(llvm_toolchain_ext, "llvm_toolchains")

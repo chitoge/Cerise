@@ -1,0 +1,34 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# Transformer library: the actual macro implementation logic.
+# Compiled as a regular rlib so it can be inspected/tested separately.
+rust_library(
+    name = "fuchsia_macro_transformer",
+    srcs = ["src/transformer.rs"],
+    crate_name = "transformer",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+# Proc-macro entry point: re-exports main/test from the transformer library.
+rust_proc_macro(
+    name = "fuchsia_macro",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_macro",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        ":fuchsia_macro_transformer",
+    ],
+)

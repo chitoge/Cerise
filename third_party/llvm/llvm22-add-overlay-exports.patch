@@ -1,0 +1,54 @@
+diff --git a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libcxx/libcxx.BUILD.bazel
+@@ -9,4 +9,8 @@
+ load("@llvm-project//:vars.bzl", "LLVM_VERSION_MAJOR")
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
++
++# Cerise: export the raw overlay src so src/cerise/runtime can
++# cross-compile libc++ for Fuchsia (Bazel 9 strict file visibility needs it).
++exports_files(glob(["src/**"]), visibility = ["//visibility:public"])
+ 
+ # Should replicate libcxx/include/CMakeLists.txt
+diff --git a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libcxxabi/libcxxabi.BUILD.bazel
+@@ -5,4 +5,8 @@
+ load("@llvm-project//:vars.bzl", "LLVM_VERSION_MAJOR")
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
++
++# Cerise: export the raw overlay src so src/cerise/runtime can
++# cross-compile libc++abi for Fuchsia (Bazel 9 strict file visibility needs it).
++exports_files(glob(["src/**"]), visibility = ["//visibility:public"])
+ 
+ filegroup(
+diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel
+@@ -3,4 +3,8 @@
+ load("@llvm//toolchain/runtimes:cc_runtime_static_library.bzl", "cc_runtime_stage0_static_library")
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
++
++# Cerise: export the raw overlay src so src/cerise/runtime can
++# cross-compile libunwind for Fuchsia (Bazel 9 strict file visibility needs it).
++exports_files(glob(["src/**"]), visibility = ["//visibility:public"])
+ 
+ cc_library(
+diff --git a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
+--- a/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
++++ b/3rd_party/llvm-project/x.x/compiler-rt/compiler-rt.BUILD.bazel
+@@ -13,3 +13,5 @@
+ load("@rules_cc//cc:cc_library.bzl", "cc_library")
++
++package(default_visibility = ["//visibility:public"])
+ 
+ filegroup(
+@@ -562,3 +562,4 @@
+         "@platforms//os:windows": [],
+         "@platforms//os:none": [],
++        "@platforms//os:fuchsia": [],
+     }) + select({
+@@ -577,2 +577,3 @@
+         "@platforms//os:none": [],
++        "@platforms//os:fuchsia": [],
+     }),

@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    # Compile at HEAD so the api-level availability gating of fdf::Logger::Create2
+    # matches the HEAD-level DFv2 driver/SDK consumers (minimal/compat/pci/...): at
+    # HEAD the 5-arg Create2(incoming, dispatcher, name, severity, optional<LogSink>)
+    # is emitted, which DriverBase calls. MUST stay in lockstep with the HEAD flip of
+    # //src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp. See API-level HEAD gating.
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/sdk/lib/syslog/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

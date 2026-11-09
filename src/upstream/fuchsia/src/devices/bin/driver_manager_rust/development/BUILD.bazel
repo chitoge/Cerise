@@ -1,0 +1,30 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "driver_manager_development",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "driver_manager_development",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.development:fidl_fuchsia_driver_development",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fidl_fuchsia_driver_framework",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.index:fidl_fuchsia_driver_index",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/core:driver_manager_core",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/node:driver_manager_node",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/shutdown:driver_manager_shutdown",
+        "//src/upstream/fuchsia/src/devices/bin/driver_manager_rust/types:driver_manager_types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:futures",
+        "@crates//:log",
+    ],
+)

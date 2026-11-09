@@ -1,0 +1,22 @@
+# Cerise packages: pkg_signer — the HOST/build-time signer. Derives the ed25519 public key
+# from the checked-in build seed (build/keys/) and signs dynamic-index entries {name,version,merkle,
+# counter}. The private seed lives only on the build side; the device holds the public key. Used by
+# genrules in //src/cerise/pkg_hello_update to produce the resolver/fetcher pubkey + the gate's signed
+# entry payload. See src/main.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "pkg_signer",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/cerise/lib/cerise_signing:cerise_signing",
+        "//src/cerise/pkg_index:pkg_index",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)

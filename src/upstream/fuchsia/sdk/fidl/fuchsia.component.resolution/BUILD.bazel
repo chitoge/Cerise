@@ -1,0 +1,58 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.component.resolution",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.version:fuchsia.version",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.component.resolution_cpp",
+    library = ":fuchsia.component.resolution",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.url:fuchsia.url_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.version:fuchsia.version_cpp",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.component.resolution_rs",
+    library = ":fuchsia.component.resolution",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_component_resolution",
+    srcs = [":fuchsia.component.resolution_rs"],
+    crate_name = "fidl_fuchsia_component_resolution",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.version:fidl_fuchsia_version",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

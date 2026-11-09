@@ -1,0 +1,37 @@
+# Bazel integration for this imported target. Replaces the
+# upstream BUILD.bazel (unavailable idk_noop_atom / HOST_OS_CONSTRAINTS macros).
+# On Fuchsia <zircon/assert.h> is provided by the libc sysroot; until that sysroot
+# is assembled, this exposes the header (it pulls <zircon/compiler.h> from the
+# zircon public headers).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["zircon/**/*.h"], allow_empty = True),
+    includes = ["."],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# The libc-backed __zx_panic implementation (ZX_ASSERT/ZX_PANIC) for host tools
+# like fidlc that use <zircon/assert.h>.
+cc_library(
+    name = "zircon-assert",
+    srcs = ["zx_panic_libc.cc"],
+    tags = ["manual"],
+    deps = [":headers"],
+)
+
+# __zx_panic for libc.so itself (its C++ glue uses ZX_ASSERT/ZX_PANIC).
+# gdb-confirmed: without this, "Error relocating libc.so: __zx_panic: symbol not
+# found" -> ldso_fail -> _exit(127) before main. Compiled with the libc flags
+# (hidden + no safe-stack/stack-protector) so it's PC-relative for the bootstrap.
+cc_library(
+    name = "zircon-assert-libc",
+    srcs = ["zx_panic_libc.cc"],
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    tags = ["manual"],
+    deps = [":headers"],
+)

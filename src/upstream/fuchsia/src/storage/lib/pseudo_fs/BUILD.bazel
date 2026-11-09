@@ -1,0 +1,61 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# fxfs/platform depends on "pseudo_fs_static" - same rationale
+# as vfs/rust:vfs_static above (a plain alias, since our "pseudo_fs" is already a
+# plain rlib and the upstream static/dynamic distinction is a GN/ELF-linking
+# concern that doesn't apply the same way in Bazel).
+alias(
+    name = "pseudo_fs_static",
+    actual = ":pseudo_fs",
+    tags = ["manual"],
+)
+
+# fxfs/platform/src/fuchsia/debug.rs is the one file that mixes
+# pseudo_fs's PseudoDirectory/LazyPseudoDirectory types with vfs_platform's
+# Directory/File trait bounds - since ":pseudo_fs" (below) links ":vfs" (level-30),
+# those types don't satisfy vfs_platform's traits (Rust treats vfs/vfs_platform as
+# distinct crate instances even though they're the same source). Same zero-risk
+# technique as vfs/rust:vfs_platform: a SEPARATE target, unmodified source,
+# linking vfs_platform instead of vfs. The original ":pseudo_fs" is untouched -
+# elf_runner (its only other consumer) is unaffected by construction.
+# DELIBERATELY built with FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS, not PLATFORM - see
+# vfs/rust/BUILD.bazel's vfs_platform comment for the full story (PLATFORM was
+# tried, found to re-enable references to FIDL symbols fidl_fuchsia_io_head never
+# generates, and reverted; Cerise has no legacy clients needing DeprecatedOpen,
+# so this target simply doesn't carry that support). Kept the "_platform" name for
+# the same reason vfs_platform did.
+rust_library(
+    name = "pseudo_fs_platform",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "pseudo_fs",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    aliases = {
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head": "fidl_fuchsia_io",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs_platform",
+        "@crates//:futures",
+    ],
+)
+
+rust_library(
+    name = "pseudo_fs",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "pseudo_fs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "@crates//:futures",
+    ],
+)

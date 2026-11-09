@@ -1,0 +1,10 @@
+# Bazel integration for this imported target. fidlgen Go lib: the
+# FIDL IR model + codegen helpers shared by the fidlgen_* generators.
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "fidlgen",
+    srcs = glob(["*.go"], exclude = ["*_test.go"], allow_empty = True),
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,16 @@
+// NEGATIVE-TEST FIXTURE root realm (not a real product). Hosts `evil_app` as a
+// child and dutifully OFFERS it everything it uses — including the privileged
+// fuchsia.kernel.MmioResource. Routing completeness is therefore satisfied for
+// evil_app (nothing is "forgot to offer"), so the ONLY finding the checker should
+// report is the OVER-PRIVILEGE violation: a non-driver component must not use a
+// kernel resource no matter how correctly it is routed. This isolates and proves
+// the least-privilege lint specifically.
+{
+    children: [
+        { name: "evil_app", url: "fuchsia-boot:///evil_app#meta/evil_app.cm", startup: "eager" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "parent", to: "#evil_app" },
+        { protocol: "fuchsia.kernel.MmioResource", from: "parent", to: "#evil_app" },
+    ],
+}

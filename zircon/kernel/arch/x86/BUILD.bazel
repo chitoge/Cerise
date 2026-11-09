@@ -1,0 +1,506 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "phys/linuxboot.ld",
+    "phys/linuxboot32.ld",
+])
+
+cc_library(
+    name = "x86",
+    srcs = [
+        "amd.h",
+        "acpi.S",
+        "amd.cc",
+        "arch.cc",
+        "asm.S",
+        "bootstrap16.cc",
+        "cache.cc",
+        "crashlog.cc",
+        "debugger.cc",
+        "descriptor.cc",
+        "exceptions.S",
+        "exceptions_c.cc",
+        "feature.cc",
+        "gdt.S",
+        "handoff.cc",
+        "hwp.cc",
+        "idle_states.cc",
+        "idt.cc",
+        "intel.cc",
+        "ioapic.cc",
+        "ioport.cc",
+        "lapic.cc",
+        "mexec.S",
+        "mmu.cc",
+        "mmu_mem_types.cc",
+        "mp.cc",
+        "msr.cc",
+        "msr_bench.cc",
+        "ops.S",
+        "perf_mon.cc",
+        "pv.cc",
+        "registers.cc",
+        "restricted.cc",
+        "smp.cc",
+        "spinlock.cc",
+        "start.S",
+        "start16.S",
+        "suspend.cc",
+        "syscall.S",
+        "system_topology.cc",
+        "thread.cc",
+        "timer_freq.cc",
+        "uspace_entry.S",
+    ],
+    alwayslink = True,
+    deps = [
+        "//abi:zx_syscall_headers",
+        "//zircon/kernel/arch/x86/cpuid:headers",
+        "//zircon/kernel/include:headers_cc",
+        "//zircon/kernel/arch/x86/hypervisor:hypervisor_x86",
+        "//zircon/kernel/arch/x86/user-copy:user_copy",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/lib/instrumentation",
+        "//zircon/kernel/lib/kpci:kpci",
+        "//zircon/kernel/dev/hw_rng:hw_rng",
+        "//zircon/kernel/vm:headers",
+        "//zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "feature_source",
+    srcs = ["feature.cc"],
+)
+
+filegroup(
+    name = "arch_source",
+    srcs = ["arch.cc"],
+)
+
+filegroup(
+    name = "mmu_source",
+    srcs = ["mmu.cc"],
+)
+
+filegroup(
+    name = "mmu_mem_types_source",
+    srcs = ["mmu_mem_types.cc"],
+)
+
+filegroup(
+    name = "lapic_source",
+    srcs = ["lapic.cc"],
+)
+
+filegroup(
+    name = "mp_source",
+    srcs = ["mp.cc"],
+)
+
+filegroup(
+    name = "timer_freq_source",
+    srcs = ["timer_freq.cc"],
+)
+
+filegroup(
+    name = "gdt_source",
+    srcs = ["gdt.S"],
+)
+
+filegroup(
+    name = "ops_source",
+    srcs = ["ops.S"],
+)
+
+filegroup(
+    name = "start_source",
+    srcs = ["start.S"],
+)
+
+filegroup(
+    name = "syscall_source",
+    srcs = ["syscall.S"],
+)
+
+filegroup(
+    name = "uspace_entry_source",
+    srcs = ["uspace_entry.S"],
+)
+
+filegroup(
+    name = "asm_source",
+    srcs = ["asm.S"],
+)
+
+filegroup(
+    name = "cpuid_source",
+    srcs = ["//zircon/kernel/arch/x86/cpuid:cpuid_source"],
+)
+
+filegroup(
+    name = "idt_source",
+    srcs = ["idt.cc"],
+)
+
+filegroup(
+    name = "exceptions_source",
+    srcs = ["exceptions.S"],
+)
+
+filegroup(
+    name = "exceptions_c_source",
+    srcs = ["exceptions_c.cc"],
+)
+
+filegroup(
+    name = "arch_phys_headers",
+    srcs = ["phys/include/phys/arch/arch-handoff.h"],
+)
+
+filegroup(
+    name = "page_tables_headers",
+    srcs = glob(["page_tables/include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "phys_headers",
+    srcs = glob(["phys/include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "registers_source",
+    srcs = ["registers.cc"],
+)
+
+filegroup(
+    name = "crashlog_source",
+    srcs = ["crashlog.cc"],
+)
+
+filegroup(
+    name = "apic_support_sources",
+    srcs = [
+        "ioapic.cc",
+        "perf_mon.cc",
+    ],
+)
+
+filegroup(
+    name = "runtime_sources",
+    srcs = [
+        "acpi.S",
+        "amd.cc",
+        "bootstrap16.cc",
+        "cache.cc",
+        "debugger.cc",
+        "descriptor.cc",
+        "handoff.cc",
+        "hwp.cc",
+        "idle_states.cc",
+        "intel.cc",
+        "ioport.cc",
+        "mexec.S",
+        "msr.cc",
+        "msr_bench.cc",
+        "pv.cc",
+        "restricted.cc",
+        "smp.cc",
+        "spinlock.cc",
+        "start16.S",
+        "suspend.cc",
+        "system_topology.cc",
+        "thread.cc",
+    ],
+)
+
+filegroup(
+    name = "retpoline_asm_sources",
+    srcs = [
+        "retpoline/basic.S",
+        "retpoline/unsafe.S",
+    ],
+)
+
+filegroup(
+    name = "physload_cxx_sources",
+    srcs = [
+        "phys/address-space-64.cc",
+        "phys/address-space-install.cc",
+        "phys/arch-physload.cc",
+        "phys/gdt.cc",
+        "phys/reset.cc",
+    ],
+)
+
+# physboot module variant: excludes gdt.cc (gArchPhysInfo stub in physload-module.cc)
+# and arch-physload.cc (physload init not needed in modules)
+filegroup(
+    name = "physboot_x86_base_cxx_sources",
+    srcs = [
+        "phys/address-space-64.cc",
+        "phys/address-space-install.cc",
+        "phys/reset.cc",
+    ],
+)
+
+filegroup(
+    name = "physload_asm_sources",
+    srcs = ["phys/start.S"],
+)
+
+filegroup(
+    name = "physboot_extra_cxx_sources",
+    srcs = [
+        "phys/arch-boot-zbi-64.cc",
+        "phys/arch-handoff-prep.cc",
+        "phys/arch-on-physload-handoff.cc",
+        "code-patches/code-patches.cc",
+    ],
+)
+
+filegroup(
+    name = "boot_shim_cxx_sources",
+    srcs = [
+        "phys/address-space-64.cc",
+        "phys/address-space-install.cc",
+        "phys/arch-boot-zbi-64.cc",
+        "phys/gdt.cc",
+        "phys/legacy-boot.cc",
+        "phys/linuxboot-init.cc",
+        "phys/reset.cc",
+        "phys/boot-shim/legacy-boot-shim.cc",
+        "phys/boot-shim/linux-x86-boot-shim.cc",
+        "phys/boot-shim/stdout.cc",
+    ],
+)
+
+genrule(
+    name = "linuxboot64_header_ikconfig",
+    srcs = [
+        "phys/linuxboot64-header.S",
+        "phys/ikconfig.gz",
+    ],
+    outs = ["linuxboot64-header.ikconfig.S"],
+    cmd = """
+gz=$(location phys/ikconfig.gz)
+src=$(location phys/linuxboot64-header.S)
+out=$@
+# Replace .incbin IKCONFIG_FILE with .byte hex values from ikconfig.gz
+bytes=$$(python3 -c "
+import sys
+with open('$$gz', 'rb') as f:
+    data = f.read()
+print('.byte ' + ', '.join('0x%02x' % b for b in data))
+")
+sed 's|.incbin IKCONFIG_FILE|'"$$bytes"'|g' "$$src" > "$$out"
+""",
+)
+
+filegroup(
+    name = "boot_shim_asm_sources",
+    srcs = [":linuxboot64_header_ikconfig"],
+)
+
+filegroup(
+    name = "boot_shim_x86_32_cxx_sources",
+    srcs = [
+        "phys/address-space-32.cc",
+        "phys/address-space-install.cc",
+        "phys/arch-boot-zbi-32.cc",
+        "phys/gdt32.cc",
+        "phys/legacy-boot.cc",
+        "phys/linuxboot-init.cc",
+        "phys/reset.cc",
+        "phys/boot-shim/legacy-boot-shim.cc",
+        "phys/boot-shim/linux-x86-boot-shim.cc",
+        "phys/boot-shim/stdout.cc",
+    ],
+)
+
+genrule(
+    name = "linuxboot_header_ikconfig",
+    srcs = [
+        "phys/linuxboot-header.S",
+        "phys/ikconfig.gz",
+    ],
+    outs = ["linuxboot-header.ikconfig.S"],
+    cmd = """
+gz=$(location phys/ikconfig.gz)
+src=$(location phys/linuxboot-header.S)
+out=$@
+bytes=$$(python3 -c "
+import sys
+with open('$$gz', 'rb') as f:
+    data = f.read()
+print('.byte ' + ', '.join('0x%02x' % b for b in data))
+")
+sed 's|.incbin IKCONFIG_FILE|'"$$bytes"'|g' "$$src" > "$$out"
+""",
+)
+
+filegroup(
+    name = "boot_shim_x86_32_asm_sources",
+    srcs = [
+        ":linuxboot_header_ikconfig",
+        "phys/start32.S",
+    ],
+)
+
+filegroup(
+    name = "linuxboot_ld_scripts",
+    srcs = [
+        "phys/linuxboot.ld",
+        "phys/linuxboot32.ld",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(
+        ["**/*"],
+        allow_empty = True,
+        exclude = ["hypervisor/**"],
+    ) + [
+        "//zircon/kernel/arch/x86/hypervisor:source_snapshot",
+        "//zircon/kernel/arch/x86/user-copy:source_snapshot",
+    ],
+)
+
+cc_library(
+    name = "code_patches_arch_headers",
+    hdrs = glob(["code-patches/include/**/*.h"], allow_empty = True),
+    includes = ["code-patches/include"],
+)
+
+cc_library(
+    name = "retpoline_headers",
+    hdrs = glob(["retpoline/include/**/*.h"], allow_empty = True),
+    includes = ["retpoline/include"],
+)
+
+# Bazel-native phys cc_library targets for x86 arch phys code.
+
+_X86_PHYS_COMMON_DEPS = [
+    "//build/phys:phys_include_overrides",
+    "//:kernel_cc_headers",
+    "//src/lib/zbitl:phys_zbitl",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/kernel/lib/page:headers",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    "//:phys_elfldltl",
+    "//:symbolizer_markup_headers",
+    # Extra headers for code-patches.cc
+    "//zircon/kernel/lib/arch/include:headers_cc",
+    "//zircon/kernel/lib/arch/x86:arch_x86_headers",
+    "//zircon/kernel/arch/x86/user-copy:user_copy_headers",
+    "//zircon/kernel/arch/x86:retpoline_headers",
+    "//zircon/kernel/lib/libc:cstring_arch_x86_headers",
+    "//zircon/system/ulib/hwreg:hwreg",
+]
+
+# physload: uses phys_common_lib (full physload sources including address-space.cc)
+_X86_PHYS_LIB_DEPS = _X86_PHYS_COMMON_DEPS + [
+    "//zircon/kernel/phys:phys_common_lib",
+]
+
+# physboot module: uses physboot_phys_lib (no address-space.cc, no gArchPhysInfo conflict)
+_X86_PHYSBOOT_LIB_DEPS = _X86_PHYS_COMMON_DEPS + [
+    "//zircon/kernel/phys:physboot_phys_lib",
+]
+
+# boot shim: uses phys_boot_shim_lib (boot-shim source subset, not physload sources)
+_X86_BOOT_SHIM_LIB_DEPS = _X86_PHYS_COMMON_DEPS + [
+    "//zircon/kernel/phys:phys_boot_shim_lib",
+]
+
+_X86_PHYS_PRIVATE_HDRS = glob([
+    "phys/*.h",
+    "phys/boot-shim/*.h",
+], allow_empty = True)
+
+cc_library(
+    name = "x86_phys_common_lib",
+    srcs = [
+        ":physload_cxx_sources",
+        ":physload_asm_sources",
+    ],
+    hdrs = _X86_PHYS_PRIVATE_HDRS,
+    includes = ["phys"],
+    alwayslink = True,
+    deps = _X86_PHYS_LIB_DEPS,
+)
+
+# physload module variant: excludes gdt.cc and arch-physload.cc (not needed in modules)
+cc_library(
+    name = "x86_physboot_base_lib",
+    srcs = [
+        ":physboot_x86_base_cxx_sources",
+        ":physload_asm_sources",
+    ],
+    hdrs = _X86_PHYS_PRIVATE_HDRS,
+    includes = ["phys"],
+    alwayslink = True,
+    deps = _X86_PHYSBOOT_LIB_DEPS,
+)
+
+cc_library(
+    name = "x86_physboot_extra_lib",
+    srcs = [
+        ":physboot_extra_cxx_sources",
+    ],
+    hdrs = _X86_PHYS_PRIVATE_HDRS,
+    includes = ["phys"],
+    alwayslink = True,
+    deps = _X86_PHYSBOOT_LIB_DEPS,
+)
+
+cc_library(
+    name = "x86_boot_shim_lib",
+    srcs = [
+        ":boot_shim_cxx_sources",
+        ":boot_shim_asm_sources",
+        ":physload_asm_sources",
+    ],
+    hdrs = _X86_PHYS_PRIVATE_HDRS,
+    includes = ["phys"],
+    copts = ['-DBI=""'],
+    alwayslink = True,
+    deps = _X86_BOOT_SHIM_LIB_DEPS + [
+        "//build/phys:boot_shim_asm_headers",
+    ],
+)
+
+cc_library(
+    name = "x86_boot_shim_x86_32_lib",
+    srcs = [
+        ":boot_shim_x86_32_cxx_sources",
+        ":boot_shim_x86_32_asm_sources",
+    ],
+    hdrs = _X86_PHYS_PRIVATE_HDRS,
+    includes = ["phys"],
+    copts = ['-DBI=""'],
+    alwayslink = True,
+    deps = _X86_BOOT_SHIM_LIB_DEPS + [
+        "//build/phys:boot_shim_asm_headers",
+    ],
+)
+
+# x86-64 ZBI boot trampoline for the EFI environment.
+# Clears RSP/RBP and jumps to the kernel entry point.
+cc_library(
+    name = "arch_boot_zbi_efi",
+    srcs = ["phys/arch-boot-zbi-64.cc"],
+    deps = [
+        "//:kernel_cc_headers",
+        "//src/lib/zbitl:zbitl",
+    ],
+    alwayslink = True,
+)

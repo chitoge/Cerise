@@ -1,0 +1,24 @@
+# Bazel integration for this imported target. Replaces the
+# upstream BUILD.bazel which used the Fuchsia-specific cc_library_headers macro.
+# Header-only support library used by musl's internal headers
+# (e.g. <lib/zircon-internal/unique-backtrace.h>).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(
+        [
+            "include/**/*.h",
+            "include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = ["include"],
+)
+
+filegroup(
+    name = "header_files",
+    srcs = glob(["include/**/*.h", "include/**/*.inc"], allow_empty = True),
+)

@@ -1,0 +1,11 @@
+// NEGATIVE-TEST FIXTURE (not a real component). An ordinary application that
+// `use`s a protocol from its parent which the parent realm never offers — the
+// canonical "forgot to offer" bug. The routing-completeness check MUST report it,
+// proving that check is non-vacuous too (the over-privilege fixture only exercises
+// the least-privilege lint).
+{
+    program: { runner: "elf", binary: "bin/orphan_app" },
+    use: [
+        { protocol: "cerise.example.Unoffered" },
+    ],
+}

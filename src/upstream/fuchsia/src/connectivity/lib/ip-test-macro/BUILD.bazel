@@ -1,0 +1,41 @@
+# vendored here (verbatim, from
+# https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/connectivity/lib/ip-test-macro/src/lib.rs)
+# specifically to unblock wiring netstack3-core's (and packet-formats')
+# `#[cfg(test)]` mods as `rust_test` targets - this crate was missing
+# entirely from the curated src/upstream tree (no BUILD.gn, no src/ dir),
+# unlike every other crate this rung wires tests for, which already had a
+# vendored library. `#[ip_test(I)]` / `#[ip_test(I, test = false)]` is used
+# at ~400 call sites across netstack3-core's own test modules (base, ip,
+# tcp, udp, device, filter, icmp_echo and their */tests siblings) to
+# generate an IPv4- and an IPv6-monomorphized test from one generic fn - so
+# without it, essentially all of that surface is unreachable. Same category
+# of judgment call as the netstack3-core `teststd` shim called for in this
+# rung's brief (test-infra source, not production code): ported the real
+# upstream implementation rather than reimplemented from scratch, to avoid
+# subtly-wrong codegen across that many call sites. Deps/test_deps match
+# upstream's BUILD.gn (proc-macro2, quote, syn; assert_matches for its own
+# unit tests) exactly.
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "ip-test-macro",
+    srcs = ["src/lib.rs"],
+    crate_name = "ip_test_macro",
+    edition = "2024",
+    deps = [
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+# The macro crate's own #[cfg(test)] mod (parse_prefix_suffix_test_case) does
+# `use assert_matches::assert_matches;`.
+rust_test(
+    name = "ip-test-macro_test",
+    crate = ":ip-test-macro",
+    edition = "2024",
+    deps = ["@crates//:assert_matches"],
+)

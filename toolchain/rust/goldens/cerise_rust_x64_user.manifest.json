@@ -1,0 +1,6 @@
+{
+	"default_edition": "2021",
+	"extra_exec_rustc_flags": [],
+	"extra_rustc_flags": [],
+	"target_triple": "x86_64-unknown-none"
+}

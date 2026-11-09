@@ -1,0 +1,64 @@
+"""Analysis tests for the composition layer.
+
+Twenty-two behaviors, all resolved in analysis (no ZBI is built):
+  1. happy path       — board + a bundle whose feature the board provides +
+                        product config composes cleanly, yielding ProductBundleInfo.
+  2. missing feature  — a bundle requiring a feature the board does not provide
+                        fails analysis, naming the missing feature.
+  3. bootfs collision — two bundles placing a file at the same dest fail analysis,
+                        naming the colliding path.
+  4. config happy path — bundle-default config values + board boot_drivers
+                        injection + product override merge into the staged .cvf's
+                        values (surfaced via ProductBundleInfo.configs).
+  5. unknown override key       — a product override naming a config field the
+                        bundle's defaults don't declare fails analysis, naming it.
+  6. unknown override component — a product override naming a component no bundle
+                        carries a config for fails analysis, naming it.
+  7. duplicate config component — two bundles carrying a config for the same
+                        component fail analysis.
+  8. zero-output source          — a file-valued input producing no files fails.
+  9. multi-output source         — a file-valued input producing multiple files
+                        fails instead of selecting an arbitrary depset element.
+ 10. loopback netstack           — netstack software composes without a NIC.
+ 11. e1000 network device        — an e1000-backed board satisfies the external
+                        network-device capability.
+ 12. virtio network device       — a virtio-net-backed board satisfies the same
+                        external network-device capability.
+ 13. missing network device      — an external-network consumer on a loopback-only
+                        board fails analysis.
+ 14. aarch64 compatibility       — matching aarch64 kernel, phys, and userspace
+                                   artifacts compose successfully.
+ 15. kernel mismatch             — a kernel-storage ZBI with the wrong architecture
+                                   fails analysis.
+ 16. physload mismatch           — a physload ZBI with the wrong architecture fails
+                                   analysis.
+ 17. userspace mismatch          — a staged userspace artifact with the wrong
+                                   architecture fails analysis.
+ 18. board product dependency    — a board bootfs cannot consume a product target.
+ 19. bundle product dependency   — a bundle bootfs cannot consume a product target.
+ 20. orphan executable            — a staged package binary absent from the root
+                                   realm fails analysis.
+ 21. validation classification    — an explicitly validation-only executable is
+                                   accepted as an intentional tool.
+ 22. missing required package     — a root-declared fuchsia-boot child absent
+                                   from bootfs fails analysis.
+
+Implementations live in composition_tests.bzl (functions may not be defined in
+BUILD files); this file just wires them up.
+"""
+
+load(":composition_tests.bzl", "declare_composition_tests")
+
+package(default_visibility = ["//visibility:private"])
+
+exports_files([
+    "testfile.txt",
+    "testfile2.txt",
+    "testschema.cm",
+])
+
+declare_composition_tests(
+    testfile = ":testfile.txt",
+    testfile2 = ":testfile2.txt",
+    testschema = ":testschema.cm",
+)

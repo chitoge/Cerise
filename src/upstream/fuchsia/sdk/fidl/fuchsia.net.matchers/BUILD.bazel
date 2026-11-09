@@ -1,0 +1,92 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# the whole library is @available(added=HEAD) in its
+# real source -- there is no level-30 version of fuchsia.net.matchers to
+# preserve. Bumping `available` directly is safe by construction (verified:
+# only other still-being-vendored networking FIDL libraries -- routes/sockets/filter --
+# reference this target at all).
+fidl_library(
+    name = "fuchsia.net.matchers",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        # HEAD-recompiled variant (MarkDomain et al. are @available(added=HEAD)
+        # in fuchsia.net -- must match this library's own HEAD compile level).
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.matchers_rs",
+    library = ":fuchsia.net.matchers",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_matchers",
+    srcs = [":fuchsia.net.matchers_rs"],
+    crate_name = "fidl_fuchsia_net_matchers",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        # HEAD instance, not plain -- fuchsia.net.matchers composes
+        # fuchsia.net.interfaces.PortClass, and everything within netstack3's
+        # closed dependency graph (matchers_ext -> interfaces_ext, routes,
+        # sockets, filter, netstack3 itself) needs the SAME compiled instance.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces_head",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale.
+genrule(
+    name = "flex_fuchsia_net_matchers_rs_gen",
+    outs = ["flex_fuchsia_net_matchers.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_matchers::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_matchers",
+    srcs = [":flex_fuchsia_net_matchers_rs_gen"],
+    crate_name = "flex_fuchsia_net_matchers",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_matchers"],
+)
+
+# "_rust_common" pure re-export -- same
+# rationale as fuchsia.net's fidl_fuchsia_net_common (no HEAD-gated content
+# needed from this library via the _common path; see that target's comment
+# for the full "_common" background).
+genrule(
+    name = "fidl_fuchsia_net_matchers_common_rs_gen",
+    outs = ["fidl_fuchsia_net_matchers_common.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_matchers::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_matchers_common",
+    srcs = [":fidl_fuchsia_net_matchers_common_rs_gen"],
+    crate_name = "fidl_fuchsia_net_matchers_common",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_matchers"],
+)

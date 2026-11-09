@@ -1,0 +1,41 @@
+# fshost Phase 1: fuchsia.update.verify - health-check protocols fshost uses to
+# report post-update partition health. Whole library is @available(added=HEAD) -
+# matches the established fix pattern.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.update.verify",
+    srcs = glob(["*.fidl"]),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.update.verify_rs",
+    library = ":fuchsia.update.verify",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_update_verify",
+    srcs = [":fuchsia.update.verify_rs"],
+    crate_name = "fidl_fuchsia_update_verify",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

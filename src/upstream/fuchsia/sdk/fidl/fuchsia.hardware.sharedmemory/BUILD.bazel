@@ -1,0 +1,9 @@
+# Authored locally for Cerise. spi depends on this.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(name = "fuchsia.hardware.sharedmemory", srcs = glob(["*.fidl"], allow_empty = True), tags = ["manual"], deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem", "//src/upstream/fuchsia/zircon/vdso:zx"])
+fidl_cpp(name = "fuchsia.hardware.sharedmemory_cpp", library = ":fuchsia.hardware.sharedmemory", tags = ["manual"], deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp", "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",])

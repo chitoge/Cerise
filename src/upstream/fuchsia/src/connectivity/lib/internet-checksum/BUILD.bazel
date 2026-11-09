@@ -1,0 +1,26 @@
+# Bazel integration for this imported target. internet-checksum:
+# RFC 1071 checksum math used by packet-formats. (rand is test-only upstream.)
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "internet-checksum",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+)
+
+# the library's #[cfg(test)] mod in src/lib.rs
+# does `use rand_xorshift::XorShiftRng;` for a deterministic RNG; rand_xorshift
+# is now in @crates, unblocking this test target.
+rust_test(
+    name = "internet-checksum_test",
+    crate = ":internet-checksum",
+    edition = "2024",
+    deps = [
+        "@crates//:rand",
+        "@crates//:rand_xorshift",
+    ],
+)
+

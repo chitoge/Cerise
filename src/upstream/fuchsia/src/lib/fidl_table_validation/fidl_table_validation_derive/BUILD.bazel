@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "fidl_table_validation_derive",
+    srcs = ["src/lib.rs"],
+    crate_name = "fidl_table_validation_derive",
+    edition = "2024",
+    deps = [
+        "@crates//:heck",
+        "@crates//:itertools",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)

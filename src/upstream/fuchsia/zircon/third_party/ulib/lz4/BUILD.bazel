@@ -1,0 +1,23 @@
+# BUILD.bazel for the fshost LZ4 integration. include/lz4/{lz4.h,lz4frame.h}
+# already existed as tiny real-upstream
+# forwarding headers — each is a 1-line `#include "../../../../../third_party/lz4/lib/
+# lz4*.h"` relative include, giving the real zircon/third_party/ulib/lz4 zx_library's
+# sdk_headers = ["lz4/lz4.h", "lz4/lz4frame.h"] namespace without a second physical
+# copy of lz4's actual source (that lives once, at
+# src/upstream/fuchsia/third_party/lz4/lib, compiled by the real :lz4 dep below).
+# This BUILD.bazel is the only new piece: no cc_library target existed to expose
+# those forwarding headers as a Bazel package before fvm's `#include <lz4/lz4frame.h>`
+# (sparse_reader.h, real upstream source) needed one.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lz4",
+    hdrs = [
+        "include/lz4/lz4.h",
+        "include/lz4/lz4frame.h",
+    ],
+    includes = ["include"],
+    deps = ["//src/upstream/fuchsia/third_party/lz4/lib:lz4"],
+)

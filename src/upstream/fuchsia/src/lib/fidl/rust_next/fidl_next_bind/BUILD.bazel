@@ -1,0 +1,42 @@
+# Authored locally for Cerise. fidl_next_bind: high-level
+# client/server binding layer for the next-gen FIDL runtime.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_next_bind",
+    srcs = [
+        "src/client.rs",
+        "src/decoded.rs",
+        "src/endpoint.rs",
+        "src/error.rs",
+        "src/executor.rs",
+        "src/fuchsia.rs",
+        "src/fuchsia_async.rs",
+        "src/future/mod.rs",
+        "src/future/send.rs",
+        "src/future/two_way.rs",
+        "src/lib.rs",
+        "src/protocol.rs",
+        "src/server.rs",
+        "src/service.rs",
+    ],
+    crate_name = "fidl_next_bind",
+    edition = "2024",
+    # fasync feature enables fuchsia_async integration; fuchsia adds zx handle types.
+    crate_features = [
+        "fasync",
+        "fuchsia",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next_codec:fidl_next_codec",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next_protocol:fidl_next_protocol",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "@crates//:pin-project",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

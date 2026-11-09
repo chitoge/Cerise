@@ -1,0 +1,39 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "thread_sampler",
+    srcs = [
+        "per_cpu_state.cc",
+        "thread_sampler.cc",
+    ],
+    hdrs = [
+        "include/lib/thread_sampler/per_cpu_state.h",
+        "include/lib/thread_sampler/thread_sampler.h",
+    ],
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/thread_sampler/per_cpu_state.h",
+        "include/lib/thread_sampler/thread_sampler.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "per_cpu_state.cc",
+        "thread_sampler.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

@@ -1,0 +1,28 @@
+# Bazel integration for this imported target. block_server
+# (NVMe/AHCI block driver dependency) uses fuchsia_trace::duration!/flow_step!
+# unconditionally in its production code path. Links the REAL trace-engine
+# implementation (see zircon/system/ulib/trace-engine/BUILD.bazel) — genuinely
+# inert when no trace collector is attached (the normal Cerise case), not a
+# stub.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "trace",
+    srcs = ["src/lib.rs"],
+    crate_name = "fuchsia_trace",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/trace-engine:trace-engine",
+        "@crates//:libc",
+        "@crates//:pin-project",
+        "@crates//:rand",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,93 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.net.tcp",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.net.tcp_cpp",
+    library = ":fuchsia.net.tcp",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_rust in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.net.tcp_rs",
+    library = ":fuchsia.net.tcp",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_tcp",
+    srcs = [":fuchsia.net.tcp_rs"],
+    crate_name = "fidl_fuchsia_net_tcp",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# sockets_ext's real fnet_tcp::Info usage
+# destructures tcpi_snd_mss/tcpi_rcv_mss, both @available(added=NEXT) in tcp.fidl
+# -- absent at this library's shared level-30 IR. Cannot bump the shared
+# `fuchsia.net.tcp`/`fuchsia.net.tcp_cpp`/`fidl_fuchsia_net_tcp` targets: real,
+# confirmed consumer fuchsia.posix.socket depends on all three (FIDL lib + C++ +
+# Rust), a boot-critical path. Same established precedent as fuchsia.net_head: a
+# separate parallel target compiled from the same FIDL sources at HEAD (HEAD > NEXT
+# in fidlc's version ordering, so NEXT-gated fields are present), original left
+# byte-for-byte untouched.
+fidl_library(
+    name = "fuchsia.net.tcp_head",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.tcp_head_rs",
+    library = ":fuchsia.net.tcp_head",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_tcp_head",
+    srcs = [":fuchsia.net.tcp_head_rs"],
+    crate_name = "fidl_fuchsia_net_tcp",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

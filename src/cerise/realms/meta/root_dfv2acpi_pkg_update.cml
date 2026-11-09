@@ -1,0 +1,81 @@
+// root_dfv2acpi_pkg_update — component_manager root for qemu-x64-pkg-update (packages,
+// make packages UPDATABLE over the network). It is root_dfv2acpi_pkg's fshost+packages
+// topology COMBINED with root_dfv2acpi_fileserver's netstack3 wiring, plus the update driver:
+//
+//   * fxfs_provisioner (first boot) lays down Fxfs + the "blob" volume; fshost auto-mounts blob AND
+//     the persistent encrypted "data" volume.
+//   * netstack3 serves sockets; pkg_fetcher discovers the virtio-net NIC via devfs and does real DHCP.
+//   * pkg_fetcher INGESTS the base package (v1) into "blob", binds pkg_hello_v1's Binder (resolved
+//     from the BOOTFS BASE index -> CERISE-PKG-UPDATE-V1-LAUNCHED), then DOWNLOADS v2 over the network from
+//     the host, merkle-verifies + installs it, and REGISTERS "pkg_hello" v2 in the PERSISTENT dynamic
+//     index on the data volume (shadowing the base entry). Binding pkg_hello_v2's Binder (the SAME
+//     fuchsia-pkg://cerise/pkg_hello URL, a second instance) then resolves v2 from the dynamic index
+//     -> CERISE-PKG-UPDATE-V2-LAUNCHED. On reboot the dynamic index + v2 blobs persist, so v2 resolves with
+//     NO re-fetch.
+//
+// Both pkg_hello_v1 and pkg_hello_v2 share the URL fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm;
+// each instance is resolved independently against the index state at its bind time (v1 before / v2
+// after the register). Excluded from the decode_diff golden set (a new topology); route_check covers
+// its routing (VmexResource -> pkg_resolver remains the one permitted privileged use; the fetcher
+// uses only ordinary caps).
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fxfs_provisioner", url: "fuchsia-boot:///fxfs_provisioner#meta/fxfs_provisioner.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fshost", url: "fuchsia-boot:///fshost#meta/fshost.cm", startup: "lazy", environment: "#elf-env" },
+        // The update driver (replaces pkg_probe): ingest v1, launch v1, fetch v2, register, launch v2.
+        { name: "pkg_fetcher", url: "fuchsia-boot:///pkg_fetcher#meta/pkg_fetcher.cm", startup: "eager", environment: "#elf-env" },
+        { name: "pkg_resolver", url: "fuchsia-boot:///pkg_resolver#meta/pkg_resolver.cm", startup: "lazy", environment: "#elf-env" },
+        // The updatable package, TWO instances of the SAME URL. v1 resolves from the base index
+        // (before register), v2 from the dynamic index (after register).
+        { name: "pkg_hello_v1", url: "fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm", startup: "lazy", environment: "#pkg-env" },
+        { name: "pkg_hello_v2", url: "fuchsia-pkg://cerise/pkg_hello#meta/pkg_hello.cm", startup: "lazy", environment: "#pkg-env" },
+    ],
+    environments: [
+        {
+            name: "pkg-env",
+            extends: "realm",
+            runners: [{ runner: "elf", from: "#elf_runner", as: "elf" }],
+            resolvers: [{ resolver: "pkg-resolver", from: "#pkg_resolver", scheme: "fuchsia-pkg" }],
+        },
+    ],
+    offer: [
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "#cerise_logsink",
+            to: ["#netstack3", "#fxfs_provisioner", "#fshost", "#pkg_fetcher", "#pkg_resolver", "#pkg_hello_v1", "#pkg_hello_v2"],
+        },
+        {
+            runner: "elf",
+            from: "#elf_runner",
+            to: ["#netstack3", "#fxfs_provisioner", "#fshost", "#pkg_fetcher", "#pkg_resolver"],
+        },
+        // devfs: fshost finds the block device; pkg_fetcher finds the virtio-net NIC (/dev/class/network).
+        { directory: "dev", from: "#driver_manager_rust", to: ["#pkg_fetcher", "#fshost"], rights: ["r*"] },
+        { service: "fuchsia.hardware.block.volume.Service", from: "#driver_manager_rust", to: ["#fxfs_provisioner", "#fshost"] },
+        // Provisioner readiness handoff: pkg_fetcher reads it before opening fshost-fs.
+        { directory: "provisioned", from: "#fxfs_provisioner", to: "#pkg_fetcher" },
+        // fshost's exposed subtree: pkg_fetcher writes blobs (/fshost-fs/blob) + the persistent
+        // dynamic index (/fshost-fs/data/root); pkg_resolver reads BlobReader + the dynamic index.
+        { directory: "fshost-fs", from: "#fshost", to: ["#pkg_fetcher", "#pkg_resolver"] },
+        // Executability grant: pkg_resolver serves EXECUTABLE package blobs. The one permitted
+        // privileged use (route_check); cm_config lists VmexResource as a builtin.
+        { protocol: "fuchsia.kernel.VmexResource", from: "parent", to: "#pkg_resolver" },
+        // netstack3 sockets for pkg_fetcher: NIC install (Installer), TCP (socket.Provider), and
+        // DHCP DORA over a packet socket (socket.packet.Provider).
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#pkg_fetcher" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#pkg_fetcher" },
+        { protocol: "fuchsia.posix.socket.packet.Provider", from: "#netstack3", to: "#pkg_fetcher" },
+        // The two pkg_hello instances' framework Binders (renamed to distinct paths) — pkg_fetcher
+        // binds v1 (base) then v2 (dynamic).
+        { protocol: "fuchsia.component.Binder", from: "#pkg_hello_v1", to: "#pkg_fetcher", as: "pkg_hello_v1.Binder" },
+        { protocol: "fuchsia.component.Binder", from: "#pkg_hello_v2", to: "#pkg_fetcher", as: "pkg_hello_v2.Binder" },
+        // The resolver's Resolver protocol -> pkg_fetcher, for the verified-exec identity NEGATIVE test.
+        { protocol: "fuchsia.component.resolution.Resolver", from: "#pkg_resolver", to: "#pkg_fetcher" },
+    ],
+}

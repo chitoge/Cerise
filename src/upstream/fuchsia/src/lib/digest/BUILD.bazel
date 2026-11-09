@@ -1,0 +1,32 @@
+# Vendored for Cerise fshost Phase 1. Real upstream src/lib/digest, unmodified.
+# Drops the upstream `@boringssl//:ssl` dep (kept in real fs_management/BUILD.bazel
+# by convention) since digest.cc only uses <openssl/mem.h>/<openssl/sha.h> — libcrypto,
+# never libssl/TLS. Verified via grep before trimming (this project never links a
+# dep whose real usage isn't grepped first).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "digest",
+    srcs = [
+        "digest.cc",
+        "hash-list.cc",
+        "merkle-tree.cc",
+        "node-digest.cc",
+    ],
+    hdrs = [
+        "digest.h",
+        "hash-list.h",
+        "merkle-tree.h",
+        "node-digest.h",
+    ],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/stdcompat",
+        "//src/upstream/fuchsia/third_party/boringssl:crypto",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

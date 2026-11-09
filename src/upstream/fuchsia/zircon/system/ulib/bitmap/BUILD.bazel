@@ -1,0 +1,19 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bitmap",
+    srcs = ["raw-bitmap.cc"],
+    hdrs = [
+        "include/bitmap/bitmap.h",
+        "include/bitmap/raw-bitmap.h",
+        "include/bitmap/storage.h",
+    ],
+    includes = ["include"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

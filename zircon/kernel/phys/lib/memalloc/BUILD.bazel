@@ -1,0 +1,46 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "memalloc",
+    srcs = [
+        "algorithm.cc",
+        "algorithm.h",
+        "pool.cc",
+        "range.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "range_headers",
+    srcs = ["include/lib/memalloc/range.h"],
+)
+
+filegroup(
+    name = "range_sources",
+    srcs = ["range.cc"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "algorithm.cc",
+        "pool.cc",
+        "range.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

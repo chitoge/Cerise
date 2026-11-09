@@ -1,0 +1,11 @@
+filegroup(
+    name = "structured_config_cml_shards",
+    srcs = glob([
+        "driver/compat/*.shard.cml",
+        "driver/*.shard.cml",
+        "driver_component/*.shard.cml",
+        "inspect/*.shard.cml",
+        "syslog/*.shard.cml",
+    ]),
+    visibility = ["//visibility:public"],
+)

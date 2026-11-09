@@ -1,0 +1,29 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "package-directory",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "package_directory",
+    edition = "2024",
+    proc_macro_deps = ["@crates//:async-trait"],
+    deps = [
+        "//src/cerise/stubs/blobfs:blobfs",
+        "//src/cerise/stubs/fuchsia_inspect:fuchsia_inspect",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/lib/collections/packed:packed",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+    ],
+)

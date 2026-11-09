@@ -1,0 +1,54 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# the whole library is @available(added=HEAD)
+# in its real source (diagnostics.fidl) -- no level-30 version to preserve, and it
+# references fuchsia.net.Marks (HEAD-gated) directly, so its fuchsia.net dep must
+# be the HEAD-recompiled variant. Zero other real consumers, safe to bump directly.
+# fuchsia.net.tcp's PLAIN instance is shared with fuchsia.posix.socket (a real,
+# boot-critical consumer) so it is NOT bumped here -- see fuchsia.net.tcp/BUILD.bazel's
+# `fuchsia.net.tcp_head` parallel target instead (same technique as fuchsia.net_head).
+fidl_library(
+    name = "fuchsia.net.sockets",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.udp:fuchsia.net.udp",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.sockets_rs",
+    library = ":fuchsia.net.sockets",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_sockets",
+    srcs = [":fuchsia.net.sockets_rs"],
+    crate_name = "fidl_fuchsia_net_sockets",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.matchers:fidl_fuchsia_net_matchers",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.tcp:fidl_fuchsia_net_tcp_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.udp:fidl_fuchsia_net_udp",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,39 @@
+# Cerise perfmon client (PMU path A): drives the seven zx_mtrace_control
+# MTRACE_KIND_PERFMON actions against the vendored kernel PMU stack
+# (zircon/kernel/arch/x86/perf_mon.cc) to read raw hardware performance counters —
+# instructions-retired, core/reference cycles, and LLC cache-misses. Obtains the
+# ZX_RSRC_SYSTEM_DEBUG_BASE handle via the narrowly-routed fuchsia.kernel.DebugResource
+# builtin; the syscall is additionally gated on kernel.enable-debugging-syscalls=true,
+# which only the qemu-x64-perfmon profiling product sets. See src/main.rs and
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "perfmon_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "perfmon",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fidl_fuchsia_kernel",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        # Real fdio (not the link-time stub) — fuchsia-component FFI into libfdio.so.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+fuchsia_stripped(
+    name = "perfmon_bin_stripped.fuchsia",
+    src = ":perfmon_bin",
+)

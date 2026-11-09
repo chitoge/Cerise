@@ -1,0 +1,30 @@
+// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+composite nvme;
+
+using fuchsia.acpi;
+using fuchsia.hardware.pci;
+using fuchsia.pci;
+using fuchsia.pci.massstorage;
+
+// Cerise change: upstream declares the "acpi" parent
+// `optional`, but Cerise's driver-index composite matcher has no ParentType::Optional
+// handling at this pin (unexercised — zero references to Optional anywhere in
+// driver-index/driver_manager_rust's matching code). Verified via a real boot
+// (PCI-NODE-PUBLISHED) that QEMU's NVMe controller (bdf=00:04.0, vid=1b36 did=0010,
+// class=01/subclass=08/progif=02) reports acpi=1, same as every other PCI device in
+// this environment — bus-pci's composite spec for it DOES carry an acpi parent.
+// So the required parent is made MANDATORY here, matching e1000/virtio-net's
+// proven-working 2-parent shape, rather than exercising the untested `optional` path.
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_CLASS == fuchsia.pci.BIND_PCI_CLASS.MASS_STORAGE;
+  fuchsia.BIND_PCI_SUBCLASS == fuchsia.pci.massstorage.BIND_PCI_SUBCLASS.NVMEM;
+  fuchsia.BIND_PCI_INTERFACE == 2;
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+}

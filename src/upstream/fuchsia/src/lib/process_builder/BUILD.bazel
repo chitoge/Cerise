@@ -1,0 +1,34 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "process_builder",
+    srcs = [
+        "src/lib.rs",
+        "src/elf_load.rs",
+        "src/process_args.rs",
+        "src/process_builder.rs",
+        "src/util.rs",
+    ],
+    crate_name = "process_builder",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/elf_parse:elf_parse",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.ldsvc:fidl_fuchsia_ldsvc",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+    proc_macro_deps = [
+        "@crates//:zerocopy-derive",
+    ],
+)

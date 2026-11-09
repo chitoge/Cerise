@@ -1,0 +1,21 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Historically a no-op stub; now a thin re-export of the real vendored
+# inspect_runtime crate so existing consumers get the real Inspect publishing
+# path with zero edits to their own BUILD files. The real target's crate_name is
+# also `inspect_runtime`, so it is aliased to `real_inspect_runtime` here to
+# avoid a crate-name collision.
+rust_library(
+    name = "inspect_runtime",
+    srcs = ["src/lib.rs"],
+    crate_name = "inspect_runtime",
+    edition = "2024",
+    aliases = {
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/runtime/rust:fuchsia-inspect-runtime": "real_inspect_runtime",
+    },
+    deps = [
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/runtime/rust:fuchsia-inspect-runtime",
+    ],
+)

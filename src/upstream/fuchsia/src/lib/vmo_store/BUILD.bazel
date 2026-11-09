@@ -1,0 +1,28 @@
+# Authored locally for Cerise — src/lib/vmo_store.
+# Header-only VMO store (slab-backed, with optional pin/map) used by virtio-net
+# to manage the DMA VMOs for packet buffers.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "vmo_store",
+    hdrs = [
+        "growable_slab.h",
+        "owned_vmo_store.h",
+        "storage_types.h",
+        "stored_vmo.h",
+        "vmo_store.h",
+    ],
+    # Headers use "src/lib/vmo_store/..." as include path but are included
+    # with the full path from the repo root via -Isrc/upstream/fuchsia.
+    strip_include_prefix = "",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl:fzl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

@@ -1,0 +1,22 @@
+# Bazel integration for this imported target. udp_serde: UDP datagram
+# (de)serialization shared between zxio's socket layer and netstack. Compiles
+# against the FIDL bindings + zxio headers on the sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "udp_serde",
+    srcs = ["udp_serde.cc"],
+    hdrs = ["udp_serde.h"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/zxio:zxio_headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

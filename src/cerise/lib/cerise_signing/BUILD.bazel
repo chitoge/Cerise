@@ -1,0 +1,25 @@
+# cerise_signing (packages): a small, reusable ed25519 sign/verify primitive over canonical
+# message bytes, backed by the in-tree BoringSSL Rust bindings (bssl-crypto — no crate REPIN). Shared
+# by the signed package-index path (pkg_index / pkg_resolver / pkg_fetcher / pkg_signer) and available
+# to the OS-image OTA trust chain. Pure + host-unit-tested; builds on host AND the Fuchsia target.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cerise_signing",
+    srcs = ["src/lib.rs"],
+    crate_name = "cerise_signing",
+    edition = "2021",
+    deps = [
+        "//src/upstream/fuchsia/third_party/boringssl/rust/bssl-crypto:bssl-crypto",
+    ],
+)
+
+# Host unit tests: sign/verify roundtrip, tampered-message + tampered-signature + wrong-key rejection,
+# domain separation (no cross-context replay), and hex roundtrip.
+rust_test(
+    name = "cerise_signing_test",
+    crate = ":cerise_signing",
+    edition = "2021",
+)

@@ -1,0 +1,15 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Filegroup used by toolchain cc_args.data — must stay a filegroup (no toolchain dep).
+filegroup(
+    name = "headers",
+    srcs = glob(["**/*.h", "**/*.inc"], allow_empty = True),
+)
+
+# cc_library wrapper for use in cc_library deps (provides CcInfo headers).
+cc_library(
+    name = "headers_cc",
+    hdrs = [":headers"],
+)

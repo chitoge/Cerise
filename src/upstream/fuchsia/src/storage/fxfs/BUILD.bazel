@@ -1,0 +1,179 @@
+# the real Fxfs core library itself (LSM tree, journal,
+# allocator, object store, checksums). Unmodified upstream sources; BUILD.bazel authored
+# locally (upstream is GN).
+#
+# ONE divergence from unmodified upstream, applied uniformly across every fxfs core
+# file that touches fuchsia.io (object_store.rs, object_store/{directory,
+# data_object_handle,store_object_handle}.rs, fsck/tests.rs): `use fidl_fuchsia_io
+# as fio` renamed to `use fidl_fuchsia_io_head as fio`. fxfs's real source uses
+# several fuchsia.io items that are @available(added=HEAD) in
+# sdk/fidl/fuchsia.io/{file,node}.fidl (fs-verity's HashAlgorithm/
+# VerificationOptions; SELinux support's SelinuxContext/MAX_SELINUX_CONTEXT_
+# ATTRIBUTE_LEN/SELINUX_CONTEXT_NAME; MutableNodeAttributes' newer
+# wrapping_key_id/selinux_context fields). Since these files pass
+# fio::MutableNodeAttributes between each other, a per-file mix of level-30 vs.
+# HEAD bindings produces real type mismatches (two distinct, incompatible structs
+# with the same name) - the whole crate needs ONE consistent choice, not
+# per-symbol cherry-picking.
+#
+# Bumping the MAIN fuchsia.io target's availability to HEAD (simpler on paper)
+# was rejected: directory.fidl's Directory.Open (used by every already-working
+# client - netdev_probe, nvme_probe, ahci_probe, devfs internals) is
+# @available(added=27, replaced=31) - at HEAD the active variant would be a
+# different, unverified method shape, silently breaking those. Instead, a
+# SEPARATE parallel HEAD-level binding (sdk/fidl/fuchsia.io/BUILD.bazel's
+# fidl_fuchsia_io_head) is used - this crate is its only consumer, so the
+# rename is safe and narrowly scoped. See that BUILD.bazel's comment for the
+# full reasoning.
+#
+# NOT vendored/wired here (deliberately, per the standalone-:lib scope): fxfs_test_deps
+# (mundane's test-only consumer path, crypt/fxfs/common:lib, fxfs/crypto/insecure,
+# test-case) and the "migration"/"benchmark" feature-variant rustc_library targets -
+# those are for fxfs's own test suite / tooling, not needed for the core lib to build
+# and be linked into fxfs/platform.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fxfs",
+    srcs = [
+        "src/blob_metadata.rs",
+        "src/checksum.rs",
+        "src/debug_assert_not_too_long.rs",
+        "src/drop_event.rs",
+        "src/errors.rs",
+        "src/filesystem.rs",
+        "src/fsck.rs",
+        "src/fsck/errors.rs",
+        "src/fsck/store_scanner.rs",
+        "src/fsck/tests.rs",
+        "src/future_with_guard.rs",
+        "src/lib.rs",
+        "src/log.rs",
+        "src/lsm_tree.rs",
+        "src/lsm_tree/bloom_filter.rs",
+        "src/lsm_tree/cache.rs",
+        "src/lsm_tree/merge.rs",
+        "src/lsm_tree/persistent_layer.rs",
+        "src/lsm_tree/skip_list_layer.rs",
+        "src/lsm_tree/testing.rs",
+        "src/lsm_tree/types.rs",
+        "src/metrics.rs",
+        "src/object_handle.rs",
+        "src/object_store.rs",
+        "src/object_store/allocator.rs",
+        "src/object_store/allocator/merge.rs",
+        "src/object_store/allocator/strategy.rs",
+        "src/object_store/caching_object_handle.rs",
+        "src/object_store/data_object_handle.rs",
+        "src/object_store/data_object_handle/allocated_ranges.rs",
+        "src/object_store/directory.rs",
+        "src/object_store/extent.rs",
+        "src/object_store/extent_mapping_iterator.rs",
+        "src/object_store/extent_record.rs",
+        "src/object_store/flush.rs",
+        "src/object_store/graveyard.rs",
+        "src/object_store/install.rs",
+        "src/object_store/journal.rs",
+        "src/object_store/journal/bootstrap_handle.rs",
+        "src/object_store/journal/checksum_list.rs",
+        "src/object_store/journal/reader.rs",
+        "src/object_store/journal/super_block.rs",
+        "src/object_store/journal/writer.rs",
+        "src/object_store/key_manager.rs",
+        "src/object_store/merge.rs",
+        "src/object_store/object_manager.rs",
+        "src/object_store/object_record.rs",
+        "src/object_store/object_record/legacy.rs",
+        "src/object_store/project_id.rs",
+        "src/object_store/store_object_handle.rs",
+        "src/object_store/transaction.rs",
+        "src/object_store/tree.rs",
+        "src/object_store/tree_cache.rs",
+        "src/object_store/volume.rs",
+        "src/range.rs",
+        "src/round.rs",
+        "src/serialized_types.rs",
+        "src/serialized_types/serialized_key.rs",
+        "src/serialized_types/test_traits.rs",
+        "src/serialized_types/tests.rs",
+        "src/serialized_types/traits.rs",
+        "src/serialized_types/types.rs",
+        "src/serialized_types/varint.rs",
+        "src/stable_hash.rs",
+        "src/testing.rs",
+        "src/testing/fake_object.rs",
+        "src/testing/writer.rs",
+        "src/virtual_device.rs",
+        "src/zerocopy_serialization.rs",
+    ],
+    crate_name = "fxfs",
+    edition = "2024",
+    # Unmodified upstream src/zerocopy_serialization.rs and
+    # src/object_store/extent_mapping_iterator.rs call unstable std APIs
+    # (Vec::into_raw_parts, array_windows) with NO #![feature(...)] attribute
+    # anywhere in the crate (confirmed - grepped every file). Fuchsia's own build
+    # runs its (nightly-track) rustc with RUSTC_BOOTSTRAP=1, which unlocks unstable
+    # library APIs without per-crate feature declarations - a documented, common
+    # practice for large monorepos vendoring/generating code project-wide, not
+    # something specific to fxfs. Our toolchain is also nightly-track (see
+    # MODULE.bazel's rust_linux_x86_64__..__nightly registration) so the SAME
+    # unlock works here; scoped to just this crate via rustc_env (which rules_rust
+    # threads into the actual rustc process environment - already relied on
+    # elsewhere in this repo for bssl-sys's BINDGEN_RS_FILE) rather than patching
+    # unmodified source with #![feature(...)] attributes upstream doesn't have.
+    rustc_env = {
+        "RUSTC_BOOTSTRAP": "1",
+    },
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/storage/fxfs/macros:fxfs_macros",
+        "@crates//:async-trait",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io_head",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        "//src/upstream/fuchsia/src/storage/fxfs/trace:fxfs_trace",
+        "//src/upstream/fuchsia/src/storage/fxfs/unicode:unicode",
+        "//src/upstream/fuchsia/src/storage/lib/fscrypt",
+        "//src/upstream/fuchsia/src/storage/lib/fsverity-merkle",
+        "//src/upstream/fuchsia/src/storage/lib/storage_device",
+        "//src/upstream/fuchsia/src/storage/type-fprint:fprint",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle",
+        "@crates//:anyhow",
+        "@crates//:assert_matches",
+        "@crates//:bincode",
+        "@crates//:bit-vec",
+        "@crates//:byteorder",
+        "@crates//:either",
+        "@crates//:event-listener",
+        "@crates//:futures",
+        "@crates//:linked-hash-map",
+        "@crates//:log",
+        "@crates//:num-traits",
+        "@crates//:pin-project",
+        "@crates//:rand",
+        "@crates//:rapidhash",
+        "@crates//:rustc-hash",
+        "@crates//:scopeguard",
+        "@crates//:serde",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:uuid",
+        "@crates//:zerocopy",
+    ] + select({
+        # Matches upstream's `if (is_fuchsia) { ... if (rust_debug_assertions) { fxfs_deps
+        # += debug/rust } }`. debug_assertions is active in this repo's default build
+        # config (confirmed: debug_assert_not_too_long.rs's ::debug:: call is genuinely
+        # compiled, not stripped) so both are folded into one unconditional addition here.
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "//src/upstream/fuchsia/src/lib/debug/rust:debug",
+        ],
+        "//conditions:default": [],
+    }),
+)

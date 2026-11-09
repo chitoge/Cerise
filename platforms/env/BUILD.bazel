@@ -1,0 +1,26 @@
+package(default_visibility = ["//visibility:public"])
+
+constraint_setting(
+    name = "environment",
+    default_constraint_value = ":user",
+)
+
+constraint_value(
+    name = "kernel",
+    constraint_setting = ":environment",
+)
+
+constraint_value(
+    name = "phys",
+    constraint_setting = ":environment",
+)
+
+constraint_value(
+    name = "efi",
+    constraint_setting = ":environment",
+)
+
+constraint_value(
+    name = "user",
+    constraint_setting = ":environment",
+)

@@ -1,0 +1,47 @@
+# Authored locally for Cerise — sdk/fidl/fuchsia.hardware.network.driver.
+# Provides the NetworkDeviceImpl, NetworkPort, MacAddr driver protocols used by
+# virtio-net (and future network drivers). Uses the FDF driver transport
+# (cpp/driver/wire.h) generated automatically by fidl_cpp (fidlgen_cpp emits
+# driver-transport headers for all FIDL libraries; fidl_driver is implicitly linked).
+load("//build/fidl:fidl.bzl", "fidl_bind_library_cpp", "fidl_cpp", "fidl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.hardware.network.driver",
+    srcs = [
+        "network-device.fidl",
+        "network-mac.fidl",
+    ],
+    # Protocols are @available(added=HEAD); default fuchsia:30 would drop them.
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.hardware.network.driver_cpp",
+    library = ":fuchsia.hardware.network.driver",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/sdk/lib/fidl_driver:fidl_driver",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# network-device: FIDL-derived bind library (network_device.bind's `using
+# fuchsia.hardware.network.driver;` + the Service==DriverTransport bind rule).
+# Exposes OutputGroupInfo.bindlib, consumed directly by driver_bind_rules'
+# `includes` (same pattern as fuchsia.hardware.pci_bindlib_cpp_gen for virtio-net).
+fidl_bind_library_cpp(
+    name = "fuchsia.hardware.network.driver_bindlib_cpp_gen",
+    library = ":fuchsia.hardware.network.driver",
+)

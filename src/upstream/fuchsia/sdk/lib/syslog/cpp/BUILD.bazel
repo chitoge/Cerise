@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*unittest*", "*_test*", "*_tests*", "log_from_void.cc"], allow_empty = True),
+    hdrs = glob(["*.h", "include/**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    copts = ["-Isrc/upstream/fuchsia/sdk/lib/syslog/cpp/include"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-default:async-default",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend_repo",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

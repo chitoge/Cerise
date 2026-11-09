@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Stub libm.so for x86_64-unknown-fuchsia.
+# Fuchsia's musl libc.so already provides all math functions; libm.so is a
+# placeholder that satisfies -lm at link time. At runtime, libm symbols come
+# from libc.so (where they actually live in musl).
+cc_binary(
+    name = "libm.so",
+    srcs = ["stub.c"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,libm.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+)

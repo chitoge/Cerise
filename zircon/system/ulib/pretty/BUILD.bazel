@@ -1,0 +1,52 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+cc_library(
+    name = "pretty",
+    srcs = [
+        "hexdump.cc",
+        "sizes.cc",
+    ],
+    hdrs = [":headers"],
+    includes = ["include"],
+    deps = ["//:kernel_cc_headers"],
+)
+
+# Host-compatible pretty library (no kernel_cc_headers — uses system libc).
+cc_library(
+    name = "pretty_host",
+    srcs = [
+        "hexdump.cc",
+        "sizes.cc",
+    ],
+    hdrs = [":headers"],
+    includes = ["include"],
+    copts = ["-std=c++20"],
+    deps = [
+        "//zircon/system/public:public",
+        "//zircon/system/ulib/zircon-internal:zircon-internal",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "hexdump.cc",
+        "sizes.cc",
+    ],
+    visibility = [
+        "//:__pkg__",
+        "//kernel:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

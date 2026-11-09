@@ -1,0 +1,38 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/bitmap/bitmap.h",
+        "include/bitmap/raw-bitmap.h",
+        "include/bitmap/rle-bitmap.h",
+        "include/bitmap/storage.h",
+    ],
+)
+
+cc_library(
+    name = "bitmap",
+    srcs = ["raw-bitmap.cc"],
+    hdrs = [":headers"],
+    textual_hdrs = glob(["bitmap_compat_includes/*.h"]),
+    includes = [
+        "include",
+        # Shadow the kernel's limits.h with one that uses literal integer
+        # constants valid in preprocessor #if arithmetic.
+        "bitmap_compat_includes",
+    ],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["raw-bitmap.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

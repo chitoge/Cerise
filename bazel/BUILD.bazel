@@ -1,0 +1,18 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "providers.bzl",
+    "qemu_boot_test.bzl",
+    "qemu_boot_test_runner.py",
+])
+
+sh_test(
+    name = "qemu_boot_test_runner_test",
+    srcs = ["qemu_boot_test_runner_test.sh"],
+    data = [
+        "qemu_boot_test_runner.py",
+        "qemu_boot_test_runner_test.py",
+    ],
+)

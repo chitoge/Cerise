@@ -1,0 +1,168 @@
+// driver_manager_rust_dfv2acpi — the DFv2 driver manager realm (child name
+// `driver_manager_rust` in the root). Declared as a real .cml compiled by cmc
+// via cerise_component.
+//
+// The exotic cmc features exercised here (proven to round-trip by the decode test):
+//   * 4 transient collections (boot/base/full-drivers driver-env; driver-hosts
+//     driver-host-env), boot-drivers with static_and_dynamic + allow_long_names.
+//   * a self-declared `driver` runner registered in driver-env; the `elf` runner
+//     (from parent) registered in driver-host-env.
+//   * a `dev` directory capability (/dev, r*) exposed to parent.
+//   * fuchsia.hardware.block.volume.Service AGGREGATED from the boot-drivers
+//     collection and exposed to parent.
+//   * 4 INLINE config capabilities (values baked into the .cm, no cvf) offered
+//     Required into boot-drivers.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/driver_manager_rust_dfv2platbus",
+    },
+
+    // Structured-config schema (config-literal burn-down). The
+    // driver_manager_config Rust crate is generated FROM THIS compiled manifest
+    // (fuchsia_structured_config_rust_lib_from_cm), and the delivered values
+    // (meta/driver_manager_rust_dfv2acpi.cvf) are configc-generated against the
+    // same .cm — checksum identity by construction. Values live in
+    // //bundles:config_defaults.bzl (bundle defaults; products may override).
+    config: {
+        enable_test_shutdown_delays: { type: "bool" },
+        power_inject_offer: { type: "bool" },
+        power_suspend_enabled: { type: "bool" },
+        root_driver: { type: "string", max_size: 128 },
+    },
+
+    capabilities: [
+        // Self-declared driver runner, registered into the driver collections' env.
+        {
+            runner: "driver",
+            path: "/svc/fuchsia.component.runner.ComponentRunner",
+        },
+        // Composite node manager protocol (served by driver_manager itself).
+        {
+            protocol: "fuchsia.driver.framework.CompositeNodeManager",
+        },
+        // The device tree directory, exposed to parent and offered to devfs clients.
+        {
+            directory: "dev",
+            rights: ["r*"],
+            path: "/dev",
+        },
+        // Inline config capabilities: values baked into the .cm (NOT cvf/config_values).
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceNames",
+            type: "vector",
+            element: { type: "string", max_size: 100 },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.platform.bus.SoftwareDeviceIds",
+            type: "vector",
+            element: { type: "uint32" },
+            max_count: 20,
+            value: [],
+        },
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.driver.UseHardwareIommu",
+            type: "bool",
+            value: false,
+        },
+    ],
+
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.component.Realm", from: "framework" },
+        { protocol: "fuchsia.component.Introspector", from: "framework" },
+        { protocol: "fuchsia.component.sandbox.CapabilityStore", from: "framework" },
+        { protocol: "fuchsia.driver.index.DriverIndex" },
+        { protocol: "fuchsia.boot.Items" },
+        { protocol: "fuchsia.kernel.IommuResource" },
+        { protocol: "fuchsia.kernel.IoportResource" },
+        { protocol: "fuchsia.kernel.IrqResource" },
+        { protocol: "fuchsia.kernel.MmioResource" },
+        { protocol: "fuchsia.kernel.MsiResource" },
+        { protocol: "fuchsia.kernel.PowerResource" },
+    ],
+
+    collections: [
+        {
+            name: "boot-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+            allowed_offers: "static_and_dynamic",
+            allow_long_names: true,
+        },
+        {
+            name: "base-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+        },
+        {
+            name: "full-drivers",
+            durability: "transient",
+            environment: "#driver-env",
+        },
+        {
+            name: "driver-hosts",
+            durability: "transient",
+            environment: "#driver-host-env",
+        },
+    ],
+
+    environments: [
+        {
+            name: "driver-env",
+            extends: "realm",
+            runners: [
+                { runner: "driver", from: "self" },
+            ],
+        },
+        {
+            name: "driver-host-env",
+            extends: "realm",
+            runners: [
+                { runner: "elf", from: "parent" },
+            ],
+        },
+    ],
+
+    offer: [
+        // LogSink fanned into both driver and driver-host collections.
+        {
+            protocol: "fuchsia.logger.LogSink",
+            from: "parent",
+            to: ["#boot-drivers", "#driver-hosts"],
+        },
+        { protocol: "fuchsia.boot.Items", from: "parent", to: "#boot-drivers" },
+        // Inline config capabilities offered into boot-drivers (Required).
+        { config: "fuchsia.platform.bus.SoftwareDeviceNames", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.platform.bus.SoftwareDeviceIds", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.power.SuspendEnabled", from: "self", to: "#boot-drivers" },
+        { config: "fuchsia.driver.UseHardwareIommu", from: "self", to: "#boot-drivers" },
+        // Kernel resources re-offered into boot-drivers.
+        { protocol: "fuchsia.kernel.IommuResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.IoportResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.IrqResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.MmioResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.MsiResource", from: "parent", to: "#boot-drivers" },
+        { protocol: "fuchsia.kernel.PowerResource", from: "parent", to: "#boot-drivers" },
+        // CompositeNodeManager served to the driver collection.
+        { protocol: "fuchsia.driver.framework.CompositeNodeManager", from: "self", to: "#boot-drivers" },
+    ],
+
+    expose: [
+        { directory: "dev", from: "self", rights: ["r*"] },
+        // Aggregate services from the boot-drivers collection. The display driver
+        // publishes cerise.display.Service; block drivers (nvme) publish block.volume.
+        // Both aggregate here and are routed to their consumers by the product root
+        // realm. Exposing an aggregate whose collection has no provider is benign (an
+        // empty service dir) — products without a display/block driver still boot.
+        { service: "fuchsia.hardware.block.volume.Service", from: "#boot-drivers" },
+        { service: "cerise.display.Service", from: "#boot-drivers" },
+    ],
+}

@@ -1,0 +1,14 @@
+// conformance_cxx leaf — C++ runtime-conformance probe. Its DT_NEEDED
+// closure is ld.so.1 + libc++.so.1 + libconfthrow.so (the cross-.so throw source)
+// + libfdio.so, all staged in its package lib/. Markers are raw serial via
+// zx_debug_write; LogSink is used only so elf_runner installs the stdout socket
+// (the probe does not otherwise log).
+{
+    program: {
+        runner: "elf",
+        binary: "bin/conformance_cxx",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

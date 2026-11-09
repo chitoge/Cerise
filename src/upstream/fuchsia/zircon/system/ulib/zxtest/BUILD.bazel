@@ -1,0 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "zxtest",
+    # Include ALL .cc files: test-case.cc, test.cc, test-info.cc, zxtest-main.cc are
+    # core framework implementation files, not test programs. zxtest-main.cc provides
+    # a __WEAK int main() as an optional entry point override (harmless in a .so).
+    srcs = glob(["*.cc"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = ["//sdk/lib/fit:fit","//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl","//src/upstream/fuchsia/zircon/system/ulib/zx:zx","//src/upstream/fuchsia/zircon/system/public:public","//src/upstream/fuchsia/third_party/rapidjson:rapidjson"],
+)

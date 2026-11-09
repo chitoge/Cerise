@@ -1,0 +1,93 @@
+# gate: libfdf (Fuchsia Driver Framework shared library).
+# Sources: src/devices/bin/driver_runtime/ — 9 .cc implementing fdf channels,
+# arenas, dispatchers, handles, message packets, tokens, thread contexts.
+#
+# Key build notes:
+#   -DNTRACE: disables <lib/trace/event.h> macros to no-ops (avoids needing
+#     the compiled trace-engine; purely a build-gate simplification).
+#   -Isrc/upstream/fuchsia: resolves "src/devices/bin/driver_runtime/..." and
+#     "src/devices/lib/log/..." style relative includes used by the sources.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Implementation library (all 9 non-test .cc files).
+cc_library(
+    name = "driver_runtime_impl",
+    srcs = [
+        "api.cc",
+        "arena.cc",
+        "channel.cc",
+        "dispatcher.cc",
+        "dispatcher_dump.cc",
+        "handle.cc",
+        "message_packet.cc",
+        "thread_context.cc",
+        "token_manager.cc",
+    ],
+    hdrs = [
+        "arena.h",
+        "async_loop_owned_event_handler.h",
+        "callback_request.h",
+        "channel.h",
+        "dispatcher.h",
+        "handle.h",
+        "message_packet.h",
+        "object.h",
+        "thread_context.h",
+        "token_manager.h",
+    ],
+    copts = [
+        # Resolve "src/devices/bin/driver_runtime/..." and "src/devices/lib/log/..." style
+        # root-relative includes used throughout the driver_runtime sources.
+        "-Isrc/upstream/fuchsia",
+        # Disable trace instrumentation macros — avoids linking the trace-engine runtime
+        # for the host gate (only headers are vendored; the runtime is not linked here).
+        "-DNTRACE",
+        # Standard Fuchsia C++ flags.
+        "-fno-stack-protector",
+        "-fno-exceptions",
+    ],
+    tags = ["manual"],
+    alwayslink = True,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async-loop:async-loop-cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_env",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_internal",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_testing",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/src/devices/lib/log:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/trace:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Shared library target — the P4b gate artifact.
+# libfdio.so is a dynamic_deps: fdio_open3/fdio_service_connect symbols resolve
+# at runtime from the stub libfdio.so (sufficient for the build gate).
+cc_shared_library(
+    name = "libfdf",
+    shared_lib_name = "libfdf.so",
+    tags = ["manual"],
+    user_link_flags = [
+        # Don't auto-link runtime libs (-lc, -lm, -lc++); they are provided
+        # at runtime by the Fuchsia sysroot (libc.so / libc++.so.1).
+        "-nostdlib",
+        "-Wl,-soname,libfdf.so",
+        # Allow symbols resolved from runtime deps (fdio, trace-engine, libc++, etc.)
+        # that are NOT compiled into the .so; they resolve at runtime from DT_NEEDEDs.
+        "-Wl,--allow-shlib-undefined",
+    ],
+    deps = [":driver_runtime_impl"],
+    dynamic_deps = [
+        "//src/cerise/sysroot/fdio-stub:libfdio_so",
+    ],
+)

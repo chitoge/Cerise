@@ -1,0 +1,88 @@
+name: CI
+
+# Public build and test signal. Jobs run in parallel. Live boot tests require an
+# emulator and, for heavier images, KVM; GitHub-hosted runners do not provide
+# that hardware, so this workflow runs the portable checks.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast feedback: analysis-level shape checks, composition tests, capability
+  # routing, and the small host unit tests. No heavy compilation.
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # releases/v4
+      - name: Cache Bazel
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/bazel
+          key: bazel-checks-${{ runner.os }}-${{ hashFiles('MODULE.bazel', '.bazelrc') }}
+          restore-keys: bazel-checks-${{ runner.os }}-
+      - name: Analysis checks, composition, and authored host tests
+        shell: bash
+        run: |
+          mapfile -t CERISE_HOST_TESTS < <(
+            bazel query \
+              'kind(".*_test rule", //src/cerise/...) except attr(tags, "manual", kind(".*_test rule", //src/cerise/...))' \
+              --output=label
+          )
+          bazel test --keep_going \
+            //build/checks:all \
+            //assembly/tests:all \
+            //validation:all \
+            "${CERISE_HOST_TESTS[@]}"
+
+  # The vendored upstream unit-test suites. Real behavioral tests, host-run (no
+  # emulator). Heavier — it compiles the library test binaries — so it gets its
+  # own job and a generous cache.
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # releases/v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - name: Cache Bazel
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/bazel
+          key: bazel-unit-${{ runner.os }}-${{ hashFiles('MODULE.bazel', '.bazelrc') }}
+          restore-keys: bazel-unit-${{ runner.os }}-
+      - name: bazel test //tests/unit
+        run: bazel test --keep_going //tests/unit:unit_tests
+
+  # Best-effort build of the minimal boot image (fetches the hermetic toolchains
+  # and builds the kernel). Not a required gate.
+  build:
+    name: Build x64-smoke
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # releases/v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - name: Cache Bazel
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/bazel
+          key: bazel-build-${{ runner.os }}-${{ hashFiles('MODULE.bazel', '.bazelrc') }}
+          restore-keys: bazel-build-${{ runner.os }}-
+      - name: bazel build //products:x64-smoke
+        run: bazel build //products:x64-smoke

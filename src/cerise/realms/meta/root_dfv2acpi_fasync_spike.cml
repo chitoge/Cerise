@@ -1,0 +1,19 @@
+// root_dfv2acpi_fasync_spike — component_manager root for qemu-x64-fasync-spike.
+// The netstack3 root with netstack3_probe replaced by fasync_tcp_spike (Eager).
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        { name: "elf_runner", url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm", startup: "eager" },
+        { name: "cerise_logsink", url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_manager_rust", url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi.cm", startup: "eager", environment: "#elf-env" },
+        { name: "driver_index", url: "fuchsia-boot:///driver_index#meta/driver_index.cm", startup: "eager", environment: "#elf-env" },
+        { name: "netstack3", url: "fuchsia-boot:///netstack3#meta/netstack3.cm", startup: "eager", environment: "#elf-env" },
+        { name: "fasync_tcp_spike", url: "fuchsia-boot:///fasync_tcp_spike#meta/fasync_tcp_spike.cm", startup: "eager", environment: "#elf-env" },
+    ],
+    offer: [
+        { protocol: "fuchsia.logger.LogSink", from: "#cerise_logsink", to: ["#netstack3", "#fasync_tcp_spike"] },
+        { directory: "dev", from: "#driver_manager_rust", to: "#fasync_tcp_spike", rights: ["r*"] },
+        { protocol: "fuchsia.net.interfaces.admin.Installer", from: "#netstack3", to: "#fasync_tcp_spike" },
+        { protocol: "fuchsia.posix.socket.Provider", from: "#netstack3", to: "#fasync_tcp_spike" },
+    ],
+}

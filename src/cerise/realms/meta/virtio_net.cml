@@ -1,0 +1,18 @@
+// virtio_net leaf-driver — DFv2-native NIC driver.
+{
+    program: {
+        runner: "driver",
+        binary: "driver/virtio_netdevice.so",
+        bind: "meta/bind/virtio_ethernet_bind.bindbc",
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.network.driver.Service" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        { service: "fuchsia.hardware.network.driver.Service", from: "self" },
+    ],
+}

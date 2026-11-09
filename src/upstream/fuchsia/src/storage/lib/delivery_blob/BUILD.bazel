@@ -1,0 +1,37 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# Cerise: delivery_blob's source predates this import (fetched June 21) but
+# never had a BUILD.bazel — a real pre-existing gap, closed during Fxfs
+# Phase 3 (fxfs/platform depends on it). Deps transcribed from this pin's own
+# BUILD.gn. The GN dep `//third_party/zstd` (raw C lib) is not needed
+# separately here: this crate only uses the `zstd` Rust crate's `zstd_safe`/
+# `zstd_sys` re-exports, which pull in the C library via its own bundled
+# crates.io build (see block_server's real zstd vendoring, storage implementation) —
+# no direct `//third_party/zstd` cc_library reference exists in the source.
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "delivery_blob",
+    srcs = [
+        "src/compression.rs",
+        "src/compression/compression_algorithm.rs",
+        "src/format.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "delivery_blob",
+    edition = "2024",
+    deps = [
+        "@crates//:bitflags",
+        "@crates//:crc",
+        "@crates//:itertools",
+        "@crates//:rayon",
+        "@crates//:serde",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+        "@crates//:zstd",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/lz4/rust:lz4",
+    ],
+)

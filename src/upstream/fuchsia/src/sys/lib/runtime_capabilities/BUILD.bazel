@@ -1,0 +1,77 @@
+# Authored locally for Cerise.
+# blocker: runtime_capabilities needs the main vfs crate
+# (vfs::name::ParseNameError in capability.rs, vfs::ExecutionScope in fidl/).
+# fuchsia_async is available (vendored); vfs is not yet vendored.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "runtime_capabilities",
+    srcs = [
+        "src/capability.rs",
+        "src/connector.rs",
+        "src/data.rs",
+        "src/dictionary.rs",
+        "src/dir_connector.rs",
+        "src/handle.rs",
+        "src/instance_token.rs",
+        "src/lib.rs",
+        "src/receiver.rs",
+        "src/router.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/fidl/capability.rs",
+            "src/fidl/connector.rs",
+            "src/fidl/connector_router.rs",
+            "src/fidl/data.rs",
+            "src/fidl/data_router.rs",
+            "src/fidl/dictionary.rs",
+            "src/fidl/dictionary_router.rs",
+            "src/fidl/dir_connector.rs",
+            "src/fidl/dir_connector_router.rs",
+            "src/fidl/handle.rs",
+            "src/fidl/instance_token.rs",
+            "src/fidl/mod.rs",
+            "src/fidl/receiver.rs",
+            "src/fidl/registry.rs",
+            "src/fidl/router.rs",
+            "src/fidl/store.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    crate_name = "runtime_capabilities",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    proc_macro_deps = [
+        "//src/upstream/fuchsia/src/lib/from-enum:from-enum-derive",
+        "@crates//:async-trait",
+        "@crates//:derivative",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runtime:fidl_fuchsia_component_runtime",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/from-enum:from-enum",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/sys/component_manager/lib/router_error:router_error",
+        "//src/upstream/fuchsia/src/sys/lib/capability_source:capability_source",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "@crates//:futures",
+        "@crates//:itertools",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+            "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+            "//src/upstream/fuchsia/src/storage/lib/vfs/rust:vfs",
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+            "@crates//:log",
+            "@crates//:scopeguard",
+        ],
+        "//conditions:default": [],
+    }),
+)

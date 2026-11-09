@@ -1,0 +1,13 @@
+# Authored locally for Cerise. const-unwrap: single-file,
+# zero-dependency crate providing const-context Result unwrapping. Replaces the
+# upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "const-unwrap",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+)

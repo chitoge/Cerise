@@ -1,0 +1,25 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "delivery_blob",
+    srcs = ["src/lib.rs"],
+    crate_name = "delivery_blob",
+    edition = "2024",
+    deps = [
+        # crc: the real CRC-32/ISO-HDLC checksum for the Type-1 delivery-blob header
+        #. Same algorithm the vendored delivery_blob crate uses; already in
+        # the crate universe (delivery_blob/BUILD.bazel deps @crates//:crc), no repin.
+        "@crates//:crc",
+        "@crates//:serde",
+        "@crates//:thiserror",
+    ],
+)
+
+# Host unit test for the real uncompressed Type-1 generator (byte layout + CRC checksum).
+rust_test(
+    name = "delivery_blob_test",
+    crate = ":delivery_blob",
+    edition = "2024",
+)

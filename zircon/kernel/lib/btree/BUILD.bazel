@@ -1,0 +1,46 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "btree",
+    srcs = ["btree.cc"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    deps = [
+        "//zircon/kernel/lib/page:headers",
+        # fbl needed for btree_util.h -> fbl/ref_ptr.h
+        "//zircon/system/ulib/fbl:fbl",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["btree.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+# Kernel-only test (btree.cc uses vm/page_slab_allocator.h — not host-buildable).
+# Compilation-only target; runs under the kernel toolchain, not as a host test binary.
+cc_library(
+    name = "btree_kernel_tests",
+    testonly = True,
+    tags = ["manual"],
+    srcs = ["tests/btree_test.cc"],
+    alwayslink = True,
+    deps = [
+        ":btree",
+        "//zircon/kernel/lib/unittest:unittest",
+        "//:kernel_cc_headers",
+    ],
+)

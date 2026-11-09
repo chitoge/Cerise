@@ -1,0 +1,25 @@
+# Vendored from upstream (faithful port). fdf_core: dispatcher + handle bindings
+# for the fuchsia driver framework C runtime. The futures/fuchsia-async usage is
+# #[cfg(test)]-gated, so the non-test rlib does not need them. Compile-only rlib
+# (libfdf C symbols resolve at final-binary link time).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "core",
+    srcs = [
+        "src/dispatcher.rs",
+        "src/handle.rs",
+        "src/lib.rs",
+        "src/shutdown_observer.rs",
+    ],
+    crate_name = "fdf_core",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/async/rust:rust",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime/rust/fdf_sys:fdf_sys",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+    ],
+)

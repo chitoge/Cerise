@@ -1,0 +1,2 @@
+userboot-smoke: starting freestanding lwIP/e1000 HTTP echo
+panic: simulated failure

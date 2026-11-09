@@ -1,0 +1,16 @@
+# Vendored for Cerise fshost Phase 1. Real upstream zircon/system/ulib/range.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "range",
+    srcs = ["range.cc"],
+    hdrs = [
+        "include/range/interval-tree.h",
+        "include/range/range.h",
+    ],
+    includes = ["include"],
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)

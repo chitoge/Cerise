@@ -1,0 +1,4 @@
+#ifndef CERISE_EXAMPLES_LIBC_LINK_PROBE_GREET_H_
+#define CERISE_EXAMPLES_LIBC_LINK_PROBE_GREET_H_
+void cerise_greet(void);
+#endif

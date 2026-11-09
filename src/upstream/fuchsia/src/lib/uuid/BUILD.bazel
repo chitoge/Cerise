@@ -1,0 +1,16 @@
+# Vendored for Cerise fshost Phase 1. Real upstream src/lib/uuid, unmodified.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "uuid",
+    srcs = ["uuid.cc"],
+    hdrs = ["uuid.h"],
+    copts = ["-Isrc/upstream/fuchsia"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fxl",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

@@ -1,0 +1,62 @@
+# Vendored for Cerise fshost Phase 1. Real upstream
+# src/storage/lib/fs_management/cpp (the "fs-management" shared_library, real deps
+# transcribed from its own BUILD.gn — test-only sources/deps excluded).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = [
+        "admin.cc",
+        "component.cc",
+        "format.cc",
+        "fsck.cc",
+        "fvm.cc",
+        "mkfs.cc",
+        "mount.cc",
+        "options.cc",
+        "volumes.cc",
+    ],
+    hdrs = [
+        "admin.h",
+        "component.h",
+        "format.h",
+        "fvm.h",
+        "fvm_internal.h",
+        "mount.h",
+        "options.h",
+        "volumes.h",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-Isrc/upstream/fuchsia/sdk",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fs.startup:fuchsia.fs.startup_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fuchsia.fxfs_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp",
+        "//src/upstream/fuchsia/sdk/lib/device-watcher/cpp",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat",
+        "//src/upstream/fuchsia/src/lib/digest",
+        "//src/upstream/fuchsia/src/lib/fxl",
+        "//src/upstream/fuchsia/src/lib/uuid",
+        "//src/upstream/fuchsia/src/storage/fvm",
+        "//src/upstream/fuchsia/src/storage/gpt",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/cpp:cpp",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/cpp:cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fdio-caller",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl",
+        "//src/upstream/fuchsia/zircon/system/ulib/pretty",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx",
+    ],
+)

@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+go_library(
+    name = "codegen",
+    srcs = glob(["*.go"], exclude = ["*_test.go"], allow_empty = True),
+    embedsrcs = glob(["*.tmpl"], allow_empty = True),
+    importpath = "go.fuchsia.dev/fuchsia/tools/fidl/fidlgen_hlcpp/codegen",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen",
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen_cpp:fidlgen_cpp",
+    ],
+)

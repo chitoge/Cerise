@@ -1,0 +1,45 @@
+# Cerise conformance_c: a PLAIN C runtime-conformance probe. Like
+# posix_probe it links only the default sysroot (libc + libzircon + the runtime
+# libfdio.so — NO static fdio), but instead of just proving I/O it EXERCISES and
+# ASSERTS the libc runtime surface (pthreads/futex, math, string/mem,
+# setjmp/longjmp, buffered stdio) that still need live-boot proof. Part of
+# the //validation:runtime-conformance boot gate.
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["data/conf.txt", "meta/conformance_c.cml"])
+
+cc_binary(
+    name = "conformance_c_bin",
+    srcs = ["src/conformance_c.c"],
+    additional_linker_inputs = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    linkopts = [
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-lzircon",
+        "-lfdio",
+        # NOTE: no -lm. musl's math lives in libc.so (libm.so is a benign link
+        # stub); linking -lm would add an unstaged DT_NEEDED
+        # libm.so that makes ld.so.1 fail the whole process at load (silently,
+        # since these components' logs go to the Archivist, not serial).
+    ],
+    stamp = 0,
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "conformance_c_stripped.fuchsia",
+    src = ":conformance_c_bin",
+)
+
+cerise_component(
+    name = "conformance_c",
+    manifest = "meta/conformance_c.cml",
+    binary = ":conformance_c_stripped.fuchsia",
+    visibility = ["//visibility:public"],
+)

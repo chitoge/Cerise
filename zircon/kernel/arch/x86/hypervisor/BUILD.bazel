@@ -1,0 +1,105 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "hypervisor_x86",
+    srcs = [
+        "guest.cc",
+        "hardware_breakpoint.cc",
+        "hardware_breakpoint.h",
+        "intel_pt.cc",
+        "intel_pt.h",
+        "invalidate.cc",
+        "memory_access.cc",
+        "pv.cc",
+        "pv_priv.h",
+        "vcpu.cc",
+        "vcpu_priv.h",
+        "vmexit.cc",
+        "vmexit_priv.h",
+        "vmx.S",
+        "vmx_cpu_state.cc",
+        "vmx_cpu_state_priv.h",
+    ],
+    deps = [
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/vm:headers",
+        "//:kernel_cc_headers",
+    ],
+    alwayslink = True,
+)
+
+# The hypervisor's private headers, exported for tests only.
+#
+# guest_enter_test.cc drives ValidateGuestXcr0Rules / ValidateXsaveImageRules --
+# the host-safety validators for VCPU snapshot restore -- directly against
+# synthetic machines, because through the real CPU only a fraction of their rules
+# is reachable. `includes` puts this package on the include path so the header is
+# spelled the same way vmexit.cc spells it.
+cc_library(
+    name = "hypervisor_x86_test_headers",
+    testonly = True,
+    hdrs = [
+        "hardware_breakpoint.h",
+        "vcpu_priv.h",
+        "vmexit_priv.h",
+    ],
+    includes = ["."],
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "guest.cc",
+        "hardware_breakpoint.cc",
+        "intel_pt.cc",
+        "invalidate.cc",
+        "memory_access.cc",
+        "pv.cc",
+        "vcpu.cc",
+        "vmexit.cc",
+        "vmx_cpu_state.cc",
+    ],
+)
+
+filegroup(
+    name = "asm_sources",
+    srcs = ["vmx.S"],
+)
+
+filegroup(
+    name = "hypervisor",
+    srcs = [
+        ":asm_sources",
+        ":sources",
+    ],
+)
+
+filegroup(
+    name = "test_sources",
+    srcs = ["vmx_test.cc"],
+    testonly = True,
+)
+
+filegroup(
+    name = "tests",
+    srcs = [
+        ":hypervisor",
+        ":test_sources",
+    ],
+    testonly = True,
+)
+
+filegroup(
+    name = "kernel-tests",
+    srcs = [":tests"],
+    testonly = True,
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

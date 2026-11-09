@@ -1,0 +1,15 @@
+# Cerise BUILD (authored locally). //sdk/lib/driver/devfs/cpp:cpp — header-only
+# devfs connector helper (connector.h). Used by the compat shim's device server.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp",
+    ],
+)

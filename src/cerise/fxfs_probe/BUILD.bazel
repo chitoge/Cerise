@@ -1,0 +1,55 @@
+# Filesystem gate: fxfs_probe — proves real Fxfs format+mount+write+remount+read on a real
+# block device through the real vendored Fxfs core library (see src/main.rs for the
+# full design-decision writeup: in-process fxfs::filesystem API, crypt:None, and the
+# retry-the-whole-sequence mitigation for racing against nvme_probe/ahci_probe's
+# one-shot raw block tests on the same anonymized aggregate Service pool).
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "fxfs_probe",
+    srcs = ["src/main.rs"],
+    crate_name = "fxfs_probe",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    proc_macro_deps = ["@crates//:async-trait"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fidl_fuchsia_hardware_block_volume",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/storage/lib/block_client/rust:block_client",
+        "//src/upstream/fuchsia/src/storage/lib/storage_device:storage_device",
+        "//src/upstream/fuchsia/src/storage/fxfs:fxfs",
+        "//src/upstream/fuchsia/src/storage/fxfs/crypto:crypto",
+        # Structured operational logging via LogSink. fxfs_probe runs its own
+        # LocalExecutor on a 16 MiB-stack thread (see main()), so it can't use
+        # #[fuchsia::main] — it calls diagnostics_log::initialize() from run().
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/rust:diagnostics_log",
+        "@crates//:anyhow",
+        "@crates//:log",
+        # Real fdio (not the link-time libfdio.so stub) — see netdev_probe/BUILD.bazel's
+        # comment for the full history.
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+    ],
+)
+
+# Staged STRIPPED into the boot ZBI (statically-linked FIDL codegen + the full Fxfs
+# core library make this binary large unstripped — same rationale as nvme_probe/
+# ahci_probe/netdev_probe/driver_manager_rust).
+fuchsia_stripped(
+    name = "fxfs_probe_stripped.fuchsia",
+    src = ":fxfs_probe",
+)

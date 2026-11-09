@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "stall",
+    srcs = ["stall.cc"],
+    hdrs = ["include/lib/stall.h"],
+    includes = ["include"],
+    deps = [
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/public:public",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = [
+        "include/lib/stall.h",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = ["stall.cc"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

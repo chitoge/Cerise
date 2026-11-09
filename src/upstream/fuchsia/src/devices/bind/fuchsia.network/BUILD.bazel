@@ -1,0 +1,27 @@
+# Cerise BUILD for the fuchsia.network bind library (authored locally; upstream is GN).
+# Consumed by network-device's meta/network_device.bind (`using fuchsia.network;`).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/fidl:fidl.bzl", "bind_library_cpp")
+
+package(default_visibility = ["//visibility:public"])
+
+# Exported so driver_bind_rules (network-device) can `using fuchsia.network`.
+exports_files(["fuchsia.network.bind"])
+
+bind_library_cpp(
+    name = "fuchsia.network_cpp_gen",
+    src = "fuchsia.network.bind",
+)
+
+genrule(
+    name = "fuchsia.network_cpp_hdr",
+    srcs = [":fuchsia.network_cpp_gen"],
+    outs = ["bind/fuchsia/network/cpp/bind.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "fuchsia.network_cpp",
+    hdrs = [":fuchsia.network_cpp_hdr"],
+    strip_include_prefix = "/src/upstream/fuchsia/src/devices/bind/fuchsia.network",
+)

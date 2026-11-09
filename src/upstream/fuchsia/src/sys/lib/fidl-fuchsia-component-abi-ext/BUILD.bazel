@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl-fuchsia-component-abi-ext",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "fidl_fuchsia_component_abi_ext",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.resolution:fidl_fuchsia_component_resolution",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust/data:version_history_data",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust:version-history",
+        "@crates//:thiserror",
+    ],
+)

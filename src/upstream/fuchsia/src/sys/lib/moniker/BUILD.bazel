@@ -1,0 +1,32 @@
+# Bazel integration for this imported target.
+# serde_ext.rs is host-only in GN (feature = "serde"); not included here since
+# we build for Fuchsia target and the feature gate is in source via #[cfg(...)].
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "moniker",
+    srcs = [
+        "src/child_name.rs",
+        "src/error.rs",
+        "src/extended_moniker.rs",
+        "src/lib.rs",
+        "src/moniker.rs",
+    ],
+    crate_name = "moniker",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+        "@crates//:flyweights",
+        "@crates//:thiserror",
+    ],
+)
+
+# Host-runnable unit tests (rung 1, zero new external crates).
+rust_test(
+    name = "moniker_test",
+    crate = ":moniker",
+)

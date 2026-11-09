@@ -1,0 +1,17 @@
+"""Composition-layer tooling: bootfs equivalence checker.
+
+bootfs_diff.py is a standalone stdlib-only script (matches the repo convention
+of running tools via `python3 <path>` rather than a py_binary). A general
+bootfs-equivalence tool (its legacy-vs-cerise job is done). Usage:
+
+  bazel build //products:qemu-x64-storage //products:qemu-x64-pci
+  python3 assembly/tools/bootfs_diff.py diff \\
+      bazel-bin/products/qemu-x64-storage.zbi \\
+      bazel-bin/products/qemu-x64-pci.zbi
+
+  python3 assembly/tools/bootfs_diff.py list bazel-bin/products/qemu-x64-net.zbi
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["bootfs_diff.py"])

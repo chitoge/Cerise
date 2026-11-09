@@ -1,0 +1,145 @@
+# Cerise BUILD (authored locally, C7 Step 4) — the GENERIC platform-bus DFv2 driver.
+# Faithfully vendored from upstream fuchsia pin 0f3c21bc890c06e8549431abf9d333fbc581937d.
+# DFv2-native (DriverBase2 + FUCHSIA_DRIVER_EXPORT2); started as root driver by URL,
+# never autobind-matched (disable_autobind = true).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+load("//build:structured_config.bzl", "compiled_manifest", "fuchsia_structured_config_cpp_elf_lib")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/platform-bus.cml"])
+
+# Driver component manifest -> platform-bus.cm
+compiled_manifest(
+    name = "platform-bus-manifest",
+    src = "meta/platform-bus.cml",
+    output_name = "platform-bus.cm",
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    tags = ["manual"],
+)
+
+# Bind rules — disable_autobind=True (always-false bytecode); platform-bus is root,
+# started by URL, not matched by driver-index.
+driver_bind_rules(
+    name = "platform-bus-bind",
+    rules = "meta/platform-bus.bind",
+    output_name = "platform-bus.bindbc",
+    disable_autobind = True,
+    tags = ["manual"],
+)
+
+# Structured config: cmc compiles platform-bus.cml (whose `use: config` declares
+# software_device_names, software_device_ids, suspend_enabled) and configc generates
+# platform_bus_config::Config::CreateFromVmo().
+# platform-bus.cc reaches it via #include "src/devices/bus/drivers/platform/platform_bus_config.h".
+fuchsia_structured_config_cpp_elf_lib(
+    name = "platform-bus-config",
+    manifest = "meta/platform-bus.cml",
+    namespace = "platform_bus_config",
+    include_prefix = "src/devices/bus/drivers/platform",
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    deps = [
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "platform-bus-impl",
+    srcs = [
+        "node-util.cc",
+        "platform-bus.cc",
+        "platform-device.cc",
+        "platform-interrupt.cc",
+    ],
+    hdrs = [
+        "node-util.h",
+        "platform-bus.h",
+        "platform-device.h",
+        "platform-interrupt.h",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        # HEAD API level for DFv2 framework + all HEAD-gated FIDL (sysinfo, boot.metadata, etc.)
+        "-ffuchsia-api-level=4292870144",
+    ],
+    tags = ["manual"],
+    deps = [
+        # Structured config (platform_bus_config::Config::CreateFromVmo)
+        ":platform-bus-config",
+        # FIDL C++ wire/natural
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.system.state:fuchsia.system.state_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
+        # Bind library C++ (hand-written)
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.resource:fuchsia.resource_cpp",
+        # DFv2 driver framework
+        "//src/upstream/fuchsia/sdk/lib/driver/compat/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/metadata/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/node/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/outgoing/cpp:cpp",
+        # Inspect
+        "//src/upstream/fuchsia/sdk/lib/inspect/component/cpp:cpp",
+        # lib/ddk headers (metadata.h, platform-defs.h)
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/zircon/system/ulib/ddk-platform-defs:ddk-platform-defs",
+        # fbl (algorithm.h, array.h)
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        # zircon-internal (align.h)
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+        # zx (bti, iommu, resource, result, vmo)
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        # zbi-format (board.h, driver-config.h, partition.h, zbi.h)
+        "//src/upstream/fuchsia/sdk/lib/zbi-format:zbi-format",
+        # fit (lib/fit/function.h) via the root //sdk/lib/fit target
+        "//sdk/lib/fit:fit",
+        # fpromise (lib/fpromise/promise.h)
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+    ],
+)
+
+# Loadable DFv2 driver .so.
+# cc_binary(-shared) is used (vs cc_shared_library) so that transitive alwayslink
+# deps (FIDL bindings, syslog/structured_backend) are whole-archived into the .so,
+# making it self-contained (the driver_host provides the runtime symbols via dlopen
+# RTLD_GLOBAL, so the .so's UNDs for fdf_*/libzircon/etc. resolve there).
+cc_binary(
+    name = "platform-bus.so",
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,platform-bus.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # __fuchsia_driver_registration__ is a global const placed by FUCHSIA_DRIVER_EXPORT2;
+        # root it to survive --gc-sections and export it for the loader's dlsym.
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--export-dynamic",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":platform-bus-impl",
+        # DIRECT alwayslink dep so the syslog out-of-line symbols (used by DriverBase2's
+        # logger) are whole-archived into the self-contained .so.
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        # compiler-rt builtins: -nodefaultlibs excludes toolchain defaults; pull in
+        # 128-bit arithmetic helpers (__umodti3, etc.) used by FIDL/framework code.
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

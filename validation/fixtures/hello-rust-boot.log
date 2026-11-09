@@ -1,0 +1,246 @@
+c[?7l[2J[0mSeaBIOS (version 1.16.3-debian-1.16.3-2)
+
+
+iPXE (https://ipxe.org) 00:03.0 CA00 PCI2.10 PnP PMM+1EFCAE00+1EF0AE00 CA00
+Press Ctrl-B to configure iPXE (PCI 00:03.0)...                                                                               
+
+
+Booting from ROM..linux-x86-boot-shim[64]: Legacy boot from Linux/x86 bzImage b000.
+linux-x86-boot-shim[64]: No command line from legacy boot loader!
+linux-x86-boot-shim[64]:   RAMDISK @ [0x1f8b8000, 0x1ffd7ac8): 7294.7K from legacy boot loader
+linux-x86-boot-shim[64]:   ACPI RSDP @ 0xf5290
+linux-x86-boot-shim[64]:   SMBIOS @ 0xf52b0
+linux-x86-boot-shim[64]: | Physical memory range                    | Size    | Type
+linux-x86-boot-shim[64]: | [0x0000000000000000, 0x000000000009fc00) |    639K | reserved low memory
+linux-x86-boot-shim[64]: | [0x0000000000100000, 0x0000000000197000) |    604K | phys ZBI kernel image
+linux-x86-boot-shim[64]: | [0x0000000000197000, 0x0000000000198000) |      4K | kernel page tables
+linux-x86-boot-shim[64]: | [0x0000000000198000, 0x000000000019c000) |     16K | temporary identity page tables
+linux-x86-boot-shim[64]: | [0x000000000019c000, 0x0000000000217000) |    492K | free RAM
+linux-x86-boot-shim[64]: | [0x0000000000217000, 0x00000000002200e0) |   36.2K | phys ZBI kernel image
+linux-x86-boot-shim[64]: | [0x00000000002200e0, 0x0000000000221000) |   3872B | free RAM
+linux-x86-boot-shim[64]: | [0x0000000000221000, 0x0000000000222000) |      4K | bookkeeping
+linux-x86-boot-shim[64]: | [0x0000000000222000, 0x0000000000374720) | 1353.8K | kernel image
+linux-x86-boot-shim[64]: | [0x0000000000374720, 0x000000001f8b8000) |  501.3M | free RAM
+linux-x86-boot-shim[64]: | [0x000000001f8b8000, 0x000000001ffd8000) |   7296K | data ZBI
+linux-x86-boot-shim[64]: | [0x000000001ffd8000, 0x000000001ffe0000) |     32K | free RAM
+linux-x86-boot-shim[64]:    Kernel @ [0x0000000000222000, 0x00000000002eb970)  806.4K
+linux-x86-boot-shim[64]:       BSS @ [0x00000000002eb970, 0x0000000000374720)  547.4K
+linux-x86-boot-shim[64]:       ZBI @ [0x000000001f981000, 0x000000001ffd7c40)  6491.1K
+linux-x86-boot-shim[64]:     Entry @  0x0000000000229d54  Booting...
+physload: {{{reset}}}
+physload: {{{module:0:physload:elf:a7d3f7013f61aab7ad3593db5be0fdda8bf8be1e}}}
+physload: {{{mmap:0x222000:0x153000:load:0:rw:0x0}}}
+physload: Console configured as kernel.serial=ioport,0x3f8,0x4
+physload: {{{reset}}}
+physload: {{{module:0:physload:elf:a7d3f7013f61aab7ad3593db5be0fdda8bf8be1e}}}
+physload: {{{mmap:0x222000:0xca000:load:0:rw:0x0}}}
+physload: | Physical memory range                    | Size    | Type
+physload: | [0x0000000000000000, 0x000000000009fc00) |    639K | reserved low memory
+physload: | [0x0000000000100000, 0x0000000000101000) |      4K | bookkeeping
+physload: | [0x0000000000101000, 0x0000000000222000) |   1156K | free RAM
+physload: | [0x0000000000222000, 0x00000000002ec000) |    808K | phys ZBI kernel image
+physload: | [0x00000000002ec000, 0x00000000002ed000) |      4K | kernel page tables
+physload: | [0x00000000002ed000, 0x00000000002f1000) |     16K | temporary identity page tables
+physload: | [0x00000000002f1000, 0x000000000036c000) |    492K | free RAM
+physload: | [0x000000000036c000, 0x0000000000374720) |   33.8K | phys ZBI kernel image
+physload: | [0x0000000000374720, 0x000000001f981000) |  502.0M | free RAM
+physload: | [0x000000001f981000, 0x000000001ffd7c40) | 6491.1K | data ZBI
+physload: | [0x000000001ffd7c40, 0x000000001ffe0000) |   32.9K | free RAM
+physload: STORAGE_KERNEL decompressed 5724K -> 5724K
+physload: {{{module:1:physboot:elf:35ef1d05fc9f695bda7474bb126c2578cf81b6f1}}}
+physload: {{{mmap:0x376000:0x3f000:load:1:r:0x0}}}
+physload: {{{mmap:0x3b5000:0x97000:load:1:rx:0x3f000}}}
+physload: {{{mmap:0x44c000:0x1000:load:1:r:0xd6000}}}
+physload: {{{mmap:0x44d000:0x1000:load:1:rw:0xd7000}}}
+physload: | Physical memory range                    | Size    | Type
+physload: | [0x0000000000000000, 0x000000000009fc00) |    639K | reserved low memory
+physload: | [0x0000000000100000, 0x0000000000101000) |      4K | bookkeeping
+physload: | [0x0000000000101000, 0x0000000000102000) |      4K | phys log file
+physload: | [0x0000000000102000, 0x0000000000222000) |   1152K | free RAM
+physload: | [0x0000000000222000, 0x00000000002ec000) |    808K | phys ZBI kernel image
+physload: | [0x00000000002ec000, 0x00000000002ed000) |      4K | kernel page tables
+physload: | [0x00000000002ed000, 0x00000000002f1000) |     16K | temporary identity page tables
+physload: | [0x00000000002f1000, 0x000000000036c000) |    492K | free RAM
+physload: | [0x000000000036c000, 0x0000000000374720) |   33.8K | phys ZBI kernel image
+physload: | [0x0000000000374720, 0x0000000000375000) |   2272B | free RAM
+physload: | [0x0000000000375000, 0x000000000090c000) |   5724K | decompressed kernel payload
+physload: | [0x000000000090c000, 0x000000001f981000) |  496.5M | free RAM
+physload: | [0x000000001f981000, 0x000000001ffd7c40) | 6491.1K | data ZBI
+physload: | [0x000000001ffd7c40, 0x000000001ffe0000) |   32.9K | free RAM
+physload: Hand off to physboot at {{{pc:0x44bca0}}}
+physboot: Finding kernel package zircon...
+physboot: Locating ELF kernel in kernel package...
+physboot: {{{module:2:vmzircon:elf:5f2d7e8370e34b825ccbe3e808ce563aa19a804e}}}
+physboot: {{{mmap:0xffffffff00000000:0x54000:load:2:r:0x0}}}
+physboot: {{{mmap:0xffffffff00054000:0x382000:load:2:rx:0x54000}}}
+physboot: {{{mmap:0xffffffff003d6000:0xb000:load:2:r:0x3d6000}}}
+physboot: {{{mmap:0xffffffff003e1000:0x5d000:load:2:rw:0x3e1000}}}
+physboot: Applying 7 patches...
+physboot: code-patching on vmzircon: swapgs bug mitigation disabled (bug not present): [0x54f96, 0x54f99)
+physboot: code-patching on vmzircon: MDS/TAA bug mitigation disabled (unable to mitigate): [0x54f9e, 0x54fa3)
+physboot: code-patching on vmzircon: swapgs bug mitigation disabled (bug not present): [0x54fb0, 0x54fb3)
+physboot: code-patching on vmzircon: MDS/TAA bug mitigation disabled (unable to mitigate): [0x54ffd, 0x55002)
+physboot: code-patching on vmzircon: using user-copy alternative "_x86_copy_to_or_from_user_movsq": [0x3d5f31, 0x3d5f74)
+physboot: code-patching on vmzircon: MDS/TAA bug mitigation disabled (unable to mitigate): [0x55279, 0x5527e)
+physboot: code-patching on vmzircon: 'smoke test' trap patched: [0x3d5f9a, 0x3d5f9c)
+physboot: Relocating ELF kernel to [0xffffffff00000000, 0xffffffff0043e000)...
+physboot: {{{module:3:vmzircon:elf:5f2d7e8370e34b825ccbe3e808ce563aa19a804e}}}
+physboot: {{{mmap:0x90c000:0x54000:load:3:r:0x0}}}
+physboot: {{{mmap:0x960000:0x382000:load:3:rx:0x54000}}}
+physboot: {{{mmap:0xce2000:0xb000:load:3:r:0x3d6000}}}
+physboot: {{{mmap:0xced000:0x5d000:load:3:rw:0x3e1000}}}
+physboot: | Physical memory range                    | Size    | Type
+physboot: | [0x0000000000000000, 0x000000000009fc00) |    639K | reserved low memory
+physboot: | [0x0000000000100000, 0x0000000000101000) |      4K | bookkeeping
+physboot: | [0x0000000000101000, 0x0000000000102000) |      4K | phys log file
+physboot: | [0x0000000000102000, 0x0000000000103000) |      4K | phys hand-off data (temporary)
+physboot: | [0x0000000000103000, 0x0000000000106000) |     12K | kernel page tables
+physboot: | [0x0000000000106000, 0x0000000000107000) |      4K | phys scratch
+physboot: | [0x0000000000107000, 0x0000000000222000) |   1132K | free RAM
+physboot: | [0x0000000000222000, 0x00000000002ec000) |    808K | phys ZBI kernel image
+physboot: | [0x00000000002ec000, 0x00000000002ed000) |      4K | kernel page tables
+physboot: | [0x00000000002ed000, 0x00000000002f1000) |     16K | temporary identity page tables
+physboot: | [0x00000000002f1000, 0x000000000036c000) |    492K | free RAM
+physboot: | [0x000000000036c000, 0x0000000000374720) |   33.8K | phys ZBI kernel image
+physboot: | [0x0000000000374720, 0x0000000000375000) |   2272B | free RAM
+physboot: | [0x0000000000375000, 0x000000000090c000) |   5724K | decompressed kernel payload
+physboot: | [0x000000000090c000, 0x0000000000d4a000) |   4344K | kernel image
+physboot: | [0x0000000000d4a000, 0x000000001f981000) |  492.2M | free RAM
+physboot: | [0x000000001f981000, 0x000000001ffd7c40) | 6491.1K | data ZBI
+physboot: | [0x000000001ffd7c40, 0x000000001ffe0000) |   32.9K | free RAM
+physboot: zx_system_get_version_string (12 chars trimmed from 13): bazel-zircon
+Zircon/x64 ELF (EM_X86_64) build ID 5f2d7e8370e34b825ccbe3e808ce563aa19a804e
+zx_system_get_version_string: bazel-zircon
+kernel_debug_level: 2
+{{{reset}}}
+{{{module:0:vmzircon:elf:5f2d7e8370e34b825ccbe3e808ce563aa19a804e}}}
+{{{mmap:0xffffffff00000000:0x54000:load:0:r:0x0}}}
+{{{mmap:0xffffffff00054000:0x382000:load:0:rx:0x54000}}}
+{{{mmap:0xffffffff003d6000:0xb000:load:0:r:0x3d6000}}}
+{{{mmap:0xffffffff003e1000:0x5d000:load:0:rw:0x3e1000}}}
+physboot: Kernel VM handoff:
+physboot: | Physical memory range                    |      | Name                         | Virtual address range
+physboot: | [0x000000001f981000, 0x000000001ffd7c40) | VMO  | zbi                          |
+physboot: | [0x00000000004f5000, 0x000000000051b518) | VMO  | vdso/next                    |
+physboot: | [0x000000000044e000, 0x00000000004f5000) | VMO  | userboot                     |
+physboot: | [0x0000000000107000, 0x0000000000108590) | VMO  | i/logs/physboot              |
+physboot: |                                          | VMAR | temporary hand-off data      | [0xfffffffebffff000, 0xfffffffec0000000)
+physboot: | [0x0000000000102000, 0x0000000000103000) |  rw- | temporary hand-off data      | [0xfffffffebffff000, 0xfffffffec0000000)
+physboot: |                                          | VMAR | physmap                      | [0xffffff8000000000, 0xffffff801ffe0000)
+physboot: | [0x0000000000000000, 0x00000000000a0000) |  rw- | RAM                          | [0xffffff8000000000, 0xffffff80000a0000)
+physboot: | [0x0000000000100000, 0x000000001ffe0000) |  rw- | RAM                          | [0xffffff8000100000, 0xffffff801ffe0000)
+physboot: |                                          | VMAR | permanent hand-off data      | [0xfffffffeffffe000, 0xfffffffefffff000)
+physboot: | [0x0000000000101000, 0x0000000000102000) |  rw- | permanent hand-off data      | [0xfffffffeffffe000, 0xfffffffefffff000)
+physboot: |                                          | VMAR | kernel                       | [0xffffffff00000000, 0xffffffff0043e000)
+physboot: | [0x000000000090c000, 0x0000000000960000) |  r-- | r--@0xffffffff00000000       | [0xffffffff00000000, 0xffffffff00054000)
+physboot: | [0x0000000000960000, 0x0000000000ce2000) |  r-x | r-x@0xffffffff00054000       | [0xffffffff00054000, 0xffffffff003d6000)
+physboot: | [0x0000000000ce2000, 0x0000000000ced000) |  r-- | r--@0xffffffff003d6000       | [0xffffffff003d6000, 0xffffffff003e1000)
+physboot: | [0x0000000000ced000, 0x0000000000d4a000) |  rw- | rw-@0xffffffff003e1000       | [0xffffffff003e1000, 0xffffffff0043e000)
+physboot: |                                          | VMAR | boot machine stack           | [0xffffffff0043f000, 0xffffffff00445000)
+physboot: | [0x0000000000113000, 0x0000000000117000) |  rw- | boot machine stack           | [0xffffffff00440000, 0xffffffff00444000)
+physboot: Physical memory handed off to the kernel:
+physboot: | Physical memory range                    | Size    | Type
+physboot: | [0x0000000000000000, 0x000000000009fc00) |    639K | reserved low memory
+physboot: | [0x0000000000100000, 0x0000000000101000) |      4K | free RAM
+physboot: | [0x0000000000101000, 0x0000000000102000) |      4K | phys hand-off data (permanent)
+physboot: | [0x0000000000102000, 0x0000000000103000) |      4K | phys hand-off data (temporary)
+physboot: | [0x0000000000103000, 0x0000000000106000) |     12K | kernel page tables
+physboot: | [0x0000000000106000, 0x0000000000107000) |      4K | free RAM
+physboot: | [0x0000000000107000, 0x0000000000109000) |      8K | phys log file
+physboot: | [0x0000000000109000, 0x000000000010b000) |      8K | kernel page tables
+physboot: | [0x000000000010b000, 0x000000000010c000) |      4K | free RAM
+physboot: | [0x000000000010c000, 0x0000000000113000) |     28K | kernel page tables
+physboot: | [0x0000000000113000, 0x0000000000117000) |     16K | boot machine stack
+physboot: | [0x0000000000117000, 0x00000000002ec000) |   1876K | free RAM
+physboot: | [0x00000000002ec000, 0x00000000002f1000) |     20K | kernel page tables
+physboot: | [0x00000000002f1000, 0x000000000044e000) |   1396K | free RAM
+physboot: | [0x000000000044e000, 0x00000000004f5000) |    668K | userboot
+physboot: | [0x00000000004f5000, 0x000000000051c000) |    156K | vDSO
+physboot: | [0x000000000051c000, 0x000000000090c000) |   4032K | free RAM
+physboot: | [0x000000000090c000, 0x0000000000d4a000) |   4344K | kernel image
+physboot: | [0x0000000000d4a000, 0x000000001f981000) |  492.2M | free RAM
+physboot: | [0x000000001f981000, 0x000000001ffd7c40) | 6491.1K | data ZBI
+physboot: | [0x000000001ffd7c40, 0x000000001ffe0000) |   32.9K | free RAM
+physboot: Handing off at physical load address 0x90c000, entry 0xffffffff003d5dfe...
+physboot: (gdb) add-symbol-file kernel_x64/vmzircon 0xffffffff00054000
+[00000.000] 00000:01025> printing enabled
+[00000.000] 00000:01025> Zircon/x64 ELF (EM_X86_64) build ID 5f2d7e8370e34b825ccbe3e808ce563aa19a804e
+[00000.000] 00000:01025> zx_system_get_version_string: bazel-zircon
+[00000.000] 00000:01025> kernel_debug_level: 2
+[00000.000] 00000:01025> WARNING: System has insufficient randomness.  It is completely unsafe to use this system for any cryptographic applications.
+[00000.000] 00000:01025> VM: |                                          | VMAR | physmap                      | [0xffffff8000000000, 0xffffff801ffe0000)
+[00000.000] 00000:01025> VM: | [0x0000000000000000, 0x00000000000a0000) |  rw- | RAM                          | [0xffffff8000000000, 0xffffff80000a0000)
+[00000.000] 00000:01025> VM: | [0x0000000000100000, 0x000000001ffe0000) |  rw- | RAM                          | [0xffffff8000100000, 0xffffff801ffe0000)
+[00000.000] 00000:01025> VM: |                                          | VMAR | permanent hand-off data      | [0xfffffffeffffe000, 0xfffffffefffff000)
+[00000.000] 00000:01025> VM: | [0x0000000000101000, 0x0000000000102000) |  rw- | permanent hand-off data      | [0xfffffffeffffe000, 0xfffffffefffff000)
+[00000.000] 00000:01025> VM: |                                          | VMAR | kernel                       | [0xffffffff00000000, 0xffffffff0043e000)
+[00000.000] 00000:01025> VM: | [0x000000000090c000, 0x0000000000960000) |  r-- | r--@0xffffffff00000000       | [0xffffffff00000000, 0xffffffff00054000)
+[00000.000] 00000:01025> VM: | [0x0000000000960000, 0x0000000000ce2000) |  r-x | r-x@0xffffffff00054000       | [0xffffffff00054000, 0xffffffff003d6000)
+[00000.000] 00000:01025> VM: | [0x0000000000ce2000, 0x0000000000ced000) |  r-- | r--@0xffffffff003d6000       | [0xffffffff003d6000, 0xffffffff003e1000)
+[00000.000] 00000:01025> VM: | [0x0000000000ced000, 0x0000000000d4a000) |  rw- | rw-@0xffffffff003e1000       | [0xffffffff003e1000, 0xffffffff0043e000)
+[00000.000] 00000:01025> VM: |                                          | VMAR | boot machine stack           | [0xffffffff0043f000, 0xffffffff00445000)
+[00000.000] 00000:01025> VM: | [0x0000000000113000, 0x0000000000117000) |  rw- | boot machine stack           | [0xffffffff00440000, 0xffffffff00444000)
+[00000.000] 00000:01025> VM: |                                          | VMAR | temporary hand-off data      | [0xfffffffebffff000, 0xfffffffec0000000)
+[00000.000] 00000:01025> VM: | [0x0000000000102000, 0x0000000000103000) |  rw- | temporary hand-off data      | [0xfffffffebffff000, 0xfffffffec0000000)
+[00000.000] 00000:01025> HPET frequency: 100000 ticks/ms
+[00000.000] 00000:01025> Could not find APIC frequency: Calibrating APIC with HPET
+[00000.000] 00000:01025> APIC timer calibrated: 1000045 ticks/ms, divisor 1
+[00000.000] 00000:01025> timer: initial offset is 0
+[00000.000] 00000:01025> timer features: constant_tsc 0 invariant_tsc 0 tsc_deadline 0
+[00000.000] 00000:01025> Using PIT as wallclock
+[00000.000] 00000:01025> WARNING: could not determine LLC share ID shift
+[00000.000] 00000:01025> Topology graph (leaves to root):
+[00000.000] 00000:01025> processor 0 -> die (id 0) 
+[00000.255] 00000:01026> Processor Model Info: type 0 family 0xf model 0xb stepping 0x1
+[00000.260] 00000:01026> 	display_family 0xf display_model 0x6b
+[00000.261] 00000:01026> 
+[00000.280] 00000:01026> ==== X86 CACHE INFO ====
+[00000.281] 00000:01026> Level | Type        | Size (KiB) | Sets  | Assoc. |
+[00000.282] 00000:01026> L1    | Data        | 64         | 0     | 2      |
+[00000.282] 00000:01026> L1    | Instruction | 64         | 0     | 2      |
+[00000.283] 00000:01026> L2    | Unified     | 512        | 0     | 16     |
+[00000.283] 00000:01026> L3    | Unified     | 16384      | 0     | 16     |
+[00000.283] 00000:01026> 
+[00000.288] 00000:01026> Vendor: AMD
+[00000.291] 00000:01026> Microarchitecture: Unknown
+[00000.307] 00000:01026> Processor: QEMU Virtual CPU version 2.5+
+[00000.319] 00000:01026> Hypervisor: TCGTCGTCGTCG
+[00000.320] 00000:01026> Family/Model/Stepping: 0xf/0x6b/0x1
+[00000.320] 00000:01026> Patch level: 0
+[00000.320] 00000:01026> 
+[00000.320] 00000:01026> Features:
+[00000.330] 00000:01026> hypervisor, cmpxchg16b, sse3, sse2, sse, fxsr, mmx, clfsh, pse36, pat, cmov, mca
+[00000.340] 00000:01026> pge, mtrr, sep, apic, cx8, mce, pae, msr, tsc, pse, de, fpu
+[00000.340] 00000:01026> 
+[00000.340] 00000:01026> Properties:
+[00000.345] 00000:01026> meltdown, l1tf, mds/taa, ssb, ras_fill
+[00000.346] 00000:01026> 
+[00000.346] 00000:01026> MMU: max physical address bits 40 max virtual address bits 48
+[00000.399] 00000:01026> x86_perfmon_init_once:461: perfmon: unexpected programmable counter width 0 in cpuid.0AH
+[00000.420] 00000:01026> smbios: version 3 not yet implemented
+[00000.423] 00000:01026> smbios: manufacturer="unknown" product="unknown"
+[00000.523] 00000:01026> Turbo performance boost: unsupported
+[00000.830] 00000:01026> VM: | [0x000000001f981000, 0x000000001ffd7c40) | VMO  | zbi                          |
+[00000.850] 00000:01026> VM: | [0x00000000004f5000, 0x000000000051b518) | VMO  | vdso/next                    |
+[00000.870] 00000:01026> VM: | [0x000000000044e000, 0x00000000004f5000) | VMO  | userboot                     |
+[00000.878] 00000:01026> VM: | [0x0000000000107000, 0x0000000000108590) | VMO  | i/logs/physboot              |
+[00000.959] 00000:01026> memory-pressure: memory watermarks - OutOfMemory: 50MB, Critical: 150MB, Warning: 300MB, Debounce: 1MB
+[00000.961] 00000:01026> memory-pressure: hysteresis interval - 10 seconds
+[00000.962] 00000:01026> memory-pressure: eviction: level - Critical, strategy - one-shot, delay - 5000 ms
+[00000.962] 00000:01026> memory-pressure: ImminentOutOfMemory watermark - 60MB
+[00000.979] 00000:01050> memory-pressure: memory availability state - Normal
+[00002.086] 01043:01051> userboot: CMDLINE kernel.serial=legacy kernel.phys.next=physboot kernel.select=zircon kernel.select.userboot=userboot userboot.next=bin/userboot-smoke userboot.next-is-test=true kernel.wallclock=pit
+[00002.095] 01043:01051> userboot: OPTION userboot.next=bin/userboot-smoke
+[00002.103] 01043:01051> userboot: OPTION userboot.next-is-test=true
+[00002.112] 01043:01051> userboot: CMDLINE userboot.next=bin/hello-rust
+[00002.118] 01043:01051> userboot: OPTION userboot.next=bin/hello-rust
+[00002.129] 01043:01051> userboot: CMDLINE bootloader.name=linux-x86-boot-shim[64] bootloader.info=Linux/x86 bzImage b000 bootloader.build_id=f32c7c4acbb1c90cbd85306808914cbcd18902e9
+[00002.196] 01043:01051> userboot: searching BOOTFS for 'bin/hello-rust' (program)
+[00002.395] 01043:01051> userboot: userboot: loaded bin/hello-rust (bin/hello-rust) at 408881c2a000, entry point 408881c2bbe8
+[00002.410] 01043:01051> userboot: userboot: loaded vDSO (vdso/stable) at 41022f303000, entry point 41022f3125a8
+[00002.419] 01043:01051> userboot: stack [40335d5a1000, 40335d6a1000) sp=40335d6a0ff8
+[00002.434] 01043:01051> userboot: process bin/hello-rust started.
+[00002.440] 01043:01051> userboot: Waiting for bin/hello-rust to exit...
+[00002.465] 01088:01091> hello-rust: booted
+[00002.533] 01043:01051> userboot: *** Exit status 0 ***
+[00002.574] 01043:01051> userboot: ***Boot-test-successful!-MDd7/O65SuVZ23yGAaQG4CedYQGH9E1/58r73pSAVK0=***

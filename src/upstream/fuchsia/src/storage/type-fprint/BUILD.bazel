@@ -1,0 +1,28 @@
+# Authored locally for Cerise. type-fprint: derives compile-time
+# structural fingerprints for types, used by fxfs's crypto/unicode libs.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "macros",
+    srcs = ["macros/src/lib.rs"],
+    crate_name = "macros",
+    crate_root = "macros/src/lib.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+rust_library(
+    name = "fprint",
+    srcs = ["fprint/src/lib.rs"],
+    crate_name = "fprint",
+    crate_root = "fprint/src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [":macros"],
+    deps = ["@crates//:bit-vec"],
+)

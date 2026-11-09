@@ -1,0 +1,125 @@
+# Copyright 2020 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/compiled_action.gni")
+import("//build/cpp/library_headers.gni")
+import("//build/testing/golden_files.gni")
+import("//build/toolchain/toolchain_environment.gni")
+
+if (current_toolchain == default_toolchain) {
+  compiled_action("json") {
+    outputs = [ "$root_build_dir/boot-options.json" ]
+    tool = ":boot-options-tool"
+    args = [ "--json" ] + rebase_path(outputs, root_build_dir)
+  }
+
+  action("markdown") {
+    script = "markdown.py"
+    outputs = [ "$root_build_dir/boot-options.md" ]
+    deps = [ ":json" ]
+    sources = get_target_outputs(":json") + [
+                "preamble.md",
+
+                # This comment is here to ensure 'preamble.md' appears
+                # before postamble.md in this list, even after GN reformatting.
+                "postamble.md",
+              ]
+    args = rebase_path(outputs + sources, root_build_dir)
+    validations = [ ":check-markdown" ]
+  }
+
+  golden_files("check-markdown") {
+    deps = [ ":markdown" ]
+
+    sources = get_target_outputs(":markdown")
+    comparisons = [
+      {
+        candidate = sources[0]
+        golden = "//docs/gen/boot-options.md"
+      },
+    ]
+  }
+}
+
+static_library("boot-options") {
+  public_deps = [ ":headers" ]
+
+  complete_static_lib = true
+
+  sources = [
+    "boot-options.cc",
+    "word-view.cc",
+  ]
+  deps = [ "//zircon/system/ulib/uart" ]
+
+  if (is_kernel) {
+    deps += [
+      "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/libc",
+    ]
+  }
+}
+
+library_headers("headers") {
+  headers = []
+  public_deps = [ "//zircon/system/ulib/uart:headers" ]
+  if (is_kernel) {
+    public_deps += [ "//zircon/kernel/lib/ktl:headers" ]
+  }
+}
+
+if (toolchain_environment == "kernel") {
+  source_set("boot-options-cli") {
+    sources = [ "console.cc" ]
+    deps = [
+      ":boot-options",
+      "//zircon/kernel/lib/console",
+      "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/vm:headers",
+    ]
+  }
+}
+
+if (is_host) {
+  executable("boot-options-tool") {
+    # This recompiles the library's source file rather than using the library
+    # directly because the #if logic includes details for all machines when
+    # building for the generator tool but not in the library.
+    defines = [
+      "BOOT_OPTIONS_GENERATOR=1",
+      "UART_ALL_DRIVERS=1",
+    ]
+    sources = [
+      "boot-options.cc",
+      "tool.cc",
+      "word-view.cc",
+    ]
+    deps = [
+      ":headers",
+      "//third_party/rapidjson",
+      "//zircon/system/ulib/uart",
+    ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ "tests:kernel-tests" ]
+}
+
+group("phys-tests") {
+  testonly = true
+  deps = [ "tests:phys-tests" ]
+}
+
+group("boot_tests") {
+  testonly = true
+}

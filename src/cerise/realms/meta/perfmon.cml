@@ -1,0 +1,25 @@
+// perfmon (PMU path A) — the raw hardware performance-counter client. Obtains the
+// ZX_RSRC_SYSTEM_DEBUG_BASE handle via the narrowly-routed fuchsia.kernel.DebugResource
+// builtin, then drives the seven zx_mtrace_control(MTRACE_KIND_PERFMON, ...) actions
+// (GET_PROPERTIES / INIT / ASSIGN_BUFFER / STAGE_CONFIG / START / STOP / FINI) to read
+// instructions-retired, core/reference cycles, and LLC cache-misses over a bounded
+// workload. If the CPU/VM exposes no PMU it emits CERISE-PERFMON-UNSUPPORTED and exits
+// cleanly (never fabricated counts). Markers go straight to the kernel debuglog
+// (zx_debug_write), so no LogSink is used. See src/cerise/perfmon/src/main.rs.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/perfmon",
+    },
+    use: [
+        // The privileged builtin: a ZX_RSRC_KIND_SYSTEM handle at ZX_RSRC_SYSTEM_DEBUG_BASE
+        // (narrowly routed + allowlisted to /perfmon by the cm_config security policy).
+        { protocol: "fuchsia.kernel.DebugResource" },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

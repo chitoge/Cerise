@@ -1,0 +1,49 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+
+library_headers("headers") {
+  headers = [
+    "lib/user_copy/user_ptr.h",
+    "lib/user_copy/user_iovec.h",
+  ]
+  public_deps = [
+    # <lib/user_copy/user_ptr.h> has #include <ktl/type_traits.h>.
+    "//zircon/kernel/lib/ktl:headers",
+  ]
+}
+
+static_library("user_copy") {
+  public_deps = [ ":headers" ]
+
+  sources = [ "internal.cc" ]
+  deps = [ "//zircon/kernel/vm:headers" ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+source_set("kernel-tests") {
+  testonly = true
+
+  sources = [ "user_copy_tests.cc" ]
+  deps = [
+    ":headers",
+    "//zircon/kernel/lib/page",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

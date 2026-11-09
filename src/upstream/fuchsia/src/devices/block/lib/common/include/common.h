@@ -1,0 +1,89 @@
+// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef SRC_DEVICES_BLOCK_LIB_COMMON_INCLUDE_COMMON_H_
+#define SRC_DEVICES_BLOCK_LIB_COMMON_INCLUDE_COMMON_H_
+
+#include <fuchsia/hardware/block/driver/cpp/banjo.h>
+#include <zircon/types.h>
+
+#include "sdk/lib/driver/logging/cpp/logger.h"
+
+namespace block {
+
+// Check whether the IO request fits within the block device.
+template <typename T>
+inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count, fdf::Logger& logger) {
+  if (io.length == 0 || io.length > total_block_count) {
+    logger.log(fdf::ERROR,
+               "IO request length ({} blocks) is zero or exceeds the total block count ({}).",
+               io.length, total_block_count);
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  if (io.offset_dev >= total_block_count || io.offset_dev > total_block_count - io.length) {
+    logger.log(fdf::ERROR,
+               "IO request offset ({} blocks) and length ({} blocks) does not fit within the total "
+               "block count ({}).",
+               io.offset_dev, io.length, total_block_count);
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  return ZX_OK;
+}
+
+// Check whether the IO request fits within the block device.
+// Also check that the IO request length does not exceed the max transfer size.
+template <typename T>
+inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count,
+                                uint32_t max_tranfser_blocks, fdf::Logger& logger) {
+  if (io.length > max_tranfser_blocks) {
+    logger.log(fdf::ERROR, "IO request length ({} blocks) exceeds max transfer size ({} blocks).",
+               io.length, max_tranfser_blocks);
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  return CheckIoRange(io, total_block_count, logger);
+}
+
+// Check that the data arguments are cleared for a flush request.
+inline zx_status_t CheckFlushValid(const block_read_write& rw, fdf::Logger& logger) {
+  if (rw.vmo || rw.length || rw.offset_dev || rw.offset_vmo) {
+    logger.log(fdf::ERROR,
+               "Flush request has data arguments: rw.vmo = {}, rw.length = {}, rw.offset_dev = {}, "
+               "rw.offset_vmo = {}.",
+               rw.vmo, rw.length, rw.offset_dev, rw.offset_vmo);
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return ZX_OK;
+}
+
+inline uint32_t ReadFromBigEndian24(const uint8_t* ptr) {
+  return ptr[0] << 16 | ptr[1] << 8 | ptr[2];
+}
+
+inline zx_status_t WriteToBigEndian24(uint32_t value, uint8_t* ptr) {
+  if (value > 0xffffff) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  ptr[0] = (value >> 16) & 0xff;
+  ptr[1] = (value >> 8) & 0xff;
+  ptr[2] = value & 0xff;
+  return ZX_OK;
+}
+
+inline uint32_t ReadFromLittleEndian24(const uint8_t* ptr) {
+  return ptr[2] << 16 | ptr[1] << 8 | ptr[0];
+}
+
+inline zx_status_t WriteToLittleEndian24(uint32_t value, uint8_t* ptr) {
+  if (value > 0xffffff) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  ptr[2] = (value >> 16) & 0xff;
+  ptr[1] = (value >> 8) & 0xff;
+  ptr[0] = value & 0xff;
+  return ZX_OK;
+}
+
+}  // namespace block
+
+#endif  // SRC_DEVICES_BLOCK_LIB_COMMON_INCLUDE_COMMON_H_

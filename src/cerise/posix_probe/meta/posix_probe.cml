@@ -1,0 +1,15 @@
+// posix_probe leaf — plain C component proving default-sysroot POSIX
+// I/O + stdio. No explicit stdout/stderr config: elf_runner's StreamSink
+// default (Log) installs PA_FD(1)/(2) zx sockets drained into the LogSink this
+// component uses (the Archivist in root_dfv2acpi_diagnostics), which is what
+// carries the printf marker. /pkg is the component's own package directory
+// (bootfs pkg/posix_probe), provided by the boot resolver — no extra routing.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/posix_probe",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+    ],
+}

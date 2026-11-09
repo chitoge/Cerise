@@ -1,0 +1,98 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + C++ bindings for the zxio/fdio dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.net.name",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.net.name_cpp",
+    library = ":fuchsia.net.name",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+# Rust binding, real production dep of netstack3's
+# common_deps (//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust in BUILD.gn).
+fidl_rust(
+    name = "fuchsia.net.name_rs",
+    library = ":fuchsia.net.name",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_name",
+    srcs = [":fuchsia.net.name_rs"],
+    crate_name = "fidl_fuchsia_net_name",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# `DnsServerWatcher`/`DnsServerWatcherMarker` are
+# `@available(added=HEAD)` — absent at this library's shared level-30 IR. Cannot
+# bump the shared `fuchsia.net.name`/`fuchsia.net.name_cpp`/`fidl_fuchsia_net_name`
+# targets: real, confirmed consumer zxio/fdio depends on the C++ binding of
+# this exact library, a boot-critical path. Same established precedent as
+# `fuchsia.net.tcp_head`/`fuchsia.net_head`: a separate parallel target compiled
+# from the same FIDL sources at HEAD, original left byte-for-byte untouched.
+fidl_library(
+    name = "fuchsia.net.name_head",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.name_head_rs",
+    library = ":fuchsia.net.name_head",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_name_head",
+    srcs = [":fuchsia.net.name_head_rs"],
+    crate_name = "fidl_fuchsia_net_name",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,11 @@
+// fasync_tcp_spike leaf — fuchsia-async TCP spike client. Uses dev + netstack3's
+// Installer/socket.Provider.
+{
+    program: { runner: "elf", binary: "bin/fasync_tcp_spike" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+    ],
+}

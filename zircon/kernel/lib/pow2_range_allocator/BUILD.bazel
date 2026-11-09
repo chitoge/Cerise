@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pow2_range_allocator",
+    srcs = ["pow2_range_allocator.cc"],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True, exclude = ["*_tests.cc"]),
+)

@@ -1,0 +1,302 @@
+# On-target Zircon test coverage under `bazel test`,
+# complementing the host unit-test suites.
+#
+# initial prototype: Zircon's OWN in-kernel unit tests, run on target.
+#
+# The stock `//products:*` kernels link none of Zircon's `*_tests` libraries, so
+# the real userspace core-tests suite is absent from this tree (GN-only, not
+# vendored) and `ut all` on a stock kernel runs zero cases. `//build/kernel:
+# vmzircon_utest` links the same closure PLUS a curated set of real Zircon kernel
+# unit-test suites (fbl, btree, cbuf, debuglog) and boots with
+#   kernel.shell.script=ut+all;boot-test-success
+# so the kernel runs its own unit tests at boot and prints the standard Zircon
+# boot-test pass contract. `x64-kernel-utest` wraps that kernel storage ZBI with
+# the phys loader into a bootable image; `kernel-utest-boot` boots it under QEMU
+# and asserts the pass contract on serial.
+load("//build/images:zbi.bzl", "zbi_image")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+# Bootable ZBI: phys loader + the unit-test kernel storage (kernel+vdso+userboot
+# + `ut all` boot cmdline). Default output is x64-kernel-utest.zbi.
+zbi_image(
+    name = "x64-kernel-utest",
+    input_zbis = [
+        "//build/phys:physload",
+        "//build/kernel:kernel_storage_utest_zbi",
+    ],
+)
+
+# cf-sz5-kernel-utest: THE SAME unit-test image, retargeted at the Panasonic
+# CF-SZ5's only remote console.
+#
+# //build/kernel:kernel_storage_utest_zbi bakes `kernel.serial=legacy` (COM1 at
+# 0x3f8) into its storage CMDLINE item, which is right for QEMU and produces a
+# stone-silent machine on a CF-SZ5, which has no COM1 (see //boards/cf-sz5). The
+# cmdline here is appended as a LATER top-level CMDLINE item, and Zircon's
+# BootOptions parser applies options in order with last-one-wins, so this
+# overrides the storage cmdline, in the same way a later `userboot.next=` item
+# overrides the storage cmdline's `userboot.next=bin/userboot-smoke`.
+#
+# It exists so the in-kernel `ut all` suites — including
+# //zircon/kernel/arch/x86/hypervisor/unittests:hypervisor_enter_unittests — can
+# be run on REAL hardware where Cerise is L0 and its guests are L1, rather than
+# only under `qemu -machine q35,accel=kvm`, where Cerise is L1 and every guest
+# is an L2 nested guest whose behaviour is partly KVM's.
+#
+# There is no QEMU gate for this target on purpose: QEMU's OVMF machine has no
+# UART at 0xf0a0 (that is what //validation:cf-sz5-uefi-boot rehearses for the
+# first-light image).
+#
+# WHAT :kernel-utest-boot DOES AND DOES NOT COVER. This comment used to say the
+# suite "is already gated by :kernel-utest-boot on the x64 image". That was
+# false in the way that matters here: :kernel-utest-boot runs under TCG, where
+# every VMX-dependent case in the hypervisor suite self-skips ("VMX not
+# supported here" — 57 sites, measured 2026-07-26 on a capture of that gate) and
+# a skip is a PASS to Zircon's unittest framework. So the QEMU gate proves the
+# suite LINKED, RAN and reached its own green terminal summary; it cannot prove
+# a single VMLAUNCH executed. The positive VMX evidence comes from running this
+# image on the laptop and checking it with :cf-sz5-utest-contract below (and,
+# when a KVM-capable runner exists, from a q35,accel=kvm variant of the gate
+# carrying that same contract). This target is a deployment artifact:
+# copy the .zbi to the unit's ESP as \bootx64.zbi and one-shot BootNext the
+# `cerise` entry, whose \EFI\cerise\BOOTX64.EFI shim loads it.
+#
+# //validation:cf-sz5-utest-uefi-disk wraps this ZBI in a GPT/ESP disk image so
+# it can be `sanboot`ed over HTTP instead — a run that writes nothing to the
+# laptop's SSD. :cf-sz5-utest-contract below is the pass/fail check for it.
+zbi_image(
+    name = "cf-sz5-kernel-utest",
+    cmdline = ["kernel.serial=ioport,0xf0a0,0"],
+    input_zbis = [
+        "//build/phys:physload",
+        "//build/kernel:kernel_storage_utest_zbi",
+    ],
+)
+
+# Live boot gate: boots the unit-test kernel via the direct -kernel/-initrd recipe
+# and asserts Zircon's own boot-test pass contract:
+#   * BOOT_TEST_SUCCESS:userspace-started  — printed by `boot-test-success` ONLY
+#     when `ut all` returned 0 (lastresult==0). userboot.next-is-test=true is
+#     dropped in the storage cmdline so this marker can only come from a green
+#     `ut all`, never from userboot-smoke's clean exit.
+#   * "Ran <N> test cases: 0 failed" with N>=7 — the unittest SUMMARY line, with
+#     a floor at the number of testcases `ut all` registers today.
+#   * the GREEN TERMINAL SUMMARY OF EVERY REGISTERED SUITE, by name.
+# Forbids the failure SUMMARY ("Not all tests passed") and kernel panics.
+#
+# WHY THE PER-SUITE SUMMARIES. The old contract was BOOT_TEST_SUCCESS plus
+# "Ran <nonzero> test cases: 0 failed", and both of those survive losing whole
+# suites. Measured, not reasoned: building this same image with
+# `--//config:hypervisor=false` unlinks the entire hypervisor suite, and the
+# resulting kernel prints "SUMMARY: Ran 6 test cases: 0 failed" and
+# BOOT_TEST_SUCCESS — the old contract passed it (2026-07-26). Six of seven
+# suites could go the same way. Naming each suite's own terminal summary is what
+# makes a lost suite a RED run instead of a smaller green one, and it is an
+# assertion the gate can make UNDER TCG, where the VMX-dependent bodies skip.
+#
+# WHAT THIS GATE DELIBERATELY DOES NOT ASSERT. It does not forbid "VMX not
+# supported here" and does not require "guest-entry OK: nested VMLAUNCH ran a
+# 64-bit guest". Under TCG there is no VT-x, so those 57 skips are the CORRECT
+# behaviour here and forbidding them would only make the portable gate
+# unrunnable. What the gate can still see under TCG — and now does — is that the
+# hypervisor suite was linked, ran, and reached "hypervisor-enter : All tests
+# passed (N/N)" with a non-zero N. The positive VMLAUNCH evidence is the
+# hardware contract's job (:cf-sz5-utest-contract) and belongs in a KVM variant
+# of this gate when a KVM-capable runner exists.
+#
+# Tagged manual+local (a live QEMU boot; not part of the default remote CI set),
+# matching the existing validation/*-boot live-boot tests.
+sh_test(
+    name = "kernel-utest-boot",
+    srcs = ["zbi_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath :x64-kernel-utest)",
+        "$(rootpath zbi_boot_test.py)",
+        # NOTE: sh_test args are whitespace-split AND the launcher strips
+        # backslashes, so contract patterns must contain neither spaces nor
+        # backslashes. Use "." to match the single spaces in the SUMMARY line
+        # ("SUMMARY: Ran 7 test cases: 0 failed") and "[(]"/"[)]" where a regex
+        # would normally want an escaped paren.
+        # TWO CPUS, DELIBERATELY. zbi_boot_test.py defaults to `--smp 1` and this
+        # gate used to pass no --smp at all, which meant the in-kernel host-NMI
+        # case ("a host NMI during guest execution reaches the host and spares
+        # the guest") could not run: an NMI can only reach a CPU that is running
+        # a guest from a DIFFERENT CPU. That case self-skipped, and a skip is a
+        # PASS to Zircon's unittest framework, so the case was green in the
+        # default lane while testing nothing. It is now a hard FAILURE when it
+        # finds one CPU, so dropping this flag is loud rather than silent.
+        #
+        # Two, not four: this is the portable TCG lane and every extra vCPU costs
+        # wall time on a shared runner. Two is the smallest number that makes
+        # cross-CPU cases reachable, which is the whole point.
+        "--smp=2",
+        "--marker=BOOT_TEST_SUCCESS:userspace-started",
+        # CASE-COUNT FLOOR, not merely "non-zero". `ut all` registers 7
+        # testcases today (//build/kernel/BUILD.bazel _UTEST_KERNEL_TEST_LIBS
+        # plus the //config:hypervisor_enabled select). 7,8,9 or 10+ pass; 6
+        # fails, which is exactly what losing one suite produces.
+        "--require-regex=Ran.([7-9]|[1-9][0-9]+).test.cases?:.0.failed",
+        # Each registered suite's OWN green terminal summary. A suite that is
+        # not linked prints nothing at all, and the SUMMARY line above simply
+        # counts one fewer case, so these are what make an unlinked suite red.
+        # A failing suite ABORTS at its first failure and never reaches its
+        # "All tests passed" line, so these are also positive proof each suite
+        # ran to completion.
+        "--require-regex=hypervisor-enter.:.All.tests.passed.[(][1-9][0-9]*/[1-9][0-9]*[)]",
+        "--require-regex=arenatests.:.All.tests.passed.[(]",
+        "--require-regex=gparena_tests.:.All.tests.passed.[(]",
+        "--require-regex=nametests.:.All.tests.passed.[(]",
+        "--require-regex=cbuf.:.All.tests.passed.[(]",
+        "--require-regex=debuglog_tests.:.All.tests.passed.[(]",
+        "--require-regex=vmo_snapshot.:.All.tests.passed.[(]",
+        # The red summary, for a suite that fails without panicking. Without it
+        # the gate's only failure rendering is "a marker was absent".
+        "--forbid-regex=Not.all.tests.passed",
+        # Hold after the contract is met and re-check the forbidden patterns, so
+        # a panic flushed just after BOOT_TEST_SUCCESS still fails the run.
+        "--settle-seconds=5",
+        "--timeout-seconds=300",
+    ],
+    data = [
+        "zbi_boot_test.py",
+        ":x64-kernel-utest",
+        "//build/phys:linux_x86_64_boot_shim",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+    ],
+    timeout = "eternal",
+)
+
+# The NESTED-KVM counterpart of :kernel-utest-boot, and the standing gate that
+# closes the VMX blind spot.
+#
+# :kernel-utest-boot boots under TCG (--machine q35, no accel), where every
+# VMX-dependent case in the hypervisor-enter suite self-skips ("VMX not supported
+# here") -- and a self-skip is a PASS to Zircon's unittest framework, so ~110 of
+# the 118 hypervisor tests are green-WITHOUT-RUNNING there. That is exactly how a
+# real interrupt/injection/EOI defect (the lazy-EOI-then-HLT wedge) reached bare
+# metal without any gate reddening: the tests that would have caught it never
+# executed in CI.
+#
+# This target passes --machine=q35,accel=kvm --cpu=host, so the guest kernel is
+# handed (nested) VT-x and the hypervisor suite runs FOR REAL -- the same
+# software-APIC / no-APIC-v path bare metal takes (this host reports
+# virtual-interrupt-delivery=0, so nested KVM is a faithful proxy for it). It
+# keeps every assertion the TCG lane makes AND adds two that make "ran for real"
+# non-optional:
+#   * --forbid-regex "VMX not supported here": if VMX is ever absent (wrong
+#     runner, KVM unavailable, a regression that disables guest entry) the VMX
+#     cases would self-skip and the TCG lane would still be green -- here that is
+#     a hard RED instead.
+#   * the hypervisor-enter "All tests passed (N/N)" summary is now positive proof
+#     the suite ran to completion under real VMLAUNCH, not that it skipped.
+#
+# Intel PT is NOT exposed under nested KVM, so vcpu_intel_pt_* legitimately print
+# "Intel PT is absent here" and pass with that portion skipped; that line is NOT
+# forbidden (unlike the VMX skip) because it is an expected environment limit,
+# not a masked run. PT coverage still needs a bare-metal lane.
+#
+# LOCAL-ONLY, needs /dev/kvm with nested virtualization (a KVM-capable runner
+# with kvm_intel nested=Y). Not in any remote set.
+sh_test(
+    name = "kernel-utest-boot-kvm",
+    srcs = ["zbi_boot.sh"],
+    args = [
+        "$(rootpath @qemu_x86_64//:qemu-system-x86_64)",
+        "$(rootpath //build/phys:linux_x86_64_boot_shim)",
+        "$(rootpath :x64-kernel-utest)",
+        "$(rootpath zbi_boot_test.py)",
+        # Nested VT-x for the guest kernel, so the hypervisor suite runs for real.
+        "--machine=q35,accel=kvm",
+        "--cpu=host",
+        # Same two-CPU rationale as the TCG lane (cross-CPU cases + a racer that
+        # needs a sibling to actually overlap).
+        "--smp=2",
+        "--marker=BOOT_TEST_SUCCESS:userspace-started",
+        "--require-regex=Ran.([7-9]|[1-9][0-9]+).test.cases?:.0.failed",
+        "--require-regex=hypervisor-enter.:.All.tests.passed.[(][1-9][0-9]*/[1-9][0-9]*[)]",
+        "--require-regex=arenatests.:.All.tests.passed.[(]",
+        "--require-regex=gparena_tests.:.All.tests.passed.[(]",
+        "--require-regex=nametests.:.All.tests.passed.[(]",
+        "--require-regex=cbuf.:.All.tests.passed.[(]",
+        "--require-regex=debuglog_tests.:.All.tests.passed.[(]",
+        "--require-regex=vmo_snapshot.:.All.tests.passed.[(]",
+        "--forbid-regex=Not.all.tests.passed",
+        # THE BLIND-SPOT GUARD: a VMX self-skip must red this lane, never pass it.
+        "--forbid-regex=VMX.not.supported.here",
+        "--settle-seconds=5",
+        "--timeout-seconds=300",
+    ],
+    data = [
+        "zbi_boot_test.py",
+        ":x64-kernel-utest",
+        "//build/phys:linux_x86_64_boot_shim",
+        "@qemu_x86_64//:qemu-system-x86_64",
+        "@qemu_x86_64_data//:data",
+    ],
+    tags = [
+        "manual",
+        "local",
+        "no-remote",
+        "no-remote-exec",
+        # EXCLUSIVE because this lane is contention-flaky, measured not guessed.
+        # Without it, `--runs_per_test=N` (and any concurrent test in the same
+        # invocation) starts N QEMUs at once, each `-smp 2`, which on a normal
+        # developer box oversubscribes the CPUs and the /dev/kvm path badly
+        # enough to produce KERNEL PANICs and spurious in-guest test failures.
+        # Measured on this tree at 5 concurrent runs: 1/5 red on a PRISTINE
+        # baseline commit and 2/5 red on a branch, versus 5/5 green for BOTH
+        # when serialized. That is the worst possible failure mode for a gate --
+        # it reddens a clean tree, so the next person learns to re-run it until
+        # it passes, which is how a real regression gets waved through. "local"
+        # alone does not serialize; only "exclusive" does.
+        "exclusive",
+    ],
+    timeout = "eternal",
+)
+
+# The REAL-HARDWARE counterpart of :kernel-utest-boot's assertions.
+#
+#     bazel run //tests/zircon:cf-sz5-utest-contract -- /abs/path/to/sol.log
+#
+# Nothing is booted by this target. It runs the SAME zbi_boot_test.py in its
+# --no-launch mode against a serial log that something else — `amtterm` capturing
+# AMT Serial-over-LAN off the CF-SZ5 — is appending to, so "is this a real pass"
+# has exactly ONE implementation shared with the QEMU gate above and the two
+# cannot drift apart.
+#
+# It is NOT a bazel test: it needs a physical machine, a serial capture already
+# running against it (AMT permits exactly one redirection session at a time), and
+# a log path that exists only at run time. sh_binary + manual/local keeps it out
+# of every wildcard build and test set.
+#
+# Its contract adds three assertions the QEMU gate cannot make, all aimed at one
+# failure: under TCG this exact image prints "hypervisor-enter : All tests passed
+# (59/59)" while ALSO printing "VMX not supported here" 57 times, because a
+# self-skip is a PASS to Zircon's unittest framework (verified by capturing a TCG
+# boot of this image on 2026-07-26, not assumed). So the hardware contract requires
+# the hypervisor suite's own green terminal summary and the positive "guest-entry
+# OK" line that only a real VMLAUNCH produces, and forbids the skip line outright.
+sh_binary(
+    name = "cf-sz5-utest-contract",
+    srcs = ["cf_sz5_utest_contract.sh"],
+    data = ["zbi_boot_test.py"],
+    tags = [
+        "manual",
+        "local",
+    ],
+)

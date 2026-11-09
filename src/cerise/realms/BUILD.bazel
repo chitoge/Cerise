@@ -1,0 +1,800 @@
+load("@rules_rust//rust:defs.bzl", "rust_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//build:component.bzl", "cerise_component", "cerise_config_values")
+load(":root_realm_packages.bzl", "ROOT_REALM_BOOT_PACKAGES", "ROOT_REALM_INDIRECT_EXECUTABLES", "ROOT_REALM_INDIRECT_PACKAGES", "ROOT_REALM_RESOLVER_PACKAGES")
+load(
+    "//build:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+    "fuchsia_structured_config_rust_lib_from_cm",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["root_realm_packages.bzl"])
+
+filegroup(
+    name = "root_realm_manifests",
+    srcs = glob(["meta/root_*.cml"], exclude = ["meta/root_driver_base.shard.cml"]),
+)
+
+sh_test(
+    name = "root_realm_packages_test",
+    srcs = ["tests/root_realm_packages_test.sh"],
+    args = [
+        "$(location :root_realm_packages.bzl)",
+        "$(locations :root_realm_manifests)",
+    ],
+    data = [
+        ":root_realm_packages.bzl",
+        ":root_realm_manifests",
+        "meta/root_driver_base.shard.cml",
+        "tests/root_realm_packages_test.py",
+    ],
+)
+
+_ROOT_DRIVER_BASE_INCLUDES = ["meta/root_driver_base.shard.cml"]
+_ROOT_DRIVER_BASE_INCLUDEPATHS = ["src/cerise/realms/meta"]
+
+# Build-time capability-routing + least-privilege checker over these realms' compiled
+# .cm. The implementation lives in //src/cerise/tools/route_check; these
+# aliases let it be run alongside the realms it checks (`bazel test
+# //src/cerise/realms:route_check*`).
+alias(
+    name = "route_check_test",
+    actual = "//src/cerise/tools/route_check:route_check_test",
+)
+
+alias(
+    name = "route_check_negative_test",
+    actual = "//src/cerise/tools/route_check:route_check_negative_test",
+)
+
+sh_test(
+    name = "root_driver_base_include_test",
+    srcs = ["tests/root_driver_base_include_test.sh"],
+    args = [
+        "$(rootpath meta/root_dfv2acpi.cml)",
+        "$(rootpath meta/root_dfv2acpi_conformance.cml)",
+        "$(rootpath meta/root_dfv2acpi_console.cml)",
+        "$(rootpath meta/root_dfv2acpi_console_pkg.cml)",
+        "$(rootpath meta/root_dfv2acpi_console_spike.cml)",
+        "$(rootpath meta/root_dfv2acpi_console_vmm.cml)",
+        "$(rootpath meta/root_dfv2acpi_diagnostics.cml)",
+        "$(rootpath meta/root_dfv2acpi_fasync_spike.cml)",
+        "$(rootpath meta/root_dfv2acpi_fileserver.cml)",
+        "$(rootpath meta/root_dfv2acpi_fshost.cml)",
+        "$(rootpath meta/root_dfv2acpi_netstack3.cml)",
+        "$(rootpath meta/root_dfv2acpi_ota.cml)",
+        "$(rootpath meta/root_dfv2acpi_pkg.cml)",
+        "$(rootpath meta/root_dfv2acpi_pkg_update.cml)",
+        "$(rootpath meta/root_dfv2acpi_shutdown.cml)",
+        "$(rootpath meta/root_dfv2acpi_store_push.cml)",
+    ],
+    data = [
+        "meta/root_dfv2acpi.cml",
+        "meta/root_dfv2acpi_conformance.cml",
+        "meta/root_dfv2acpi_console.cml",
+        "meta/root_dfv2acpi_console_pkg.cml",
+        "meta/root_dfv2acpi_console_spike.cml",
+        "meta/root_dfv2acpi_console_vmm.cml",
+        "meta/root_dfv2acpi_diagnostics.cml",
+        "meta/root_dfv2acpi_fasync_spike.cml",
+        "meta/root_dfv2acpi_fileserver.cml",
+        "meta/root_dfv2acpi_fshost.cml",
+        "meta/root_dfv2acpi_netstack3.cml",
+        "meta/root_dfv2acpi_ota.cml",
+        "meta/root_dfv2acpi_pkg.cml",
+        "meta/root_dfv2acpi_pkg_update.cml",
+        "meta/root_dfv2acpi_shutdown.cml",
+        "meta/root_dfv2acpi_store_push.cml",
+    ],
+)
+
+# Host debug-dumper for a .cm blob (set CM_PATH). Decode-spike aid only.
+rust_test(
+    name = "dump_test",
+    srcs = ["tests/dump.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)
+
+# probe: inline config capabilities compile via cmc.
+cerise_component(
+    name = "probe_config",
+    manifest = "meta/probe_config.cml",
+)
+
+# ── LIVE leaf components (program manifests, no ConfigSchema). Manifest-only:
+# the product/bundle stages the ELF binary separately, so we wire only :<name>_manifest. ──
+[
+    cerise_component(name = leaf, manifest = "meta/%s.cml" % leaf)
+    for leaf in [
+        "elf_runner",
+        "cerise_logsink",
+        "driver_host_dfv2",
+        "netdev_probe",
+        "devfs-driver",
+        "netstack3_probe",
+        "nvme_probe",
+        "ahci_probe",
+        "crypt_fxfs",
+        "fxfs_probe",
+        "fxfs_provisioner",
+        "fshost_probe",
+        # packages foundation: the on-target package ingest+resolve proof for x64-pkg.
+        "pkg_probe",
+        # packages: the fuchsia-pkg:// resolver for x64-pkg (disk-resolved launch).
+        "pkg_resolver",
+        # packages: the network update driver for x64-pkg-update.
+        "pkg_fetcher",
+        # packages (post-storage app tier): the fileserver-package fetcher for x64-console-pkg.
+        "apptier_fetcher",
+        "fxfs",
+        "fasync_tcp_spike",
+        "fileserver",
+        "pci_probe",
+        "virtio_net",
+        "network_device",
+        "e1000",
+        "nvme",
+        "ahci",
+        "display",
+        # hw first-light: GOP framebuffer display driver.
+        # New Cerise-native .cml — NOT in the frozen golden set
+        # (same policy as fxfs_provisioner).
+        "gop_display",
+        # post-mortem gate: the root-job crash observer and the
+        # null-deref fixture it observes.
+        "crash_handler",
+        "crasher",
+        # PMU path A: the raw hardware performance-counter client (uses the
+        # narrowly-routed fuchsia.kernel.DebugResource).
+        "perfmon",
+    ]
+]
+
+# driver_index leaf. Schema-only config compile: the manifest carries the
+# `config: {}` schema; the VALUES (.cvf, incl. the board-derived boot_drivers
+# list) are staged by the driver_framework bundle / the legacy products.
+# config_package_path is "meta/driver_index.cvf" because the .cm is STAGED as
+# pkg/driver_index/meta/driver_index.cm (package name driver_index, not the
+# manifest's acpi-suffixed source name).
+cerise_component(
+    name = "driver_index_acpi",
+    manifest = "meta/driver_index_acpi.cml",
+    config_package_path = "meta/driver_index.cvf",
+)
+
+# fshost leaf. Schema-only config compile: the manifest carries the
+# `config: {}` schema; the VALUES (.cvf) are staged by cerise_product from the
+# storage_fxfs bundle's config entry (burn-down).
+cerise_component(
+    name = "fshost",
+    manifest = "meta/fshost.cml",
+    config_package_path = "meta/fshost.cvf",
+)
+
+# netstack3 leaf. Schema-only config compile: the manifest carries the
+# `config: {}` schema; the VALUES (.cvf) are staged by cerise_product from the
+# netstack3 bundle's config entry (burn-down).
+cerise_component(
+    name = "netstack3",
+    manifest = "meta/netstack3.cml",
+    config_package_path = "meta/netstack3.cvf",
+)
+
+# The DFv2 driver manager realm (child `driver_manager_rust` under the root).
+# Schema-only config compile: the manifest carries the `config: {}` schema; the
+# VALUES (.cvf) are staged by cerise_product from the driver_framework bundle's
+# config entry (burn-down of the hand-written driver_manager_config stub).
+cerise_component(
+    name = "driver_manager_rust_dfv2acpi",
+    manifest = "meta/driver_manager_rust_dfv2acpi.cml",
+    cml_features = ["allow_long_names"],
+    config_package_path = "meta/driver_manager_rust_dfv2acpi.cvf",
+)
+
+# The qemu-x64-pci root realm (SHARD A base driver stack + SHARD B storage children:
+# nvme_probe/ahci_probe + fxfs_probe active). Realm-only .cml, no binary.
+cerise_component(
+    name = "root_dfv2acpi",
+    manifest = "meta/root_dfv2acpi.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# The qemu-x64-crash-handler root realm: minimal ELF realm running
+# crash_handler (eager, holds the root-job exception channel) + crasher (lazy).
+# Realm-only .cml, no binary.
+cerise_component(
+    name = "root_crash_handler",
+    manifest = "meta/root_crash_handler.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_crash_handler"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_crash_handler", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_crash_handler", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_crash_handler", []),
+)
+
+# The qemu-x64-perfmon root realm (PMU path A): minimal ELF realm running perfmon
+# (eager, holds the narrowly-routed fuchsia.kernel.DebugResource). Realm-only .cml,
+# no binary.
+cerise_component(
+    name = "root_perfmon",
+    manifest = "meta/root_perfmon.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_perfmon"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_perfmon", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_perfmon", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_perfmon", []),
+)
+
+# qemu-x64-console-spike root realm (minimal driver-realm boot vehicle).
+cerise_component(
+    name = "root_dfv2acpi_console_spike",
+    manifest = "meta/root_dfv2acpi_console_spike.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_console_spike"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_console_spike", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_console_spike", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_console_spike", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# qemu-x64-net root realm.
+cerise_component(
+    name = "root_dfv2acpi_netstack3",
+    manifest = "meta/root_dfv2acpi_netstack3.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_netstack3"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_netstack3", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_netstack3", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_netstack3", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# qemu-x64-storage root realm (fshost=Lazy variant).
+cerise_component(
+    name = "root_dfv2acpi_fshost",
+    manifest = "meta/root_dfv2acpi_fshost.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_fshost"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_fshost", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_fshost", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_fshost", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# Remaining root realm variants.
+[
+    cerise_component(
+        name = r,
+        manifest = "meta/%s.cml" % r,
+        reachable_packages = ROOT_REALM_BOOT_PACKAGES[r],
+        resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get(r, []),
+        indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get(r, []),
+        reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get(r, []),
+        includes = _ROOT_DRIVER_BASE_INCLUDES,
+        includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+    )
+    for r in [
+        "root_dfv2acpi_fasync_spike",
+        "root_dfv2acpi_fileserver",
+        "root_dfv2acpi_console",
+    ]
+]
+
+# qemu-x64-diagnostics root realm (logging bring-up): base driver stack +
+# Archivist + archivist_reader, with LogSink for the userspace probes rerouted from
+# the Archivist. Routes the ArchiveAccessor out of the Archivist's diagnostics-
+# accessors dictionary (needs the dynamic_dictionaries cml feature) and the
+# capability_requested event stream to the Archivist.
+cerise_component(
+    name = "root_dfv2acpi_diagnostics",
+    manifest = "meta/root_dfv2acpi_diagnostics.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_diagnostics"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_diagnostics", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_diagnostics", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_diagnostics", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+    cml_features = ["dynamic_dictionaries"],
+)
+
+# qemu-x64-conformance root realm (runtime-conformance boot gate): the
+# same lean base + Archivist as diagnostics, but stages the three runtime
+# conformance probes (C / C++ / Rust) as independent eager children instead of
+# archivist_reader. Needs the capability_requested event stream feature (same as
+# diagnostics) for the Archivist LogSink interception.
+cerise_component(
+    name = "root_dfv2acpi_conformance",
+    manifest = "meta/root_dfv2acpi_conformance.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_conformance"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_conformance", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_conformance", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_conformance", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+    cml_features = ["dynamic_dictionaries"],
+)
+
+# orderly-shutdown product (qemu-x64-shutdown). NEW realms — no frozen decode_diff
+# golden, excluded from route_check like the other spike roots.
+#   * shutdown_shim: the builtin-runner shim component (manifest only, no ELF binary).
+#   * driver_manager_rust_dfv2acpi_shutdown: driver_manager variant with lifecycle
+#     stop_event + MexecResource/SystemStateTransition uses (transient collections need
+#     the allow_long_names cml feature, same as the base driver_manager realm).
+#   * root_dfv2acpi_shutdown: the product root wiring the real shutdown chain.
+cerise_component(
+    name = "shutdown_shim",
+    manifest = "meta/shutdown_shim.cml",
+)
+
+cerise_component(
+    name = "driver_manager_rust_dfv2acpi_shutdown",
+    manifest = "meta/driver_manager_rust_dfv2acpi_shutdown.cml",
+    cml_features = ["allow_long_names"],
+    # Same cvf as the base realm: both .cm files live in the shared
+    # pkg/driver_manager_rust_dfv2platbus package (see bundles cvf_dest).
+    config_package_path = "meta/driver_manager_rust_dfv2acpi.cvf",
+)
+
+cerise_component(
+    name = "root_dfv2acpi_shutdown",
+    manifest = "meta/root_dfv2acpi_shutdown.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_shutdown"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_shutdown", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_shutdown", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_shutdown", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# OS-self-OTA (qemu-x64-ota / qemu-x64-ota-v2) product root: the shutdown-capable driver
+# base + netstack3 + shutdown_shim + ota_updater (the sole disk writer — no provisioner/
+# fshost/probes). NEW realm; no frozen decode_diff golden; excluded from route_check's
+# frozen set like the other spike roots.
+cerise_component(
+    name = "root_dfv2acpi_ota",
+    manifest = "meta/root_dfv2acpi_ota.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_ota"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_ota", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_ota", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_ota", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# Guest-image push product root: the driver base + netstack3 + guest_store_receiver,
+# which is the SOLE disk writer in it. No fshost, no provisioner, no file server, no
+# probes — a realm whose gates claim "a refused push wrote nothing to this disk"
+# cannot contain a second component that might have written to it. NEW realm; no
+# frozen decode_diff golden; excluded from route_check's frozen set like the other
+# storage roots.
+cerise_component(
+    name = "root_dfv2acpi_store_push",
+    manifest = "meta/root_dfv2acpi_store_push.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_store_push"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_store_push", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_store_push", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_store_push", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# packages foundation product root (qemu-x64-pkg). Identical to
+# root_dfv2acpi_fshost except the terminal consumer is pkg_probe (package ingest+resolve)
+# instead of fshost_probe. A NEW realm — no frozen decode_diff golden, excluded from
+# route_check's frozen set like the other spike/storage roots (route_check still lints its
+# routing via the realm aliases).
+cerise_component(
+    name = "root_dfv2acpi_pkg",
+    manifest = "meta/root_dfv2acpi_pkg.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_pkg"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_pkg", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_pkg", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_pkg", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# packages product root (qemu-x64-pkg-update). root_dfv2acpi_pkg's fshost+packages
+# topology combined with netstack3 wiring + the pkg_fetcher update driver + two same-URL pkg_hello
+# instances. A NEW realm — no frozen decode_diff golden, excluded from route_check's frozen set like
+# the other storage/spike roots (route_check still lints its routing via the realm aliases). See
+cerise_component(
+    name = "root_dfv2acpi_pkg_update",
+    manifest = "meta/root_dfv2acpi_pkg_update.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_pkg_update"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_pkg_update", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_pkg_update", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_pkg_update", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# packages (post-storage app tier) product root (qemu-x64-console-pkg). root_dfv2acpi_console's
+# status display combined with root_dfv2acpi_pkg's fshost+packages topology, with the FILESERVER moved
+# OUT of bootfs and delivered as a network-fetched fuchsia-pkg package (apptier_fetcher + a Lazy
+# pkg-resolved #fileserver). A NEW realm — excluded from the frozen decode_diff golden set like the
+# other storage/pkg roots; route_check lints its routing via the realm aliases.
+cerise_component(
+    name = "root_dfv2acpi_console_pkg",
+    manifest = "meta/root_dfv2acpi_console_pkg.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_console_pkg"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_console_pkg", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_console_pkg", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_console_pkg", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# The fuchsia-pkg (meta.far) variant of the fileserver manifest — identical to the bootfs fileserver
+# leaf but EXPOSES the framework Binder so apptier_fetcher can Lazy-start the pkg-resolved fileserver.
+# Kept separate so the bootfs fileserver.cm (frozen decode_diff golden) is unchanged.
+cerise_component(
+    name = "fileserver_pkg",
+    manifest = "meta/fileserver_pkg.cml",
+)
+
+# ── The virtual machine monitor, and the realm that hosts it ────────────────
+#
+# THIS IS THE FIRST MANIFEST HERE WHOSE PROGRAM IS NOT BUILT BY THIS TREE'S
+# PUBLIC HALF, and that is worth saying out loud rather than discovering. Realm
+# manifests are compiled manifest-only — the product stages the ELF separately —
+# so the .cml can live here with no build dependency on the binary at all. It is
+# here rather than next to its program for one concrete reason: route_check's
+# manifest pool is exactly this directory, and the whole risk of adding a
+# component that holds two kernel resources is a routing mistake. A manifest the
+# linter cannot see is a manifest the linter cannot lint.
+exports_files([
+    "meta/cryogen_vmm.cml",
+])
+
+# The generated structured-config CLIENT library: cmc lowers the `config: {}`
+# schema in the .cml into the .cm's ConfigSchema, and configc's `rust`
+# subcommand emits `cryogen_vmm_config::Config` with a take_from_startup_handle()
+# that FIDL-decodes the delivered config VMO. The VMM's component build depends
+# on this; the legacy userboot build has no config VMO to read and does not.
+fuchsia_structured_config_rust_lib(
+    name = "cryogen_vmm_config",
+    config_package_path = "meta/cryogen_vmm.cvf",
+    crate_name = "cryogen_vmm_config",
+    manifest = "meta/cryogen_vmm.cml",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The ordinary VM host stages this managed-only worker manifest. Its complete
+# construction contract arrives in the launch VMO, so the structured config is
+# deliberately limited to the version/digest binding for that VMO.
+cerise_component(
+    name = "cryogen_vmm_managed",
+    config_package_path = "meta/cryogen_vmm_managed.cvf",
+    manifest = "meta/cryogen_vmm_managed.cml",
+)
+
+fuchsia_structured_config_rust_lib_from_cm(
+    name = "cryogen_vmm_managed_config",
+    cm = ":cryogen_vmm_managed_manifest",
+    crate_name = "cryogen_vmm_managed_config",
+    visibility = ["//visibility:public"],
+)
+
+# The leaf. Unlike every manifest-only entry above it carries `config_values`,
+# because its schema has to be delivered as a real .cvf for the component to
+# start at all. The values are the synthetic gate's numbers — small on purpose:
+# a four-page cache is what makes every run exercise eviction, and 512 MiB is
+# what makes it boot in a minute. A product that wants a real operating-system
+# guest stages a differently-valued instance rather than raising these, which
+# would quietly change what the green gate proves.
+cerise_component(
+    name = "cryogen_vmm",
+    config_values = {
+        "guest_mem_mb": 512,
+        "vm_id": "vm-guest",
+        "vm_name": "Guest",
+        "image_id": "image-none",
+        "image_name": "No image",
+        "vp_count": 1,
+        "cryogen_cache_pages": 4,
+        "spill_resident_pages": 64,
+        "guest_deadline_secs": 45,
+        "fw_line_budget": 2000,
+        "firmware_path": "/pkg/data/MSVM.fd",
+        # No store yet: the blank-disk state, which is a producible intermediate
+        # rather than a failure. The block path turns this to "block".
+        "store_source": "none",
+        # The guest-image partition type GUID. Empty while store_source is
+        # "none"; a "block" configuration must name one, and the program refuses
+        # rather than defaulting, because a default GUID is a default answer to
+        # "which partition is the guest's" and there is no safe default.
+        "store_partition_guid": "",
+        "store_path": "",
+        "store_server": "",
+        "vmi_enabled": False,
+        "vmi_port": 50053,
+        "hvsock_port": 50054,
+        "display_port": 50055,
+        "inventory_only": False,
+        "autostart": True,
+        # Zero version and empty digest is the compatibility shape the manifest
+        # documents: no authenticated launch envelope, so the program must also
+        # receive no launch startup handle, and it checks for exactly that. The
+        # manifest gained these two fields without any of the four value sets
+        # here gaining them, which made every console product's .cvf -- and so
+        # every emulator boot gate over this VMM -- fail to build rather than
+        # fail a test. Spelled out per value set rather than defaulted, because
+        # a default here would silently un-bind a managed worker.
+        "launch_spec_version": 0,
+        "launch_spec_digest": "",
+    },
+    manifest = "meta/cryogen_vmm.cml",
+)
+
+# The SAME manifest, with the store turned on.
+#
+# `cerise_config_values` against `:cryogen_vmm_manifest` rather than a second
+# `cerise_component`, and that is the whole point: the compiled `.cm` a product
+# stages is byte-identical either way, so between the blank-disk product and the
+# block-backed one there is exactly ONE variable — the delivered values. A second
+# component target would have produced a second `.cm` with a second schema
+# checksum and a second chance for the two to differ, and a gate whose red could
+# then be attributed to either.
+#
+# The store partition's TYPE GUID is spelled here rather than defaulted in the
+# program. `boot_layout::GUEST_IMAGE_TYPE_GUID` is the same value in the
+# mixed-endian on-disk encoding, and `guest_image_guid_round_trips` re-derives
+# those bytes from the GPT_GUID rules — but nothing checks that this string and
+# that constant agree, by design: "which partition holds the guest image" is a
+# deployment decision, and a program that defaulted it would be answering a
+# question that is not its to answer. A wrong GUID here does not misbehave, it
+# refuses (see the wrong-GUID gate in the VMM's own BUILD file).
+cerise_config_values(
+    name = "cryogen_vmm_block_cvf",
+    cm = ":cryogen_vmm_manifest",
+    tags = ["manual"],
+    values = {
+        "guest_mem_mb": 512,
+        "vm_id": "vm-guest",
+        "vm_name": "Guest",
+        "image_id": "image-block",
+        "image_name": "Guest image",
+        "vp_count": 1,
+        "cryogen_cache_pages": 4,
+        "spill_resident_pages": 64,
+        "guest_deadline_secs": 45,
+        "fw_line_budget": 2000,
+        "firmware_path": "/pkg/data/MSVM.fd",
+        "store_source": "block",
+        "store_partition_guid": "43A1F4C2-7B5E-4D18-9E3A-6F0C21D8B7A5",
+        "store_path": "",
+        "store_server": "",
+        "vmi_enabled": False,
+        "vmi_port": 50053,
+        "hvsock_port": 50054,
+        "display_port": 50055,
+        "inventory_only": False,
+        "autostart": True,
+        "launch_spec_version": 0,
+        "launch_spec_digest": "",
+    },
+    visibility = ["//visibility:public"],
+)
+
+# A real-guest diagnostic instance. It differs from the ordinary block-backed
+# instance only in scale and in holding the cooperatively stopped VP for the
+# read-only VMI service.
+cerise_config_values(
+    name = "cryogen_vmm_vmi_cvf",
+    cm = ":cryogen_vmm_manifest",
+    tags = ["manual"],
+    values = {
+        "guest_mem_mb": 2048,
+        "vm_id": "vm-guest",
+        "vm_name": "Guest",
+        "image_id": "image-block",
+        "image_name": "Guest image",
+        "vp_count": 1,
+        "cryogen_cache_pages": 16384,
+        "spill_resident_pages": 65536,
+        # Win10 can spend five minutes reaching vmicvmsession and another three
+        # minutes cold-starting its first PowerShell runspace. Keep ample room
+        # for the diagnostic itself before the stopped-guest VMI freeze.
+        "guest_deadline_secs": 1200,
+        "fw_line_budget": 40000,
+        "firmware_path": "/pkg/data/MSVM.fd",
+        "store_source": "block",
+        "store_partition_guid": "43A1F4C2-7B5E-4D18-9E3A-6F0C21D8B7A5",
+        "store_path": "",
+        "store_server": "",
+        "vmi_enabled": True,
+        "vmi_port": 50053,
+        "hvsock_port": 50054,
+        "display_port": 50055,
+        "inventory_only": False,
+        "autostart": True,
+        "launch_spec_version": 0,
+        "launch_spec_digest": "",
+    },
+    visibility = ["//visibility:public"],
+)
+
+# The red control for the GUID itself: the ESP type, which the block-gate disk
+# also carries — deliberately, and filled with a byte pattern that is not a
+# `.cryostore`. So this configuration locates a partition successfully and then
+# REFUSES on the store header, which is a different failure from "no partition
+# found" and proves two things one gate could not: that the reader reads at the
+# partition it was told about rather than at a fixed place, and that the bytes it
+# gets back are the bytes that are there. A run that matched zeros against zeros
+# could not tell those apart.
+cerise_config_values(
+    name = "cryogen_vmm_wrongguid_cvf",
+    cm = ":cryogen_vmm_manifest",
+    tags = ["manual"],
+    values = {
+        "guest_mem_mb": 512,
+        "vm_id": "vm-guest",
+        "vm_name": "Guest",
+        "image_id": "image-invalid",
+        "image_name": "Invalid image",
+        "vp_count": 1,
+        "cryogen_cache_pages": 4,
+        "spill_resident_pages": 64,
+        "guest_deadline_secs": 45,
+        "fw_line_budget": 2000,
+        "firmware_path": "/pkg/data/MSVM.fd",
+        "store_source": "block",
+        "store_partition_guid": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+        "store_path": "",
+        "store_server": "",
+        "vmi_enabled": False,
+        "vmi_port": 50053,
+        "hvsock_port": 50054,
+        "display_port": 50055,
+        "inventory_only": False,
+        "autostart": True,
+        "launch_spec_version": 0,
+        "launch_spec_digest": "",
+    },
+    visibility = ["//visibility:public"],
+)
+
+# The console realm with the VMM added as one more Eager leaf. A NEW realm — no
+# frozen decode_diff golden, in line with the policy for every realm added since
+# cm_gen was deleted — but it IS in route_check's product set, because the whole
+# point of putting the leaf manifest here is to have its two kernel-resource
+# routes linted.
+cerise_component(
+    name = "root_dfv2acpi_console_vmm",
+    manifest = "meta/root_dfv2acpi_console_vmm.cml",
+    reachable_packages = ROOT_REALM_BOOT_PACKAGES["root_dfv2acpi_console_vmm"],
+    resolver_packages = ROOT_REALM_RESOLVER_PACKAGES.get("root_dfv2acpi_console_vmm", []),
+    indirect_packages = ROOT_REALM_INDIRECT_PACKAGES.get("root_dfv2acpi_console_vmm", []),
+    reachable_executables = ROOT_REALM_INDIRECT_EXECUTABLES.get("root_dfv2acpi_console_vmm", []),
+    includes = _ROOT_DRIVER_BASE_INCLUDES,
+    includepaths = _ROOT_DRIVER_BASE_INCLUDEPATHS,
+)
+
+# HOST gate on the VMM's structured-config delivery (no boot): real
+# persistent-FIDL decode of the produced .cm and .cvf, asserting the schema, the
+# delivered values, that the two artifacts' checksums agree (without which
+# component_manager refuses to deliver them together), and that `low_mmio_mb` is
+# still absent. See the test's header for why that last one is an assertion
+# rather than an omission.
+rust_test(
+    name = "vmm_config_decode_test",
+    srcs = ["tests/vmm_config_decode.rs"],
+    data = [
+        ":cryogen_vmm_cvf",
+        ":cryogen_vmm_manifest",
+    ],
+    edition = "2021",
+    env = {
+        "VMM_CM": "$(rootpath :cryogen_vmm_manifest)",
+        "VMM_CVF": "$(rootpath :cryogen_vmm_cvf)",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)
+
+# Decode-diff GATE: prove the .cml-compiled realms round-trip structurally
+# identically to the checked-in golden blobs (the exotic-feature proof).
+rust_test(
+    name = "decode_diff_test",
+    srcs = ["tests/decode_diff.rs"],
+    edition = "2021",
+    data = [
+        ":driver_manager_rust_dfv2acpi_manifest",
+        ":root_dfv2acpi_manifest",
+        ":root_dfv2acpi_console_spike_manifest",
+        ":elf_runner_manifest",
+        ":cerise_logsink_manifest",
+        ":driver_index_acpi_manifest",
+        ":driver_host_dfv2_manifest",
+        ":netdev_probe_manifest",
+        ":devfs-driver_manifest",
+        ":netstack3_manifest",
+        ":netstack3_probe_manifest",
+        ":root_dfv2acpi_netstack3_manifest",
+        ":nvme_probe_manifest",
+        ":ahci_probe_manifest",
+        ":crypt_fxfs_manifest",
+        ":fxfs_probe_manifest",
+        # fshost_probe + root_dfv2acpi_fshost diverged from the frozen topology (the
+        # fxfs_provisioner readiness gate + provisioner-owned genesis topology), so they
+        # are no longer decode-diff-identical and are excluded from the frozen golden set
+        # (route_check still covers the fshost realm's routing). fxfs_provisioner itself is
+        # a NEW .cml — likewise not in this golden set.
+        ":fxfs_manifest",
+        ":fshost_manifest",
+        ":fasync_tcp_spike_manifest",
+        ":fileserver_manifest",
+        ":root_dfv2acpi_fasync_spike_manifest",
+        ":root_dfv2acpi_fileserver_manifest",
+        ":root_dfv2acpi_console_manifest",
+        ":pci_probe_manifest",
+        ":virtio_net_manifest",
+        ":network_device_manifest",
+        ":e1000_manifest",
+        ":nvme_manifest",
+        ":ahci_manifest",
+        ":display_manifest",
+        "goldens/pci_probe.cm",
+        "goldens/virtio_net.cm",
+        "goldens/network_device.cm",
+        "goldens/e1000.cm",
+        "goldens/nvme.cm",
+        "goldens/ahci.cm",
+        "goldens/display.cm",
+        "goldens/fasync_tcp_spike.cm",
+        "goldens/fileserver.cm",
+        "goldens/root_dfv2acpi_fasync_spike.cm",
+        "goldens/root_dfv2acpi_fileserver.cm",
+        "goldens/root_dfv2acpi_console.cm",
+        "goldens/nvme_probe.cm",
+        "goldens/ahci_probe.cm",
+        "goldens/crypt_fxfs.cm",
+        "goldens/fxfs_probe.cm",
+        "goldens/fxfs.cm",
+        "goldens/fshost.cm",
+        "goldens/driver_manager_rust_dfv2acpi.cm",
+        "goldens/root_dfv2acpi.cm",
+        "goldens/root_dfv2acpi_console_spike.cm",
+        "goldens/elf_runner.cm",
+        "goldens/cerise_logsink.cm",
+        "goldens/driver_index_acpi.cm",
+        "goldens/driver_host_dfv2.cm",
+        "goldens/netdev_probe.cm",
+        "goldens/devfs-driver.cm",
+        "goldens/netstack3.cm",
+        "goldens/netstack3_probe.cm",
+        "goldens/root_dfv2acpi_netstack3.cm",
+    ],
+    env = {
+        "MINE_DM": "$(rootpath :driver_manager_rust_dfv2acpi_manifest)",
+        "GT_DM": "$(rootpath goldens/driver_manager_rust_dfv2acpi.cm)",
+        "MINE_ROOT": "$(rootpath :root_dfv2acpi_manifest)",
+        "GT_ROOT": "$(rootpath goldens/root_dfv2acpi.cm)",
+        "MINE_CS": "$(rootpath :root_dfv2acpi_console_spike_manifest)",
+        "GT_CS": "$(rootpath goldens/root_dfv2acpi_console_spike.cm)",
+        "LEAF_NAMES": "elf_runner cerise_logsink driver_index_acpi driver_host_dfv2 netdev_probe devfs-driver netstack3 netstack3_probe root_dfv2acpi_netstack3 nvme_probe ahci_probe crypt_fxfs fxfs_probe fxfs fshost fasync_tcp_spike fileserver root_dfv2acpi_fasync_spike root_dfv2acpi_fileserver root_dfv2acpi_console pci_probe virtio_net network_device e1000 nvme ahci display",
+        "MINE_LEAVES": "$(rootpath :elf_runner_manifest) $(rootpath :cerise_logsink_manifest) $(rootpath :driver_index_acpi_manifest) $(rootpath :driver_host_dfv2_manifest) $(rootpath :netdev_probe_manifest) $(rootpath :devfs-driver_manifest) $(rootpath :netstack3_manifest) $(rootpath :netstack3_probe_manifest) $(rootpath :root_dfv2acpi_netstack3_manifest) $(rootpath :nvme_probe_manifest) $(rootpath :ahci_probe_manifest) $(rootpath :crypt_fxfs_manifest) $(rootpath :fxfs_probe_manifest) $(rootpath :fxfs_manifest) $(rootpath :fshost_manifest) $(rootpath :fasync_tcp_spike_manifest) $(rootpath :fileserver_manifest) $(rootpath :root_dfv2acpi_fasync_spike_manifest) $(rootpath :root_dfv2acpi_fileserver_manifest) $(rootpath :root_dfv2acpi_console_manifest) $(rootpath :pci_probe_manifest) $(rootpath :virtio_net_manifest) $(rootpath :network_device_manifest) $(rootpath :e1000_manifest) $(rootpath :nvme_manifest) $(rootpath :ahci_manifest) $(rootpath :display_manifest)",
+        "GT_LEAVES": "$(rootpath goldens/elf_runner.cm) $(rootpath goldens/cerise_logsink.cm) $(rootpath goldens/driver_index_acpi.cm) $(rootpath goldens/driver_host_dfv2.cm) $(rootpath goldens/netdev_probe.cm) $(rootpath goldens/devfs-driver.cm) $(rootpath goldens/netstack3.cm) $(rootpath goldens/netstack3_probe.cm) $(rootpath goldens/root_dfv2acpi_netstack3.cm) $(rootpath goldens/nvme_probe.cm) $(rootpath goldens/ahci_probe.cm) $(rootpath goldens/crypt_fxfs.cm) $(rootpath goldens/fxfs_probe.cm) $(rootpath goldens/fxfs.cm) $(rootpath goldens/fshost.cm) $(rootpath goldens/fasync_tcp_spike.cm) $(rootpath goldens/fileserver.cm) $(rootpath goldens/root_dfv2acpi_fasync_spike.cm) $(rootpath goldens/root_dfv2acpi_fileserver.cm) $(rootpath goldens/root_dfv2acpi_console.cm) $(rootpath goldens/pci_probe.cm) $(rootpath goldens/virtio_net.cm) $(rootpath goldens/network_device.cm) $(rootpath goldens/e1000.cm) $(rootpath goldens/nvme.cm) $(rootpath goldens/ahci.cm) $(rootpath goldens/display.cm)",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)

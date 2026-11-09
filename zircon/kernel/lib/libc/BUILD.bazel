@@ -1,0 +1,181 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cstring_arch_x86_headers",
+    hdrs = glob(["string/arch/x86/include/**/*.h"], allow_empty = True),
+    includes = ["string/arch/x86/include"],
+)
+
+cc_library(
+    name = "libc",
+    srcs = [
+        "abort.cc",
+        "atomic.cc",
+        "ctype.cc",
+        "cxa_atexit.cc",
+        "cxa_pure_virtual.cc",
+        "fprintf.cc",
+        "printf.cc",
+        "rand.cc",
+        "snprintf.cc",
+        "string-file.cc",
+        "strtol.cc",
+        "strtoul.cc",
+        "string/memchr.c",
+        "string/memcmp.c",
+        "string/memcpy.c",
+        "string/memmove.c",
+        "string/memset.c",
+        "string/strcat.c",
+        "string/strchr.c",
+        "string/strcmp.c",
+        "string/strcoll.c",
+        "string/strcpy.c",
+        "string/strlcat.c",
+        "string/strlcpy.c",
+        "string/strlen.c",
+        "string/strncat.c",
+        "string/strncmp.c",
+        "string/strncpy.c",
+        "string/strnicmp.c",
+        "string/strnlen.c",
+        "string/strpbrk.c",
+        "string/strrchr.c",
+        "string/strspn.c",
+        "string/strstr.c",
+        "string/strtok.c",
+        "string/strxfrm.c",
+    ],
+
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "phys_libc",
+    srcs = [
+        ":physload_cxx_sources",
+        ":physload_c_sources",
+        "cxa_pure_virtual.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//:kernel_cc_headers",
+        "//build/phys:phys_include_overrides",
+    ],
+)
+
+exports_files([
+    "abort.cc",
+    "cxa_atexit.cc",
+    "cxa_pure_virtual.cc",
+    "fprintf.cc",
+    "printf.cc",
+    "string/memchr.c",
+    "string/memcmp.c",
+    "string/memcpy.c",
+    "string/memset.c",
+    "string/strcmp.c",
+    "string/strlen.c",
+    "string/strnlen.c",
+], visibility = ["//kernel:__pkg__"])
+
+filegroup(
+    name = "runtime_gap_c_sources",
+    srcs = [
+        "string/memmove.c",
+        "string/strchr.c",
+        "string/strncmp.c",
+        "string/strpbrk.c",
+        "string/strspn.c",
+        "string/strtok.c",
+    ],
+    visibility = [
+        "//kernel:__pkg__",
+        "//:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "runtime_gap_cxx_sources",
+    srcs = [
+        "ctype.cc",
+        "rand.cc",
+        "strtol.cc",
+    ],
+    visibility = [
+        "//kernel:__pkg__",
+        "//:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "physload_cxx_sources",
+    srcs = [
+        "abort.cc",
+        "ctype.cc",
+        "fprintf.cc",
+        "printf.cc",
+        "snprintf.cc",
+        "string-file.cc",
+        "strtoul.cc",
+    ],
+)
+
+filegroup(
+    name = "physload_c_sources",
+    srcs = [
+        "string/memchr.c",
+        "string/memcmp.c",
+        "string/memcpy.c",
+        "string/memmove.c",
+        "string/memset.c",
+        "string/strcmp.c",
+        "string/strlen.c",
+        "string/strlcpy.c",
+        "string/strnlen.c",
+    ],
+)
+
+filegroup(
+    name = "boot_shim_cxx_sources",
+    srcs = [
+        "abort.cc",
+        "ctype.cc",
+        "cxa_pure_virtual.cc",
+        "fprintf.cc",
+        "printf.cc",
+        "snprintf.cc",
+        "string-file.cc",
+        "strtoul.cc",
+    ],
+)
+
+filegroup(
+    name = "userboot_payload_c_sources",
+    srcs = [
+        "string/memchr.c",
+        "string/memcmp.c",
+        "string/memcpy.c",
+        "string/memmove.c",
+        "string/memset.c",
+        "string/strcmp.c",
+        "string/strlen.c",
+        "string/strlcpy.c",
+        "string/strnlen.c",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob([
+        "include/**/*.h",
+        "include-after/**/*.h",
+    ], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

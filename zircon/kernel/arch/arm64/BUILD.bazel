@@ -1,0 +1,66 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([])
+
+cc_library(
+    name = "arm64",
+    srcs = [
+        "arch.cc",
+        "asid_allocator.cc",
+        "asid_allocator.h",
+        "asm.S",
+        # cache-ops.S is in lib/arch/arm64; the arch/ variant is included here.
+        "cache-ops.S",
+        "crashlog.cc",
+        # dap.cc excluded: requires <dev/coresight/rom_table.h> not present in this tree
+        "dap_stub.cc",
+        "debugger.cc",
+        "exceptions.S",
+        "exceptions_c.cc",
+        "feature.cc",
+        "fpu.cc",
+        "handoff.cc",
+        "mexec.S",
+        "mmu.cc",
+        "mp.cc",
+        "perf_mon.cc",
+        "periphmap.cc",
+        "registers.cc",
+        "restricted.cc",
+        "secondary.S",
+        "smccc.S",
+        "smccc.h",
+        "spinlock.cc",
+        "sysreg.cc",
+        "thread.cc",
+        "uarch.cc",
+        "uspace_entry.S",
+        # coresight.cc excluded: requires <dev/coresight/rom_table.h> not present
+    ],
+    alwayslink = True,
+    deps = [
+        "//abi:zx_syscall_headers",
+        "//zircon/kernel/dev/interrupt/gic/common:gic_common",
+        "//zircon/kernel/dev/interrupt/gic/v2:gicv2",
+        "//zircon/kernel/dev/interrupt/gic/v3:gicv3",
+        "//zircon/kernel/dev/psci:psci",
+        "//zircon/kernel/dev/timer/arm_generic:arm_generic_timer",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/lib/instrumentation",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "arch_phys_headers",
+    srcs = ["//zircon/kernel/arch/arm64/phys:phys_arch_headers_fg"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

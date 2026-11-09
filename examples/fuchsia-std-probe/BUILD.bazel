@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# a trivial std-using rlib. Build it for the Fuchsia target
+# with:
+#   bazel build //examples/fuchsia-std-probe:fuchsia_std_probe \
+#     --platforms=//platforms:x64-fuchsia
+# A green build proves std resolves+compiles for x86_64-unknown-fuchsia.
+rust_library(
+    name = "fuchsia_std_probe",
+    srcs = ["src/lib.rs"],
+    edition = "2021",
+)

@@ -1,0 +1,27 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/test.gni")
+import("//build/testing/bootfs_test.gni")
+
+group("test") {
+  testonly = true
+  deps = [ ":zircon-assert-libc-test" ]
+}
+
+test("zircon-assert-libc-test") {
+  output_name = "zircon-assert-libc-test-test"
+  sources = [ "zircon-assert-libc-test.cc" ]
+  deps = [
+    "//sdk/lib/fdio",
+    "//sdk/lib/zircon-assert",
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
+bootfs_test("zircon-assert-libc-test-bootfs-test") {
+  name = "zircon-assert-libc-test-test"
+  deps = [ ":zircon-assert-libc-test" ]
+}

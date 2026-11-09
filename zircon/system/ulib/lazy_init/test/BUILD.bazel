@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_test(
+    name = "lazy_init_tests",
+    srcs = ["lazy_init_tests.cc"],
+    copts = ["-std=c++20"],
+    linkstatic = True,
+    deps = [
+        "//zircon/system/ulib/lazy_init:lazy_init",
+        "//zircon/system/ulib/zxtest:zxtest",
+        "//zircon/system/public:public",
+        "@googletest//:gtest_main",
+    ],
+)

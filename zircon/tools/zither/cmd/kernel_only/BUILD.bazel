@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+go_library(
+    name = "kernel_only_lib",
+    srcs = ["main.go"],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/cmd/kernel_only",
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//zircon/tools/zither",
+        "//zircon/tools/zither/backends/kernel",
+    ],
+)
+
+go_binary(
+    name = "zither_kernel",
+    embed = [":kernel_only_lib"],
+)

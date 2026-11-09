@@ -1,0 +1,69 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pc",
+    srcs = [
+        "interrupt_manager.h",
+        "acpi.cc",
+        "cmos_bootbyte.cc",
+        "dev-init.cc",
+        "efi_expected.cc",
+        "hpet.cc",
+        "interrupts.cc",
+        "keyboard.cc",
+        "memory.cc",
+        "pic.cc",
+        "platform.cc",
+        "power.cc",
+        "smbios.cc",
+        "timer.cc",
+        "uart.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//zircon/system/ulib/explicit-memory:explicit-memory",
+        "//zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//zircon/system/ulib/ram-crashlog:ram-crashlog",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//zircon/system/ulib/smbios:smbios",
+        "//zircon/system/ulib/uart:uart",
+        "//zircon/third_party/ulib/cksum:cksum",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "acpi.cc",
+        "cmos_bootbyte.cc",
+        "dev-init.cc",
+        "efi_expected.cc",
+        "hpet.cc",
+        "interrupts.cc",
+        "keyboard.cc",
+        "memory.cc",
+        "pic.cc",
+        "platform.cc",
+        "smbios.cc",
+        "timer.cc",
+        "uart.cc",
+    ],
+)
+
+filegroup(
+    name = "power_source",
+    srcs = ["power.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

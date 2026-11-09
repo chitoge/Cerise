@@ -1,0 +1,6 @@
+title: Cerise
+description: A Bazel-native, composable operating system derived from Fuchsia.
+theme: jekyll-theme-minimal
+exclude:
+  - "**/BUILD.bazel"
+  - "**/*.gen.md"

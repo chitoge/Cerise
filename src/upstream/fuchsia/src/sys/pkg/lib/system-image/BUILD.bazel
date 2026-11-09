@@ -1,0 +1,35 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "system-image",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "system_image",
+    edition = "2024",
+    deps = [
+        "//src/cerise/stubs/blobfs:blobfs",
+        "//src/cerise/stubs/fuchsia_inspect:fuchsia_inspect",
+        "//src/upstream/fuchsia/src/lib/buf-read-ext:buf-read-ext",
+        "//src/upstream/fuchsia/src/lib/collections/sorted-vec-map:sorted-vec-map",
+        "//src/upstream/fuchsia/src/lib/fuchsia-url:fuchsia-url",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/package-directory:package-directory",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ],
+)
+
+# tests excluded (RUNG 2): every #[cfg(test)] mod here
+# needs at least one of three crates that are not vendored/wired anywhere in
+# this tree at all (no BUILD.bazel, no src/ directory under
+# src/upstream/fuchsia): `diagnostics_assertions` (cache_packages.rs),
+# `blobfs_ramdisk` + `fuchsia_pkg_testing` (system_image.rs, a real-blobfs
+# test fixture harness - blobfs_ramdisk in particular is a thin wrapper
+# around the real (non-stub) blobfs, which needs the real `zx` crate and so
+# is out of scope per the zx-shim hard wall). Wiring these tests needs those
+# crates vendored and built first, not just a BUILD/@crates change.

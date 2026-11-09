@@ -1,0 +1,36 @@
+package(default_visibility = ["//visibility:public"])
+
+# Minimal arm64 Zircon userland binary.
+# Built as a PIE ELF via genrule (no Bazel arm64-user toolchain needed —
+# prebuilt clang targets aarch64-unknown-linux-gnu directly).
+
+genrule(
+    name = "hello_arm64_bin",
+    srcs = ["entry.S", "main.c"],
+    outs = ["hello_arm64.elf"],
+    cmd = " && ".join([
+        "set -e",
+        "clang=$(location //toolchain:prebuilt_clang)",
+        "ld=$(location //toolchain:prebuilt_ld_lld)",
+        # Assemble entry.S: PIE, freestanding, no stdlib.
+        "$$clang --target=aarch64-unknown-linux-gnu" +
+        "  -ffreestanding -fno-builtin -nostdlib -fPIC -fno-exceptions" +
+        "  -c $(location entry.S) -o $(RULEDIR)/entry.o",
+        # Compile main.c: same flags, no system includes.
+        "$$clang --target=aarch64-unknown-linux-gnu" +
+        "  -ffreestanding -fno-builtin -nostdlib -nostdinc -fPIC -fno-exceptions" +
+        "  -O2 -c $(location main.c) -o $(RULEDIR)/main.o",
+        # Link as PIE: no dynamic linker, no stdlib, entry = _start.
+        # -z separate-code ensures each PT_LOAD is on distinct 4KB pages
+        # (elfldltl requires non-overlapping p_align-aligned file offsets).
+        # lld does not accept --target; use -m for the emulation instead.
+        "$$ld -m aarch64linux" +
+        "  -pie -nostdlib --no-dynamic-linker --build-id=sha1" +
+        "  -z max-page-size=4096 -z separate-code --entry=_start" +
+        "  $(RULEDIR)/entry.o $(RULEDIR)/main.o -o $@",
+    ]),
+    tools = [
+        "//toolchain:prebuilt_clang",
+        "//toolchain:prebuilt_ld_lld",
+    ],
+)

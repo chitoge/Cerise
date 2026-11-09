@@ -1,0 +1,43 @@
+# Bazel integration for this imported target. packet-formats:
+# the netstack3 wire-format parsers/serializers (Ethernet/ARP/IP/ICMP/TCP/UDP/...).
+# Replaces the upstream GN BUILD (the fuzz/mdns/dhcp deps there belong to other
+# targets). derivative is a proc-macro -> proc_macro_deps.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "packet-formats",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = ["@crates//:derivative"],
+    deps = [
+        "//src/upstream/fuchsia/src/connectivity/lib/internet-checksum",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "@crates//:byteorder",
+        "@crates//:either",
+        "@crates//:log",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+)
+
+# gmp.rs's and icmp/mod.rs's #[cfg(test)] mods
+# do `use ip_test_macro::ip_test;` (now vendored - see
+# //src/upstream/fuchsia/src/connectivity/lib/ip-test-macro's BUILD.bazel);
+# most other test mods across the crate do `use test_case::test_case;` /
+# `use assert_matches::assert_matches;`. `testdata`/`testutil` are
+# unconditional `pub mod`s already covered by the library's srcs glob.
+rust_test(
+    name = "packet-formats_test",
+    crate = ":packet-formats",
+    edition = "2024",
+    proc_macro_deps = ["//src/upstream/fuchsia/src/connectivity/lib/ip-test-macro"],
+    deps = [
+        "@crates//:assert_matches",
+        "@crates//:test-case",
+    ],
+)

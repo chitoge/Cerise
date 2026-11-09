@@ -1,0 +1,1496 @@
+load("//bazel:fuchsia_platform.bzl", "cerise_artifact", "fuchsia_stripped")
+load("//bazel:zircon_system.bzl", "zircon_system")
+load("//assembly:defs.bzl", "cerise_product")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+# Baseline smoke product: kernel + userboot-smoke, no extras.
+zircon_system(
+    name = "x64-smoke",
+)
+
+# cf-sz5-smoke: minimal bring-up probe for the Panasonic CF-SZ5 (//boards/cf-sz5).
+# x64-smoke (kernel + userboot-smoke, no drivers, no userspace stack) carrying
+# the board's console cmdline, so it exercises the console and nothing else. At
+# ~8 MB against the ~60 MB first-light image it also separates "the console is
+# wrong" from "the ESP load is slow or failing".
+#
+# It inherits x64-smoke's `userboot.next-is-test=true`, so on success userboot
+# prints CERISE-SMOKE-OK and then calls
+# zx_system_powerctl(ZX_SYSTEM_POWERCTL_SHUTDOWN)
+# (zircon/kernel/lib/userabi/userboot/start.cc HandleTermination).
+#
+# MEASURED ON THE REAL UNIT (2026-07-25), and worth recording because the
+# obvious interpretation is wrong: powering off is NOT a reliable out-of-band
+# "it booted" signal here. Booting this image left the machine On and it fell
+# back to the previous OS ~20s later than a plain reboot, and a variant built
+# with `userboot.next-is-test=false` (which exits instead of shutting down)
+# behaved the SAME. Both endings are a machine that stops running Cerise, so on
+# this box neither distinguishes "kernel ran and finished" from "loader gave up".
+# The image that actually discriminates is the first-light one: it starts
+# component_manager and never terminates, so the machine simply never returns to
+# the fallback OS — which is what was observed, twice, for >4 minutes each.
+zircon_system(
+    name = "cf-sz5-smoke",
+    cmdline = ["kernel.serial=ioport,0xf0a0,0"],
+)
+
+# post-mortem gate product (//validation:crashlog-boot). x64-smoke plus:
+#   * a ZBI_TYPE_NVRAM persistent-RAM region so the PC platform binds
+#     MappedCrashlog (ram-crashlog) instead of the no-op crashlog. Placed at
+#     0x40000000 (1 GiB) — the MIDDLE of the 2 GiB guest the harness boots — so
+#     it is clear of BOTH the low kernel decompression AND the high data-ZBI
+#     reload that a `-kernel` warm reboot performs; the kernel carves it out
+#     (memalloc::Type::kNvram) so it is never used for general allocation, and
+#     QEMU DRAM contents survive `system_reset`, so a stowed crashlog persists.
+#   * kernel.cerise-test-crashlog=true: the self-terminating recovery-gated
+#     trigger (zircon/kernel/platform/pc/platform.cc cerise_crashlog_test_hook) —
+#     panic on the cold boot, print the recovered crashlog on the warm boot.
+# Test-only; never referenced by a real product.
+zircon_system(
+    name = "x64-crashlog",
+    cmdline = ["kernel.cerise-test-crashlog=true"],
+    nvram = ["0x40000000,0x20000"],
+)
+
+# VMM host: boots the native cerise userspace VMM (src/cerise/vmm) as the initial
+# process. cerise_rt extracts the SYSTEM resource from the bootstrap message so the
+# VMM's guest_create succeeds; it then launches its embedded guest blob. Requires a
+# host that exposes hardware virtualization (VMX) to the guest; on a platform
+# without it the VMM takes its guest_create-failure path.
+# Stage the VMM binary under //platforms:x64-user (Cerise static-PIE userspace).
+cerise_artifact(
+    name = "cerise-vmm.staged",
+    src = "//src/cerise/vmm:cerise-vmm",
+)
+
+zircon_system(
+    name = "x64-vmm",
+    cmdline = ["userboot.next=bin/cerise-vmm"],
+    extra_bootfs = {"bin/cerise-vmm": ":cerise-vmm.staged"},
+)
+
+# Arm64 smoke product — qemu-system-aarch64 -M virt (GICv2/v3, PL011, PSCI).
+# No userboot/vdso: first-boot acceptance uses kernel-level serial markers only.
+# QEMU arm64 virt DRAM: 0x40000000 base, 0x80000000 length (2GB), type=RAM(1).
+zircon_system(
+    name = "arm64-smoke",
+    physload = "//build/phys:arm64-physload",
+    kernel_storage = "//build/kernel:arm64_kernel_storage_zbi",
+    mem_config = ["0x40000000,0x80000000,1"],
+)
+
+# arm64 userspace boot demo — hello-arm64 as initial process.
+zircon_system(
+    name = "arm64-hello",
+    physload = "//build/phys:arm64-physload",
+    kernel_storage = "//build/kernel:arm64_kernel_storage_zbi",
+    mem_config = ["0x40000000,0x80000000,1"],
+    cmdline = ["userboot.next=bin/hello-arm64", "kernel.enable-serial-syscalls=output-only"],
+    extra_bootfs = {"bin/hello-arm64": "//examples/hello-arm64:hello_arm64_bin"},
+)
+
+# Compatibility labels for artifacts owned by reusable bundles.
+[
+    alias(
+        name = _bundle_artifact,
+        actual = "//bundles/artifacts:%s" % _bundle_artifact,
+    )
+    for _bundle_artifact in [
+        "libc_so.fuchsia",
+        "libfdio_so.fuchsia",
+        "libcxx_so.fuchsia",
+        "libc_so_logsink_pkg.fuchsia",
+        "libfdio_so_logsink_pkg.fuchsia",
+        "libcxx_so_logsink_pkg.fuchsia",
+        "libc_so_driver_manager_pkg.fuchsia",
+        "libfdio_so_driver_manager_pkg.fuchsia",
+        "libcxx_so_driver_manager_pkg.fuchsia",
+    ]
+]
+
+# ---------------------------------------------------------------------------
+# runtime (PCI-enum gate) — STAGING product.
+#
+# This runtime product extends the driver framework by STAGING the two real drivers
+# (board/drivers/x86 + bus/drivers/pci) into bootfs as driver packages: each gets
+# its compiled manifest (.cm), its loadable .so (cc_shared_library; the driver_host
+# provides symbols at dlopen, so no per-package runtime libs), and its bind bytecode
+# (.bindbc) at the CML-referenced meta/bind/ path.
+#
+# NOTE: this only STAGES the artifacts + proves the ZBI assembles. Actually loading
+# and enumerating them requires driver-index real config + driver_host dynamic
+# loading (the compat-shim dlopen path) — the next runtime step. No PCI-enum marker
+# is asserted yet.
+# This was once an unstripped fuchsia_artifact and shipped a
+# 162 MB .so with 91.5 MB of .symtab/.strtab, the single biggest strippable win.
+# Now fuchsia_stripped like every other staged ELF (--strip-all keeps .dynsym, so
+# compat's /pkg/driver read + the loader dlopen are unchanged). The board-owned
+# artifact aliases below keep the historical product labels available.
+
+alias(
+    name = "platform_bus_x86_so.fuchsia",
+    actual = "//boards/x64-artifacts:platform_bus_x86_so.fuchsia",
+)
+
+[
+    alias(
+        name = _bundle_artifact,
+        actual = "//bundles/artifacts:%s" % _bundle_artifact,
+    )
+    for _bundle_artifact in [
+        "compat_so.fuchsia",
+        "libc_so_dhxhost_pkg.fuchsia",
+        "libcxx_so_dhxhost_pkg.fuchsia",
+        "libfdio_so_dhxhost_pkg.fuchsia",
+        "component_manager_stripped.fuchsia",
+        "cerise_logsink_stripped.fuchsia",
+    ]
+]
+
+# ---------------------------------------------------------------------------
+# driver-host Step 4: REAL platform-bus DFv2-native driver as root.
+#
+# Like x64-compat (REAL DriverRunner, root started by-URL) but:
+#   * driver_manager is driver_manager_rust_dfv2platbus (root_driver =
+#     fuchsia-boot:///platform_bus#meta/platform-bus.cm — the REAL DFv2 platform-bus);
+#   * platform-bus is DFv2-native (DriverBase2 + FUCHSIA_DRIVER_EXPORT2), so NO compat shim;
+#   * in Start() it reads ZBI platform ID + board info, publishes a "sys" node, and serves
+#     fuchsia.hardware.platform.bus/PlatformBus for board drivers to bind;
+#   * driver_host_dfv2 dlopens platform-bus.so from pkg/driver_host/lib/.
+#
+# Boot marker (written by zx_debug_write in Start() before return zx::ok()):
+#   CERISE-PLATFORM-BUS-OK
+#
+# This product is COMPILE-ONLY; runtime boot requires kernel resource routing,
+# fuchsia.boot.Items, and fuchsia.system.state.SystemStateTransition which are
+# not yet available in our Cerise boot environment.
+alias(
+    name = "driver_manager_rust_dfv2platbus_stripped.fuchsia",
+    actual = "//bundles/artifacts:driver_manager_rust_dfv2platbus_stripped.fuchsia",
+)
+
+# Compatibility labels for x86-64 board-driver artifacts. Boards consume the
+# concrete targets in //boards/x64-artifacts; preserving these names avoids a
+# needless break for direct users of the former product labels.
+alias(
+    name = "platform_bus_so.fuchsia",
+    actual = "//boards/x64-artifacts:platform_bus_so.fuchsia",
+)
+
+alias(
+    name = "platform_bus_x86_so_dh.fuchsia",
+    actual = "//boards/x64-artifacts:platform_bus_x86_so_dh.fuchsia",
+)
+
+# ---------------------------------------------------------------------------
+# driver-host Step 6: PCI bus enumeration gate.
+#
+# Extends x64-acpi: same root/dm topology; driver_index now indexes BOTH
+# platform-bus-x86 (ACPI + pciroot publisher) AND bus-pci (PCI bus enumerator).
+# When AcpiPciroot DdkAdd's ZX_PROTOCOL_PCIROOT (= 0x20 = BIND_PROTOCOL.ROOT),
+# driver-index matches bus-pci via pci.bind; bus-pci is loaded via the same
+# compat.so path as platform-bus-x86. bus-pci.so is staged in driver_host lib/
+# so load_compat_module's dlopen("bus-pci.so") resolves via the loader service.
+#
+# Expected serial markers:
+#   CERISE-PLATFORM-BUS-OK    : platform-bus root started (prerequisite)
+#   CERISE-ACPI-INIT-OK       : AcpiEnableSubsystem succeeded (ACPICA live)
+#   CERISE-PCIROOT-PUBLISHED  : AcpiPciroot DdkAdd'd (ZX_PROTOCOL_PCIROOT)
+#   CERISE-PCI-ENUM           : bus-pci bound + first valid PCI device found
+
+# driver_index: ONE binary — the boot-driver list is board data
+# delivered in meta/driver_index.cvf, not a compile-time crate-feature variant.
+# The .cvf itself is generated + staged by cerise_product from the driver_framework
+# bundle's AIBInfo.configs entry (board boot_drivers injected via boot_drivers_field).
+alias(
+    name = "driver_index_stripped.fuchsia",
+    actual = "//bundles/artifacts:driver_index_stripped.fuchsia",
+)
+
+alias(
+    name = "bus_pci_so_dh.fuchsia",
+    actual = "//boards/x64-artifacts:bus_pci_so_dh.fuchsia",
+)
+
+alias(
+    name = "bus_pci_so_pkg.fuchsia",
+    actual = "//boards/x64-artifacts:bus_pci_so_pkg.fuchsia",
+)
+
+alias(
+    name = "cerise_pci_probe_so.fuchsia",
+    actual = "//boards/x64-artifacts:cerise_pci_probe_so.fuchsia",
+)
+
+alias(
+    name = "virtio_netdevice_so.fuchsia",
+    actual = "//boards/x64-artifacts:virtio_netdevice_so.fuchsia",
+)
+
+alias(
+    name = "network_device_so.fuchsia",
+    actual = "//boards/x64-artifacts:network_device_so.fuchsia",
+)
+
+alias(
+    name = "e1000_so.fuchsia",
+    actual = "//boards/x64-artifacts:e1000_so.fuchsia",
+)
+
+alias(
+    name = "display_so.fuchsia",
+    actual = "//boards/x64-artifacts:display_so.fuchsia",
+)
+
+alias(
+    name = "gop_display_so.fuchsia",
+    actual = "//boards/x64-artifacts:gop_display_so.fuchsia",
+)
+
+alias(
+    name = "nvme_so.fuchsia",
+    actual = "//boards/x64-artifacts:nvme_so.fuchsia",
+)
+
+alias(
+    name = "ahci_so.fuchsia",
+    actual = "//boards/x64-artifacts:ahci_so.fuchsia",
+)
+
+[
+    alias(
+        name = _bundle_artifact,
+        actual = "//bundles/artifacts:%s" % _bundle_artifact,
+    )
+    for _bundle_artifact in [
+        "libc_so_di_pci_pkg.fuchsia",
+        "libfdio_so_di_pci_pkg.fuchsia",
+        "libcxx_so_di_pci_pkg.fuchsia",
+        "libc_so_netdev_probe_pkg.fuchsia",
+        "libcxx_so_netdev_probe_pkg.fuchsia",
+    ]
+]
+
+# Compatibility labels for package-local libm stubs owned by reusable bundles.
+[
+    alias(
+        name = "libm_so_%s_pkg.fuchsia" % _libm_pkg,
+        actual = "//bundles/artifacts:libm_so_%s_pkg.fuchsia" % _libm_pkg,
+    )
+    for _libm_pkg in [
+        "ahci_probe",
+        "apptier_fetcher",
+        "archivist",
+        "archivist_reader",
+        "cerise_logsink",
+        "conformance_c",
+        "conformance_cxx",
+        "conformance_rust",
+        "crypt_fxfs",
+        "driver_host",
+        "driver_index",
+        "driver_manager_rust_dfv2platbus",
+        "fasync_tcp_spike",
+        "fb_spike",
+        "fileserver",
+        "fshost",
+        "fshost_probe",
+        "fxfs",
+        "fxfs_probe",
+        "fxfs_provisioner",
+        "netdev_probe",
+        "netstack3",
+        "netstack3_probe",
+        "nvme_probe",
+        "pkg_fetcher",
+        "pkg_probe",
+        "pkg_resolver",
+        "posix_probe",
+        "shutdown_trigger",
+        "status_console",
+    ]
+]
+
+[
+    alias(
+        name = _bundle_artifact,
+        actual = "//bundles/artifacts:%s" % _bundle_artifact,
+    )
+    for _bundle_artifact in [
+        "libc_so_nvme_probe_pkg.fuchsia",
+        "libcxx_so_nvme_probe_pkg.fuchsia",
+        "libc_so_ahci_probe_pkg.fuchsia",
+        "libcxx_so_ahci_probe_pkg.fuchsia",
+        "libc_so_crypt_fxfs_pkg.fuchsia",
+        "libcxx_so_crypt_fxfs_pkg.fuchsia",
+        "libc_so_fxfs_probe_pkg.fuchsia",
+        "libcxx_so_fxfs_probe_pkg.fuchsia",
+        "libc_so_fxfs_provisioner_pkg.fuchsia",
+        "libcxx_so_fxfs_provisioner_pkg.fuchsia",
+    ]
+]
+
+# lib/ aliases for the pkg_probe package in qemu-x64-pkg (packages foundation:
+# ingest the demo package's blobs into the fxfs "blob" volume + resolve via package_directory).
+# Same DT_NEEDED closure as the other plain ELF Rust probes (fdio statically linked).
+fuchsia_stripped(
+    name = "libc_so_pkg_probe_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_pkg_probe_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# lib/ aliases for the pkg_resolver package in qemu-x64-pkg (packages:
+# the fuchsia-pkg:// resolver). Same DT_NEEDED closure as the other plain ELF Rust probes.
+fuchsia_stripped(
+    name = "libc_so_pkg_resolver_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_pkg_resolver_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# lib/ aliases for the pkg_fetcher package in qemu-x64-pkg-update (packages:
+# the network update driver). Same DT_NEEDED closure as the other plain ELF Rust probes.
+fuchsia_stripped(
+    name = "libc_so_pkg_fetcher_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_pkg_fetcher_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# lib/ aliases for the apptier_fetcher package in qemu-x64-console-pkg (post-storage app tier).
+fuchsia_stripped(
+    name = "libc_so_apptier_fetcher_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_apptier_fetcher_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+[
+    alias(
+        name = _bundle_artifact,
+        actual = "//bundles/artifacts:%s" % _bundle_artifact,
+    )
+    for _bundle_artifact in [
+        "libc_so_fshost_probe_pkg.fuchsia",
+        "libcxx_so_fshost_probe_pkg.fuchsia",
+        "libc_so_fshost_pkg.fuchsia",
+        "libcxx_so_fshost_pkg.fuchsia",
+        "libc_so_fxfs_bin_pkg.fuchsia",
+        "libcxx_so_fxfs_bin_pkg.fuchsia",
+        "libc_so_netstack3_probe_pkg.fuchsia",
+        "libcxx_so_netstack3_probe_pkg.fuchsia",
+    ]
+]
+
+# lib/ aliases for the fasync_tcp_spike package (gRPC gate initial prototype). Same DT_NEEDED
+# closure as netstack3_probe (real fdio statically linked; ld.so.1 + libc++.so.1 only).
+fuchsia_stripped(
+    name = "libc_so_fasync_spike_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_fasync_spike_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# lib/ aliases for the fileserver package (gRPC gate service integration+). Same DT_NEEDED
+# closure as netstack3_probe (real fdio statically linked; ld.so.1 + libc++.so.1).
+fuchsia_stripped(
+    name = "libc_so_fileserver_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_fileserver_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# ===========================================================================
+# Products: board + bundles + product config through the
+# cerise_product rule. This is now the ONLY product layer — the duplicated
+# linear zircon_system() proof-gate product list it re-expressed has been
+# retired. zircon_system() itself remains above only for the
+# kernel-only smoke images (x64-smoke, arm64-*), which have no board/bundles.
+#
+# The root realm is a first-class cerise_product attr (root_realm = <label>),
+# staged internally at pkg/root/meta/root.cm; it may not appear in
+# product_bootfs. The realm .cml is authored in //src/cerise/realms and
+# compiled by cmc (cerise_component), owning the root topology per §4.
+# ===========================================================================
+
+# qemu-x64-net: board qemu-x64 + component_framework + driver_framework + netstack3.
+# The qemu-x64 board carries the full block-driver stack (nvme/ahci/display); in the
+# net product those are harmless unbound drivers (no nvme_probe/ahci_probe client and
+# display is dormant without a VGA device). netstack3.cm starts cleanly + exposes its
+# protocols; the discovery/HTTP-echo proof rides qemu-x64-fileserver.
+cerise_product(
+    name = "qemu-x64-net",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_netstack3_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:netstack3_probe",
+        "//bundles:network_uplink",
+    ],
+)
+
+# qemu-x64-net-e1000e: identical composition to qemu-x64-net (same board, realm,
+# bundles), but exercised under a DIFFERENT QEMU command line — validation/
+# run-qemu.sh attaches ONLY the e1000e NIC (82574L, `-device e1000e`) with the
+# hostfwd, and NO virtio-net device. With no virtio-net PCI device present the
+# virtio_net driver never binds, so the e1000e driver publishes the sole
+# /dev/class/network entry and netstack3_probe (which picks the first-enumerated
+# instance) drives DHCP DORA over the e1000e's real descriptor rings. Reusing the
+# qemu-x64 board's NIC-neutral network-device capability keeps the external
+# connectivity contract satisfied while its e1000 implementation handles the NIC.
+cerise_product(
+    name = "qemu-x64-net-e1000e",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_netstack3_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:netstack3_probe",
+        "//bundles:network_uplink",
+    ],
+)
+
+# qemu-x64-storage: board qemu-x64 + component_framework + driver_framework +
+# storage_fxfs — the fshost gate (fshost owns the disk lifecycle). The board's
+# fshost owns the disk lifecycle and fshost_probe checks its automatic mount
+# path. Consumed by //validation:fshost-boot + fshost-persistence.
+cerise_product(
+    name = "qemu-x64-storage",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_fshost_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:network_device_probe",
+        "//bundles:storage_fxfs",
+        "//bundles:storage_fxfs_fshost_probe",
+    ],
+)
+
+# qemu-x64-pci: board qemu-x64 + component_framework + driver_framework + direct storage,
+# with the BASE root realm (root_dfv2acpi) — nvme_probe/ahci_probe + fxfs_probe as the
+# active terminal probes (the hand-driven Fxfs format+mount+write+remount+read flagship
+# mount path). This product explicitly selects the direct block validation clients.
+# This is the cerise re-expression
+# of the retired legacy x64-pci kitchen-sink proof product; it has no dedicated boot gate
+# (its markers were folded into the storage/fileserver gates) — its correctness is the
+# bootfs equivalence with qemu-x64-storage's shared driver foundation. Bootable by hand via
+# validation/run-qemu.sh qemu-x64-pci.
+cerise_product(
+    name = "qemu-x64-pci",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:network_device_probe",
+        "//bundles:storage_fxfs_core",
+        "//bundles:storage_fxfs_block_probes",
+    ],
+)
+
+# qemu-x64-pkg: the packages foundation. Same board + bundles as
+# qemu-x64-storage (component_framework + driver_framework + storage_fxfs), but the root
+# realm is root_dfv2acpi_pkg — the terminal consumer is pkg_probe (not fshost_probe):
+# after fshost auto-mounts, pkg_probe ingests a REAL Fuchsia package (meta.far + content
+# blobs, built by cerise_package) into fshost's fxfs "blob" volume via
+# fuchsia.fxfs/BlobCreator, then resolves it with the vendored package_directory crate
+# (meta/package + the .cm + a content blob read back, merkle-verified). This realm
+# uses no storage validation client; the board's display remains dormant.
+# The demo package's blobs are staged into pkg_probe's OWN package (read from /pkg).
+# Consumed by //validation:pkg-boot.
+cerise_product(
+    name = "qemu-x64-pkg",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_pkg_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:network_device_probe",
+        "//bundles:storage_fxfs",
+    ],
+    product_bootfs = {
+        # pkg_probe: the packages-foundation terminal consumer (replaces fshost_probe here).
+        "pkg/pkg_probe/meta/pkg_probe.cm": "//src/cerise/realms:pkg_probe_manifest",
+        "pkg/pkg_probe/bin/pkg_probe": "//src/cerise/pkg_probe:pkg_probe_stripped.fuchsia",
+        "pkg/pkg_probe/lib/ld.so.1": ":libc_so_pkg_probe_pkg.fuchsia",
+        "pkg/pkg_probe/lib/libm.so": ":libm_so_pkg_probe_pkg.fuchsia",
+        "pkg/pkg_probe/lib/libc++.so.1": ":libcxx_so_pkg_probe_pkg.fuchsia",
+        # The demonstration package's blobs (meta.far + 4 content blobs + ingest manifest),
+        # staged into pkg_probe's OWN package so it reads them from /pkg and ingests them into the
+        # fxfs "blob" volume. Blob order (cerise_package sorts by package path): blob_0 bin/pkg_hello,
+        # blob_1 lib/ld.so.1, blob_2 lib/libc++.so.1, blob_3 lib/libm.so.
+        "pkg/pkg_probe/blobs/meta.far": "//src/cerise/pkg_hello:pkg_hello_meta_far",
+        "pkg/pkg_probe/blobs/manifest.json": "//src/cerise/pkg_hello:pkg_hello_manifest_json",
+        "pkg/pkg_probe/blobs/blob_0": "//src/cerise/pkg_hello:pkg_hello_blob_0",
+        "pkg/pkg_probe/blobs/blob_1": "//src/cerise/pkg_hello:pkg_hello_blob_1",
+        "pkg/pkg_probe/blobs/blob_2": "//src/cerise/pkg_hello:pkg_hello_blob_2",
+        "pkg/pkg_probe/blobs/blob_3": "//src/cerise/pkg_hello:pkg_hello_blob_3",
+        # pkg_resolver: the fuchsia-pkg:// resolver. Its static name->merkle index
+        # is the SAME build-time ingest manifest, staged at /pkg/index/manifest.json.
+        "pkg/pkg_resolver/meta/pkg_resolver.cm": "//src/cerise/realms:pkg_resolver_manifest",
+        "pkg/pkg_resolver/bin/pkg_resolver": "//src/cerise/pkg_resolver:pkg_resolver_stripped.fuchsia",
+        "pkg/pkg_resolver/lib/ld.so.1": ":libc_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libm.so": ":libm_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libc++.so.1": ":libcxx_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/index/manifest.json": "//src/cerise/pkg_hello:pkg_hello_index_json",
+    },
+)
+
+# qemu-x64-pkg-update: packages — UPDATABLE packages over the network. Same board
+# as qemu-x64-pkg plus netstack3 and network_uplink (for the network stack and
+# a board-provided external interface). The root
+# realm is root_dfv2acpi_pkg_update: pkg_fetcher ingests the BASE package v1, launches it from the
+# bootfs BASE index, then DOWNLOADS v2 over the network from the host, merkle-verifies + installs it,
+# registers it in the PERSISTENT dynamic index on the fxfs data volume, and launches v2 from the
+# dynamic index (which shadows base). On reboot the index + blobs persist -> v2 resolves with no
+# re-fetch. Only v1's blobs ship in the image (as the fetcher's ingest source + the resolver's base
+# index); v2's artifacts are the gate's host-served download payload. Consumed by
+# //validation:pkg-update-boot.
+cerise_product(
+    name = "qemu-x64-pkg-update",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_pkg_update_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+        "//bundles:storage_fxfs",
+    ],
+    product_bootfs = {
+        # pkg_fetcher: the update driver (replaces pkg_probe here).
+        "pkg/pkg_fetcher/meta/pkg_fetcher.cm": "//src/cerise/realms:pkg_fetcher_manifest",
+        "pkg/pkg_fetcher/bin/pkg_fetcher": "//src/cerise/pkg_fetcher:pkg_fetcher_stripped.fuchsia",
+        "pkg/pkg_fetcher/lib/ld.so.1": ":libc_so_pkg_fetcher_pkg.fuchsia",
+        "pkg/pkg_fetcher/lib/libm.so": ":libm_so_pkg_fetcher_pkg.fuchsia",
+        "pkg/pkg_fetcher/lib/libc++.so.1": ":libcxx_so_pkg_fetcher_pkg.fuchsia",
+        # (signed index): the ed25519 PUBLIC key the fetcher verifies downloaded signed entries
+        # against (fail-fast) before merging them into the persistent dynamic index.
+        "pkg/pkg_fetcher/keys/pkg_index_pub.ed25519": "//src/cerise/pkg_hello_update:pkg_index_pubkey_fetcher",
+        # The BASE package (v1) blobs + ingest manifest, staged into pkg_fetcher's OWN package so it
+        # reads them from /pkg and ingests them into the fxfs "blob" volume. Blob order (sorted by
+        # package path): blob_0 bin/pkg_hello, blob_1 lib/ld.so.1, blob_2 lib/libc++.so.1, blob_3
+        # lib/libm.so. v2 is NOT staged — it comes over the network.
+        "pkg/pkg_fetcher/blobs/meta.far": "//src/cerise/pkg_hello_update:pkg_hello_v1_meta_far",
+        "pkg/pkg_fetcher/blobs/manifest.json": "//src/cerise/pkg_hello_update:pkg_hello_v1_manifest_json",
+        "pkg/pkg_fetcher/blobs/blob_0": "//src/cerise/pkg_hello_update:pkg_hello_v1_blob_0",
+        "pkg/pkg_fetcher/blobs/blob_1": "//src/cerise/pkg_hello_update:pkg_hello_v1_blob_1",
+        "pkg/pkg_fetcher/blobs/blob_2": "//src/cerise/pkg_hello_update:pkg_hello_v1_blob_2",
+        "pkg/pkg_fetcher/blobs/blob_3": "//src/cerise/pkg_hello_update:pkg_hello_v1_blob_3",
+        # pkg_resolver: its BASE index is v1's ingest manifest (pkg_hello -> v1 merkle). The dynamic
+        # index (written by pkg_fetcher onto the data volume) shadows this at resolve time.
+        "pkg/pkg_resolver/meta/pkg_resolver.cm": "//src/cerise/realms:pkg_resolver_manifest",
+        "pkg/pkg_resolver/bin/pkg_resolver": "//src/cerise/pkg_resolver:pkg_resolver_stripped.fuchsia",
+        "pkg/pkg_resolver/lib/ld.so.1": ":libc_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libm.so": ":libm_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libc++.so.1": ":libcxx_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/index/manifest.json": "//src/cerise/pkg_hello_update:pkg_hello_v1_index_json",
+        # (signed index): the ed25519 PUBLIC key the resolver verifies dynamic-index entries
+        # against at load — the trust boundary that honors ONLY signer-blessed entries.
+        "pkg/pkg_resolver/keys/pkg_index_pub.ed25519": "//src/cerise/pkg_hello_update:pkg_index_pubkey_resolver",
+    },
+)
+
+# qemu-x64-fasync-spike: gRPC gate initial prototype de-risk product. Same board + bundles as
+# qemu-x64-net (component_framework + driver_framework + netstack3), but the root realm
+# is root_dfv2acpi_fasync_spike (netstack3_probe swapped for fasync_tcp_spike), and the
+# fasync_tcp_spike component is staged via product_bootfs. The realm does not launch
+# netstack3_probe, so it selects only the network stack. Proves
+# fuchsia_async::net async TCP accept+echo on real netstack3, host-reachable
+# through QEMU host forwarding.
+# lib/ aliases for the crash_handler + crasher packages (post-mortem gate).
+# Both are Rust ELF components linking -lc++: DT_NEEDED = libzircon.so (vDSO,
+# always present) + libc.so (staged as ld.so.1) + libc++.so.1. One distinct alias
+# per package dest (bootfs staging can't point two dests at one label).
+fuchsia_stripped(
+    name = "libc_so_crash_handler_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_crash_handler_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "libc_so_crasher_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_crasher_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# lib/ aliases for the perfmon package (PMU path A). A Rust ELF component linking
+# -lc++: DT_NEEDED = libzircon.so (vDSO) + libc.so (ld.so.1) + libc++.so.1.
+fuchsia_stripped(
+    name = "libc_so_perfmon_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_perfmon_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# qemu-x64-crash-handler (post-mortem gate //validation:crash-handler-boot):
+# a MINIMAL component realm (root_crash_handler: elf_runner + crash_handler eager +
+# crasher lazy, no driver/storage/network stack) so the gate exercises only the
+# root-job exception path. crash_handler holds the narrowly-routed fuchsia.kernel.RootJob
+# and observes crasher's null-deref crash, emitting symbolizer markup.
+cerise_product(
+    name = "qemu-x64-crash-handler",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_crash_handler_manifest",
+    bundles = [
+        "//bundles:component_framework_minimal",
+    ],
+    product_bootfs = {
+        "pkg/crash_handler/meta/crash_handler.cm": "//src/cerise/realms:crash_handler_manifest",
+        "pkg/crash_handler/bin/crash_handler": "//src/cerise/crash_handler:crash_handler_bin_stripped.fuchsia",
+        "pkg/crash_handler/lib/ld.so.1": ":libc_so_crash_handler_pkg.fuchsia",
+        "pkg/crash_handler/lib/libc++.so.1": ":libcxx_so_crash_handler_pkg.fuchsia",
+        "pkg/crasher/meta/crasher.cm": "//src/cerise/realms:crasher_manifest",
+        "pkg/crasher/bin/crasher": "//src/cerise/crasher:crasher_bin_stripped.fuchsia",
+        "pkg/crasher/lib/ld.so.1": ":libc_so_crasher_pkg.fuchsia",
+        "pkg/crasher/lib/libc++.so.1": ":libcxx_so_crasher_pkg.fuchsia",
+    },
+)
+
+# qemu-x64-perfmon (PMU path A gate //validation:perfmon-boot): a MINIMAL component
+# realm (root_perfmon: elf_runner + perfmon eager, no driver/storage/network stack) so
+# the gate exercises only the zx_mtrace_control(MTRACE_KIND_PERFMON) syscall path.
+#
+# SECURITY NOTE: `cmdline` sets kernel.enable-debugging-syscalls=true, which unlocks
+# zx_mtrace_control AND the other debug syscalls (see zircon/kernel/lib/syscalls/debug.cc
+# — sys_mtrace_control gates on BootOptions::enable_debugging_syscalls). This is a
+# dev/profiling image ONLY; it is deliberately kept out of every default/shipping product
+# and out of //validation:smoke-uefi-boot's product set. The flag is a KERNEL CMDLINE arg
+# (set here per-product), NOT a cm_config field — cm_config's DebugResource builtin is
+# additive and unused by products that don't route it.
+cerise_product(
+    name = "qemu-x64-perfmon",
+    board = "//boards/qemu-x64",
+    cmdline = ["kernel.enable-debugging-syscalls=true"],
+    root_realm = "//src/cerise/realms:root_perfmon_manifest",
+    bundles = [
+        "//bundles:component_framework_minimal",
+    ],
+    product_bootfs = {
+        "pkg/perfmon/meta/perfmon.cm": "//src/cerise/realms:perfmon_manifest",
+        "pkg/perfmon/bin/perfmon": "//src/cerise/perfmon:perfmon_bin_stripped.fuchsia",
+        "pkg/perfmon/lib/ld.so.1": ":libc_so_perfmon_pkg.fuchsia",
+        "pkg/perfmon/lib/libc++.so.1": ":libcxx_so_perfmon_pkg.fuchsia",
+    },
+)
+
+cerise_product(
+    name = "qemu-x64-fasync-spike",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_fasync_spike_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/fasync_tcp_spike/meta/fasync_tcp_spike.cm": "//src/cerise/realms:fasync_tcp_spike_manifest",
+        "pkg/fasync_tcp_spike/bin/fasync_tcp_spike": "//src/cerise/fasync_tcp_spike:fasync_tcp_spike_stripped.fuchsia",
+        "pkg/fasync_tcp_spike/lib/ld.so.1": ":libc_so_fasync_spike_pkg.fuchsia",
+        "pkg/fasync_tcp_spike/lib/libm.so": ":libm_so_fasync_tcp_spike_pkg.fuchsia",
+        "pkg/fasync_tcp_spike/lib/libc++.so.1": ":libcxx_so_fasync_spike_pkg.fuchsia",
+    },
+)
+
+# qemu-x64-fileserver: gRPC gate service integration — the flagship gRPC file server product.
+# board qemu-x64 + component_framework + driver_framework + netstack3; the root realm
+# is root_dfv2acpi_fileserver (netstack3_probe swapped for the fileserver component),
+# and the fileserver package is staged via product_bootfs. Storage-backed integration adds the
+# crypt-only storage core; fileserver embeds Fxfs in-process and launches crypt_fxfs, so no
+# standalone Fxfs or fshost binary is staged here.
+cerise_product(
+    name = "qemu-x64-fileserver",
+    board = "//boards/qemu-x64",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+        # Storage-backed integration stages the crypt service. The
+        # fileserver realm starts only crypt_fxfs and fileserver; it does not
+        # select any storage validation client and is the sole block claimant.
+        "//bundles:storage_fxfs_core",
+    ],
+    root_realm = "//src/cerise/realms:root_dfv2acpi_fileserver_manifest",
+    product_bootfs = {
+        "pkg/fileserver/meta/fileserver.cm": "//src/cerise/realms:fileserver_manifest",
+        "pkg/fileserver/bin/fileserver": "//src/cerise/fileserver:fileserver_stripped.fuchsia",
+        "pkg/fileserver/lib/ld.so.1": ":libc_so_fileserver_pkg.fuchsia",
+        "pkg/fileserver/lib/libm.so": ":libm_so_fileserver_pkg.fuchsia",
+        "pkg/fileserver/lib/libc++.so.1": ":libcxx_so_fileserver_pkg.fuchsia",
+    },
+)
+
+# ===========================================================================
+# Status console (ESXi-DCUI-style framebuffer status screen).
+# ===========================================================================
+
+# Per-package lib/ aliases for the status_console packages (fb_spike / status_console).
+# Rust binaries with real fdio statically linked: ld.so.1 + libc++.so.1 only (same
+# DT_NEEDED closure as netstack3_probe/fileserver).
+fuchsia_stripped(
+    name = "libc_so_status_console_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_status_console_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# qemu-x64-console-spike: initial prototype framebuffer de-risk product. board qemu-x64 +
+# component_framework + driver_framework (bus-pci enumerates+assigns the stdvga BAR;
+# fb_spike reuses it idempotently). The root realm is root_dfv2acpi_console_spike
+# (base driver stack + fb_spike as an Eager child, offered Mmio/Ioport resources).
+# fb_spike drives QEMU stdvga directly and fills a pattern; the validation harness
+# boots it with `-device VGA` + QMP and captures a screendump. No netstack3/storage.
+cerise_product(
+    name = "qemu-x64-console-spike",
+    board = "//boards/qemu-x64",
+    # Declared as a real .cml (cmc via cerise_component). See //src/cerise/realms.
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_spike_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:network_device_probe",
+    ],
+    product_bootfs = {
+        "pkg/fb_spike/meta/fb_spike.cm": "//src/cerise/status_console:fb_spike_manifest",
+        "pkg/fb_spike/bin/fb_spike": "//src/cerise/status_console:fb_spike_bin_stripped.fuchsia",
+        "pkg/fb_spike/lib/ld.so.1": ":libc_so_status_console_pkg.fuchsia",
+        "pkg/fb_spike/lib/libm.so": ":libm_so_fb_spike_pkg.fuchsia",
+        "pkg/fb_spike/lib/libc++.so.1": ":libcxx_so_status_console_pkg.fuchsia",
+    },
+)
+
+# Distinct lib/ aliases for the status_console package in the combined product (the
+# fb_spike aliases above are consumed by the spike product's pkg/fb_spike/lib).
+fuchsia_stripped(
+    name = "libc_so_console_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_console_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# qemu-x64-console: storage-backed integration — the flagship COMBINED product. Same board + bundles as
+# qemu-x64-fileserver (component_framework + driver_framework + netstack3 + storage_fxfs_core);
+# the root realm is root_dfv2acpi_console (fileserver + status_console as Eager children).
+# The fileserver brings up the network (10.0.2.15) and serves gRPC on :50051; the console
+# reads interface state via fuchsia.net.interfaces.State and renders an ESXi-style status
+# screen (hostname, interface up/down, IPv4/IPv6, and "File server: grpc://10.0.2.15:50051")
+# to a real QEMU framebuffer, proven by a QMP screendump.
+cerise_product(
+    name = "qemu-x64-console",
+    board = "//boards/qemu-x64",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+        "//bundles:storage_fxfs_core",
+    ],
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_manifest",
+    product_bootfs = {
+        "pkg/fileserver/meta/fileserver.cm": "//src/cerise/realms:fileserver_manifest",
+        "pkg/fileserver/bin/fileserver": "//src/cerise/fileserver:fileserver_stripped.fuchsia",
+        "pkg/fileserver/lib/ld.so.1": ":libc_so_fileserver_pkg.fuchsia",
+        "pkg/fileserver/lib/libm.so": ":libm_so_fileserver_pkg.fuchsia",
+        "pkg/fileserver/lib/libc++.so.1": ":libcxx_so_fileserver_pkg.fuchsia",
+        "pkg/status_console/meta/status_console.cm": "//src/cerise/status_console:status_console_manifest",
+        "pkg/status_console/bin/status_console": "//src/cerise/status_console:status_console_bin_stripped.fuchsia",
+        "pkg/status_console/lib/ld.so.1": ":libc_so_console_pkg.fuchsia",
+        "pkg/status_console/lib/libm.so": ":libm_so_status_console_pkg.fuchsia",
+        "pkg/status_console/lib/libc++.so.1": ":libcxx_so_console_pkg.fuchsia",
+    },
+)
+
+# qemu-x64-console-pkg: packages — POST-STORAGE APP TIER (realize the bootfs-offload payoff).
+# Same board + bundles as qemu-x64-console, but the FILESERVER (8.5 MB binary + libs) is REMOVED from
+# bootfs and delivered as a network-fetched fuchsia-pkg PACKAGE instead: apptier_fetcher downloads it
+# on first boot and #pkg_resolver launches it from the fxfs blob volume. Only the ~200-byte fileserver
+# ingest manifest (the resolver's trusted-in-image base index) ships in bootfs, so the ZBI shrinks by
+# the fileserver's unique bytes vs qemu-x64-console. status_console still renders immediately (no
+# storage/fileserver dependency). Consumed by //validation:pkg-apptier-boot.
+cerise_product(
+    name = "qemu-x64-console-pkg",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_pkg_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+        "//bundles:storage_fxfs",
+    ],
+    product_bootfs = {
+        # status_console (Eager) — renders the framebuffer immediately; no storage/fileserver dep.
+        "pkg/status_console/meta/status_console.cm": "//src/cerise/status_console:status_console_manifest",
+        "pkg/status_console/bin/status_console": "//src/cerise/status_console:status_console_bin_stripped.fuchsia",
+        "pkg/status_console/lib/ld.so.1": ":libc_so_console_pkg.fuchsia",
+        "pkg/status_console/lib/libm.so": ":libm_so_status_console_pkg.fuchsia",
+        "pkg/status_console/lib/libc++.so.1": ":libcxx_so_console_pkg.fuchsia",
+        # apptier_fetcher (Eager) — owns the NIC, fetches the fileserver package, binds it. Its base
+        # index is the fileserver's ingest manifest (to learn the meta.far merkle for the presence check).
+        "pkg/apptier_fetcher/meta/apptier_fetcher.cm": "//src/cerise/realms:apptier_fetcher_manifest",
+        "pkg/apptier_fetcher/bin/apptier_fetcher": "//src/cerise/apptier_fetcher:apptier_fetcher_stripped.fuchsia",
+        "pkg/apptier_fetcher/lib/ld.so.1": ":libc_so_apptier_fetcher_pkg.fuchsia",
+        "pkg/apptier_fetcher/lib/libm.so": ":libm_so_apptier_fetcher_pkg.fuchsia",
+        "pkg/apptier_fetcher/lib/libc++.so.1": ":libcxx_so_apptier_fetcher_pkg.fuchsia",
+        "pkg/apptier_fetcher/index/manifest.json": "//src/cerise/fileserver:fileserver_pkg_manifest_json",
+        # pkg_resolver — resolves fuchsia-pkg://cerise/fileserver from the trusted-in-image BASE index
+        # (the fileserver's name->merkle). The 8.5 MB blobs are NOT staged here — network-delivered.
+        "pkg/pkg_resolver/meta/pkg_resolver.cm": "//src/cerise/realms:pkg_resolver_manifest",
+        "pkg/pkg_resolver/bin/pkg_resolver": "//src/cerise/pkg_resolver:pkg_resolver_stripped.fuchsia",
+        "pkg/pkg_resolver/lib/ld.so.1": ":libc_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libm.so": ":libm_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/lib/libc++.so.1": ":libcxx_so_pkg_resolver_pkg.fuchsia",
+        "pkg/pkg_resolver/index/manifest.json": "//src/cerise/fileserver:fileserver_pkg_index_json",
+        # The resolver requires the ed25519 public key at startup (signed index); reused here.
+        "pkg/pkg_resolver/keys/pkg_index_pub.ed25519": "//src/cerise/pkg_hello_update:pkg_index_pubkey_resolver",
+    },
+)
+
+# hw-x64-firstlight: the hw-x64 board first-light image (generic x86 hardware
+# via the hw-x64 board). The console image retargeted from qemu-x64 to hw-x64: same bundles + the
+# proven root_dfv2acpi_console realm. netstack3 can run on loopback, while the
+# network_uplink contract requires the board's staged e1000-backed network device.
+# status_console renders on the GOP
+# framebuffer via gop_display (the board's display driver) instead of stdvga.
+# STORAGE POSTURE (storage untouched): AHCI and NVMe are staged by the board,
+# and only the crypt service by storage_fxfs_core. The console realm's fileserver
+# embeds Fxfs in-process; fshost and the provisioner are not staged.
+# Deploy: //validation:firstlight-uefi-disk -> zcat/dd to USB
+#. QEMU gate: //validation:firstlight-uefi-boot.
+# Shared first-light payload: the console realm's product-owned bootfs. Used by
+# every first-light product (hw-x64-firstlight and the CF-SZ5 variant), which
+# differ ONLY in which board they pair with — so the payload lives in one place
+# and the products stay a board choice, not a copy.
+FIRSTLIGHT_BUNDLES = [
+    "//bundles:component_framework",
+    "//bundles:driver_framework",
+    "//bundles:netstack3",
+    "//bundles:network_uplink",
+    "//bundles:storage_fxfs_core",
+]
+
+FIRSTLIGHT_PRODUCT_BOOTFS = {
+    "pkg/fileserver/meta/fileserver.cm": "//src/cerise/realms:fileserver_manifest",
+    "pkg/fileserver/bin/fileserver": "//src/cerise/fileserver:fileserver_stripped.fuchsia",
+    "pkg/fileserver/lib/ld.so.1": ":libc_so_fileserver_pkg.fuchsia",
+    "pkg/fileserver/lib/libm.so": ":libm_so_fileserver_pkg.fuchsia",
+    "pkg/fileserver/lib/libc++.so.1": ":libcxx_so_fileserver_pkg.fuchsia",
+    "pkg/status_console/meta/status_console.cm": "//src/cerise/status_console:status_console_manifest",
+    "pkg/status_console/bin/status_console": "//src/cerise/status_console:status_console_bin_stripped.fuchsia",
+    "pkg/status_console/lib/ld.so.1": ":libc_so_console_pkg.fuchsia",
+    "pkg/status_console/lib/libm.so": ":libm_so_status_console_pkg.fuchsia",
+    "pkg/status_console/lib/libc++.so.1": ":libcxx_so_console_pkg.fuchsia",
+}
+
+cerise_product(
+    name = "hw-x64-firstlight",
+    board = "//boards/hw-x64",
+    bundles = FIRSTLIGHT_BUNDLES,
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_manifest",
+    product_bootfs = FIRSTLIGHT_PRODUCT_BOOTFS,
+)
+
+# cf-sz5-firstlight: THE SAME first-light image, paired with //boards/cf-sz5
+# instead of //boards/hw-x64. The only difference that reaches the machine is the
+# board's kernel cmdline: `kernel.serial=ioport,0xf0a0,19` (the AMT
+# Serial-over-LAN 16550A) in place of hw-x64's `kernel.serial=legacy` (COM1 at
+# 0x3f8, which does not exist on a CF-SZ5). Everything else — realm, bundles,
+# drivers, storage posture — is byte-for-byte the hw-x64 first-light image.
+#
+# WHY IT IS A SEPARATE PRODUCT: hw-x64-firstlight backs the green QEMU gate
+# //validation:firstlight-uefi-boot, whose OVMF machine has COM1 and no UART at
+# 0xf0a0. Retargeting hw-x64's cmdline in place would have silenced that gate.
+#
+# STORAGE POSTURE is inherited unchanged and matters here more than anywhere
+# else: this product is booted on a laptop whose internal SATA disk holds a live
+# Ubuntu install. The console realm never starts fshost/fxfs_provisioner, so the
+# AHCI driver enumerates the disk and NOTHING WRITES TO IT.
+#
+# QEMU gate: //validation:cf-sz5-uefi-boot (an OVMF machine given a real
+# isa-serial at 0xf0a0 IRQ 19, so the cmdline is exercised, not assumed).
+cerise_product(
+    name = "cf-sz5-firstlight",
+    board = "//boards/cf-sz5",
+    bundles = FIRSTLIGHT_BUNDLES,
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_manifest",
+    product_bootfs = FIRSTLIGHT_PRODUCT_BOOTFS,
+)
+
+# hp-elitedesk-800-g3-firstlight: THE SAME first-light image, paired with
+# //boards/hp-elitedesk-800-g3 instead of //boards/cf-sz5. This board replaces
+# the CF-SZ5 as the physical test machine (retired 2026-08-04). The only
+# difference that reaches the machine is the board's kernel cmdline:
+# `kernel.serial=ioport,0x4088,0` (this unit's AMT Serial-over-LAN 16550A,
+# measured at PCI 00:16.3 BAR0 I/O 0x4088) in place of hw-x64's
+# `kernel.serial=legacy` (COM1 at 0x3f8, which does not exist on this
+# machine either). Everything else — realm, bundles, drivers, storage
+# posture — is byte-for-byte the hw-x64 first-light image.
+#
+# WHY IT IS A SEPARATE PRODUCT: hw-x64-firstlight backs the green QEMU gate
+# //validation:firstlight-uefi-boot, whose OVMF machine has COM1 and no UART
+# at 0x4088. Retargeting hw-x64's cmdline in place would have silenced that
+# gate.
+#
+# STORAGE POSTURE is inherited unchanged: this product's console realm never
+# starts fshost/fxfs_provisioner, so AHCI/NVMe enumerate the unit's disks and
+# nothing writes to them. (This unit's disks currently hold VMware VMFS
+# partitions from a former ESXi life; consuming them is authorised, but this
+# product still does not touch them regardless.)
+#
+# QEMU gate: //validation:hp-elitedesk-800-g3-uefi-boot (an
+# OVMF machine given a real isa-serial at 0x4088, so the cmdline is exercised,
+# not assumed).
+cerise_product(
+    name = "hp-elitedesk-800-g3-firstlight",
+    board = "//boards/hp-elitedesk-800-g3",
+    bundles = FIRSTLIGHT_BUNDLES,
+    root_realm = "//src/cerise/realms:root_dfv2acpi_console_manifest",
+    product_bootfs = FIRSTLIGHT_PRODUCT_BOOTFS,
+)
+
+# ===========================================================================
+# Diagnostics / Archivist (logging bring-up).
+# ===========================================================================
+
+# Per-package lib/ aliases for the archivist + archivist_reader packages. Both are
+# Rust fuchsia binaries with real fdio statically linked, so the same DT_NEEDED
+# closure as netstack3_probe/fileserver: ld.so.1 (musl) + libc++.so.1 (libc.so and
+# libzircon.so are resolved by the musl loader / the kernel vDSO).
+fuchsia_stripped(
+    name = "libc_so_archivist_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_archivist_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "libc_so_archivist_reader_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_archivist_reader_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# Per-package lib/ aliases for the posix_probe package. The plain-C
+# probe's runtime closure is ld.so.1 + libfdio.so (+ libfdio's DT_NEEDED
+# libc++.so.1; the vDSO libzircon.so is kernel-provided).
+fuchsia_stripped(
+    name = "libc_so_posix_probe_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_posix_probe_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "libfdio_so_posix_probe_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+)
+
+# qemu-x64-diagnostics: logging proof product. board qemu-x64 +
+# component_framework + driver_framework (same lean base as qemu-x64-console-spike,
+# no netstack3/storage). The root realm is root_dfv2acpi_diagnostics (base driver
+# stack + Archivist + archivist_reader). The Archivist ingests structured logs via
+# LogSink (rerouted from cerise_logsink to Archivist for the userspace probes) and
+# archivist_reader queries a known record back over fuchsia.diagnostics.ArchiveAccessor,
+# emitting CERISE-ARCHIVIST-QUERY-OK — asserted by //validation:archivist-query-boot.
+cerise_product(
+    name = "qemu-x64-diagnostics",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_diagnostics_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:network_device_probe",
+    ],
+    product_bootfs = {
+        "pkg/archivist/meta/archivist.cm": "//src/cerise/archivist:archivist_manifest",
+        "pkg/archivist/meta/archivist.cvf": "//src/cerise/archivist:archivist_cvf",
+        "pkg/archivist/bin/archivist": "//src/cerise/archivist:archivist_bin_stripped.fuchsia",
+        "pkg/archivist/lib/ld.so.1": ":libc_so_archivist_pkg.fuchsia",
+        "pkg/archivist/lib/libm.so": ":libm_so_archivist_pkg.fuchsia",
+        "pkg/archivist/lib/libc++.so.1": ":libcxx_so_archivist_pkg.fuchsia",
+        "pkg/archivist_reader/meta/archivist_reader.cm": "//src/cerise/archivist_reader:archivist_reader_manifest",
+        "pkg/archivist_reader/bin/archivist_reader": "//src/cerise/archivist_reader:archivist_reader_bin_stripped.fuchsia",
+        "pkg/archivist_reader/lib/ld.so.1": ":libc_so_archivist_reader_pkg.fuchsia",
+        "pkg/archivist_reader/lib/libm.so": ":libm_so_archivist_reader_pkg.fuchsia",
+        "pkg/archivist_reader/lib/libc++.so.1": ":libcxx_so_archivist_reader_pkg.fuchsia",
+        # the plain-C POSIX probe (default sysroot only — its I/O
+        # comes from the runtime libfdio.so staged in its lib/). Asserted by
+        # //validation:posix-probe-boot.
+        "pkg/posix_probe/meta/posix_probe.cm": "//src/cerise/posix_probe:posix_probe_manifest",
+        "pkg/posix_probe/bin/posix_probe": "//src/cerise/posix_probe:posix_probe_stripped.fuchsia",
+        "pkg/posix_probe/data/probe.txt": "//src/cerise/posix_probe:data/probe.txt",
+        "pkg/posix_probe/lib/ld.so.1": ":libc_so_posix_probe_pkg.fuchsia",
+        "pkg/posix_probe/lib/libm.so": ":libm_so_posix_probe_pkg.fuchsia",
+        "pkg/posix_probe/lib/libc++.so.1": ":libcxx_so_posix_probe_pkg.fuchsia",
+        "pkg/posix_probe/lib/libfdio.so": ":libfdio_so_posix_probe_pkg.fuchsia",
+    },
+)
+
+# ===========================================================================
+# qemu-x64-conformance: the runtime-conformance boot gate product.
+# ===========================================================================
+# Same lean base + Archivist as qemu-x64-diagnostics, but the root realm
+# (root_dfv2acpi_conformance) stages the three runtime-conformance probes
+# (conformance_c / conformance_cxx / conformance_rust) as eager children instead
+# of archivist_reader. Each probe exercises + asserts the libc/threads/C++/Rust
+# runtime surface that still needs live-boot proof and emits CERISE-CONF-* serial
+# markers; asserted by //validation:runtime-conformance.
+
+# Per-package lib/ aliases for the conformance_c package (plain-C, default
+# sysroot): ld.so.1 + libfdio.so (+ libfdio's DT_NEEDED libc++.so.1).
+fuchsia_stripped(
+    name = "libc_so_conformance_c_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_conformance_c_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "libfdio_so_conformance_c_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+)
+
+# Per-package lib/ aliases for the conformance_cxx package (C++): ld.so.1 +
+# libc++.so.1 + libconfthrow.so (the cross-.so throw source) + libfdio.so.
+fuchsia_stripped(
+    name = "libc_so_conformance_cxx_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_conformance_cxx_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+fuchsia_stripped(
+    name = "libfdio_so_conformance_cxx_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+)
+
+# Per-package lib/ aliases for the conformance_rust package (Rust + static fdio):
+# ld.so.1 + libc++.so.1 (same closure as shutdown_trigger; libzircon.so is the vDSO).
+fuchsia_stripped(
+    name = "libc_so_conformance_rust_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_conformance_rust_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+# Archivist package libs for the conformance product (its own copies).
+fuchsia_stripped(
+    name = "libc_so_archivist_conf_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_archivist_conf_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+cerise_product(
+    name = "qemu-x64-conformance",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_conformance_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+    ],
+    product_bootfs = {
+        "pkg/archivist/meta/archivist.cm": "//src/cerise/archivist:archivist_manifest",
+        "pkg/archivist/meta/archivist.cvf": "//src/cerise/archivist:archivist_cvf",
+        "pkg/archivist/bin/archivist": "//src/cerise/archivist:archivist_bin_stripped.fuchsia",
+        "pkg/archivist/lib/ld.so.1": ":libc_so_archivist_conf_pkg.fuchsia",
+        "pkg/archivist/lib/libm.so": ":libm_so_archivist_pkg.fuchsia",
+        "pkg/archivist/lib/libc++.so.1": ":libcxx_so_archivist_conf_pkg.fuchsia",
+        # conformance_c: plain-C probe (default sysroot only; I/O via runtime libfdio.so).
+        "pkg/conformance_c/meta/conformance_c.cm": "//src/cerise/conformance_c:conformance_c_manifest",
+        "pkg/conformance_c/bin/conformance_c": "//src/cerise/conformance_c:conformance_c_stripped.fuchsia",
+        "pkg/conformance_c/data/conf.txt": "//src/cerise/conformance_c:data/conf.txt",
+        "pkg/conformance_c/lib/ld.so.1": ":libc_so_conformance_c_pkg.fuchsia",
+        "pkg/conformance_c/lib/libm.so": ":libm_so_conformance_c_pkg.fuchsia",
+        "pkg/conformance_c/lib/libc++.so.1": ":libcxx_so_conformance_c_pkg.fuchsia",
+        "pkg/conformance_c/lib/libfdio.so": ":libfdio_so_conformance_c_pkg.fuchsia",
+        # conformance_cxx: C++ probe. Its throw side is a REAL second shared object
+        # (libconfthrow.so) staged alongside; the main binary catches across it.
+        "pkg/conformance_cxx/meta/conformance_cxx.cm": "//src/cerise/conformance_cxx:conformance_cxx_manifest",
+        "pkg/conformance_cxx/bin/conformance_cxx": "//src/cerise/conformance_cxx:conformance_cxx_stripped.fuchsia",
+        "pkg/conformance_cxx/lib/ld.so.1": ":libc_so_conformance_cxx_pkg.fuchsia",
+        "pkg/conformance_cxx/lib/libm.so": ":libm_so_conformance_cxx_pkg.fuchsia",
+        "pkg/conformance_cxx/lib/libc++.so.1": ":libcxx_so_conformance_cxx_pkg.fuchsia",
+        "pkg/conformance_cxx/lib/libfdio.so": ":libfdio_so_conformance_cxx_pkg.fuchsia",
+        "pkg/conformance_cxx/lib/libconfthrow.so": "//src/cerise/conformance_cxx:libconfthrow_stripped.fuchsia",
+        # conformance_rust: Rust probe (static fdio; ld.so.1 + libc++.so.1).
+        "pkg/conformance_rust/meta/conformance_rust.cm": "//src/cerise/conformance_rust:conformance_rust_manifest",
+        "pkg/conformance_rust/bin/conformance_rust": "//src/cerise/conformance_rust:conformance_rust_stripped.fuchsia",
+        "pkg/conformance_rust/lib/ld.so.1": ":libc_so_conformance_rust_pkg.fuchsia",
+        "pkg/conformance_rust/lib/libm.so": ":libm_so_conformance_rust_pkg.fuchsia",
+        "pkg/conformance_rust/lib/libc++.so.1": ":libcxx_so_conformance_rust_pkg.fuchsia",
+    },
+)
+
+# ===========================================================================
+# qemu-x64-shutdown: orderly shutdown + poweroff proof product.
+# ===========================================================================
+# Same lean base as qemu-x64-console-spike/diagnostics (component_framework +
+# driver_framework, no netstack3/storage). The root realm is root_dfv2acpi_shutdown:
+# the driver base PLUS the builtin shutdown_shim and the shutdown_trigger ELF component.
+# Once driver_manager is up, shutdown_trigger calls Admin.Poweroff on the shim, which
+# records Poweroff and drives component_manager's reverse-dependency topology teardown
+# via SystemController; driver_manager (a dependent of the shim) then issues
+# zx_system_powerctl(SHUTDOWN) -> QEMU q35 ACPI poweroff (clean guest exit). Proven by
+# //validation:shutdown-boot.
+
+# Per-package lib/ aliases for the shutdown_trigger package. Rust binary with fdio
+# statically linked: ld.so.1 + libc++.so.1 only (same DT_NEEDED closure as status_console).
+fuchsia_stripped(
+    name = "libc_so_shutdown_trigger_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_shutdown_trigger_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+cerise_product(
+    name = "qemu-x64-shutdown",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_shutdown_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+    ],
+    product_bootfs = {
+        # driver_manager variant manifest, staged alongside the bundle's base binary+libs
+        # in the same driver_manager_rust_dfv2platbus package.
+        "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi_shutdown.cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_shutdown_manifest",
+        # The builtin shutdown_shim component: manifest only (no ELF binary; it runs via
+        # the builtin_shutdown_shim runner compiled into component_manager).
+        "pkg/shutdown_shim/meta/shutdown_shim.cm": "//src/cerise/realms:shutdown_shim_manifest",
+        # The trigger ELF component.
+        "pkg/shutdown_trigger/meta/shutdown_trigger.cm": "//src/cerise/shutdown_trigger:shutdown_trigger_manifest",
+        "pkg/shutdown_trigger/bin/shutdown_trigger": "//src/cerise/shutdown_trigger:shutdown_trigger_bin_stripped.fuchsia",
+        "pkg/shutdown_trigger/lib/ld.so.1": ":libc_so_shutdown_trigger_pkg.fuchsia",
+        "pkg/shutdown_trigger/lib/libm.so": ":libm_so_shutdown_trigger_pkg.fuchsia",
+        "pkg/shutdown_trigger/lib/libc++.so.1": ":libcxx_so_shutdown_trigger_pkg.fuchsia",
+    },
+)
+
+# cf-sz5-shutdown: THE SAME orderly-shutdown product, paired with //boards/cf-sz5.
+#
+# WHY IT EXISTS — it is a SAFETY HARNESS, not a feature. //boards/cf-sz5 indexes
+# the e1000 driver, and on that machine the I219-LM it binds is also the path
+# Intel AMT rides on (see //boards/cf-sz5 for the full story). Exercising a
+# driver change against that NIC on the real unit therefore risks taking out the
+# only remote console AND the only remote power control at the same time, which
+# costs a physical trip to the laptop.
+#
+# cf-sz5-firstlight — the other product on this board — starts component_manager
+# and NEVER TERMINATES, so a boot that kills AMT strands the machine running
+# Cerise with no way back. This product terminates on its own instead:
+# shutdown_trigger waits for driver enumeration to quiesce (so e1000 HAS bound
+# and logged) and then drives the real poweroff chain. Because BootNext is
+# one-shot, the machine then falls back to the previous OS, which is reachable
+# over SSH. So even the worst case — the change makes AMT worse, not better —
+# leaves a recoverable machine.
+#
+# It carries the driver_framework bundle but NOT netstack3, so it proves bind /
+# manageability-state / MAC and nothing about DHCP. That is the point: it is the
+# cheap, reversible first step, and cf-sz5-firstlight is the second.
+#
+# No QEMU gate: OVMF has no UART at 0xf0a0 and no I219 (//validation:shutdown-boot
+# already gates the shutdown chain itself on the qemu-x64 board). Deployment
+# artifact — copy the .zbi to the unit's ESP as \bootx64.zbi and one-shot
+# BootNext the `cerise` entry.
+cerise_product(
+    name = "cf-sz5-shutdown",
+    board = "//boards/cf-sz5",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_shutdown_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+    ],
+    product_bootfs = {
+        "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi_shutdown.cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_shutdown_manifest",
+        "pkg/shutdown_shim/meta/shutdown_shim.cm": "//src/cerise/realms:shutdown_shim_manifest",
+        "pkg/shutdown_trigger/meta/shutdown_trigger.cm": "//src/cerise/shutdown_trigger:shutdown_trigger_manifest",
+        "pkg/shutdown_trigger/bin/shutdown_trigger": "//src/cerise/shutdown_trigger:shutdown_trigger_bin_stripped.fuchsia",
+        "pkg/shutdown_trigger/lib/ld.so.1": ":libc_so_shutdown_trigger_pkg.fuchsia",
+        "pkg/shutdown_trigger/lib/libm.so": ":libm_so_shutdown_trigger_pkg.fuchsia",
+        "pkg/shutdown_trigger/lib/libc++.so.1": ":libcxx_so_shutdown_trigger_pkg.fuchsia",
+    },
+)
+
+# -----------------------------------------------------------------------------
+# OS-self-OTA products (//validation:ota-update-boot). Same driver base as
+# qemu-x64-shutdown (for the statecontrol reboot chain) PLUS netstack3 (for the
+# HTTP fetch); NO storage_fxfs (its fxfs_provisioner would format the ESP). The
+# ota_updater is the sole disk writer. Two products from ONE binary, differing
+# only by the staged /pkg/data/ota-config.json: qemu-x64-ota is the v1 factory
+# image (apply=true — it fetches + stages v2), qemu-x64-ota-v2 is the update
+# target (apply=false — it only success-commits). qemu-x64-ota-v2's ZBI is the
+# gate's host-served download payload.
+fuchsia_stripped(
+    name = "libc_so_ota_updater_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libm_so_ota_updater_pkg.fuchsia",
+    src = "//src/cerise/sysroot/libm-stub:libm.so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_ota_updater_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+cerise_product(
+    name = "qemu-x64-ota",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_ota_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi_shutdown.cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_shutdown_manifest",
+        "pkg/shutdown_shim/meta/shutdown_shim.cm": "//src/cerise/realms:shutdown_shim_manifest",
+        "pkg/ota_updater/meta/ota_updater.cm": "//src/cerise/ota_updater:ota_updater_manifest",
+        "pkg/ota_updater/bin/ota_updater": "//src/cerise/ota_updater:ota_updater_bin_stripped.fuchsia",
+        "pkg/ota_updater/lib/ld.so.1": ":libc_so_ota_updater_pkg.fuchsia",
+        "pkg/ota_updater/lib/libm.so": ":libm_so_ota_updater_pkg.fuchsia",
+        "pkg/ota_updater/lib/libc++.so.1": ":libcxx_so_ota_updater_pkg.fuchsia",
+        # v1 factory config: version 1, apply the update.
+        "pkg/ota_updater/data/ota-config.json": "//src/cerise/ota_updater:data/ota-config-v1.json",
+        # The OTA trust root: the ed25519 PUBLIC key the updater verifies the fetched
+        # image's manifest against, derived at build time from //build/keys:signing_seed.
+        # This product is the one with apply=true, and the updater REFUSES to apply
+        # without a key — so this entry is load-bearing, not decorative.
+        "pkg/ota_updater/keys/ota_image_pub.ed25519": "//src/cerise/ota_updater:ota_image_pubkey",
+    },
+)
+
+cerise_product(
+    name = "qemu-x64-ota-v2",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_ota_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/driver_manager_rust_dfv2platbus/meta/driver_manager_rust_dfv2acpi_shutdown.cm": "//src/cerise/realms:driver_manager_rust_dfv2acpi_shutdown_manifest",
+        "pkg/shutdown_shim/meta/shutdown_shim.cm": "//src/cerise/realms:shutdown_shim_manifest",
+        "pkg/ota_updater/meta/ota_updater.cm": "//src/cerise/ota_updater:ota_updater_manifest",
+        "pkg/ota_updater/bin/ota_updater": "//src/cerise/ota_updater:ota_updater_bin_stripped.fuchsia",
+        "pkg/ota_updater/lib/ld.so.1": ":libc_so_ota_updater_pkg.fuchsia",
+        "pkg/ota_updater/lib/libm.so": ":libm_so_ota_updater_pkg.fuchsia",
+        "pkg/ota_updater/lib/libc++.so.1": ":libcxx_so_ota_updater_pkg.fuchsia",
+        # v2 update-target config: version 2, do NOT apply (only success-commit).
+        "pkg/ota_updater/data/ota-config.json": "//src/cerise/ota_updater:data/ota-config-v2.json",
+        # Staged even though apply=false and this image therefore never verifies
+        # anything: the two OTA products must have the SAME trust posture, or the
+        # image an update installs would be one that could not itself update.
+        "pkg/ota_updater/keys/ota_image_pub.ed25519": "//src/cerise/ota_updater:ota_image_pubkey",
+    },
+)
+
+# ---------------------------------------------------------------------------------------------
+# qemu-x64-store-push — the appliance that RECEIVES a pushed guest image and writes it to the
+# raw guest-image GPT partition.
+#
+# The driver base + netstack3 + guest_store_receiver, and nothing else. The receiver is the
+# SOLE disk writer in this product: no fshost, no provisioner, no file server, no probes. That
+# is load-bearing rather than minimal-by-taste — the refusal gates claim "a refused push wrote
+# nothing to this disk", and a product carrying a second writer would make that a claim about
+# the product instead of about the receiver.
+#
+# The public key it checks pushed manifests against is staged here. The receiver REFUSES every
+# push without one (fail closed, unlike pkg_resolver's safe degradation), so this entry is
+# load-bearing and not decorative. What a signature made with it establishes is stated in
+# build/keys/README.md and nowhere is it described as establishing authenticity.
+# ---------------------------------------------------------------------------------------------
+fuchsia_stripped(
+    name = "libc_so_guest_store_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+)
+
+fuchsia_stripped(
+    name = "libcxx_so_guest_store_pkg.fuchsia",
+    src = "//src/cerise/runtime:libc++.so",
+)
+
+cerise_product(
+    name = "qemu-x64-store-push",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_store_push_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/guest_store_receiver/meta/guest_store_receiver.cm": "//src/cerise/guest_store_receiver:guest_store_receiver_manifest",
+        "pkg/guest_store_receiver/bin/guest_store_receiver": "//src/cerise/guest_store_receiver:guest_store_receiver_bin_stripped.fuchsia",
+        # ld.so.1 and libc++.so.1 only. Measured with `readelf -d` on the built binary:
+        # DT_NEEDED is libzircon.so (the vDSO, which needs no staging), libc.so and
+        # libc++.so.1. No libm.so, because nothing links -lm, and no libfdio.so, because
+        # real fdio is statically linked.
+        "pkg/guest_store_receiver/lib/ld.so.1": ":libc_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/lib/libc++.so.1": ":libcxx_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/keys/guest_store_pub.ed25519": "//src/cerise/guest_store_receiver:guest_store_pubkey",
+    },
+)
+
+# Bare-metal store receiver for the CF-SZ5. It is intentionally the same
+# single-writer appliance as qemu-x64-store-push; only the board changes, so
+# the image carries the laptop's NIC and serial configuration. In particular,
+# do not add fileserver or a filesystem bundle here: during a push the receiver
+# must remain the sole component capable of writing the guest-store partitions.
+cerise_product(
+    name = "cf-sz5-store-push",
+    board = "//boards/cf-sz5",
+    # The AMT UART is the only console on this headless deployment path.
+    # Bypass the deferred debuglog so early NIC/receiver failures are visible
+    # even when userspace never reaches the log-draining phase.
+    cmdline = ["kernel.bypass-debuglog=true"],
+    root_realm = "//src/cerise/realms:root_dfv2acpi_store_push_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/guest_store_receiver/meta/guest_store_receiver.cm": "//src/cerise/guest_store_receiver:guest_store_receiver_manifest",
+        "pkg/guest_store_receiver/bin/guest_store_receiver": "//src/cerise/guest_store_receiver:guest_store_receiver_bin_stripped.fuchsia",
+        "pkg/guest_store_receiver/lib/ld.so.1": ":libc_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/lib/libc++.so.1": ":libcxx_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/keys/guest_store_pub.ed25519": "//src/cerise/guest_store_receiver:guest_store_pubkey",
+    },
+)
+
+# Bare-metal store receiver for the HP EliteDesk 800 G3 (the CF-SZ5's replacement). It is intentionally the same
+# single-writer appliance as qemu-x64-store-push; only the board changes, so
+# the image carries the desktop's NIC and serial configuration. In particular,
+# do not add fileserver or a filesystem bundle here: during a push the receiver
+# must remain the sole component capable of writing the guest-store partitions.
+# DEPLOYER WARNING: this image drives the I219-LM (e1000), which on this board
+# is the same PHY AMT Serial-over-LAN rides — see //boards/hp-elitedesk-800-g3's
+# "AMT / e1000 COEXISTENCE" note (unproven on this 0x15e3/cnp silicon; it can
+# take AMT off the wire and cost the out-of-band recovery path).
+cerise_product(
+    name = "hp-elitedesk-800-g3-store-push",
+    board = "//boards/hp-elitedesk-800-g3",
+    # The AMT UART is the only console on this headless deployment path.
+    # Bypass the deferred debuglog so early NIC/receiver failures are visible
+    # even when userspace never reaches the log-draining phase.
+    cmdline = ["kernel.bypass-debuglog=true"],
+    root_realm = "//src/cerise/realms:root_dfv2acpi_store_push_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/guest_store_receiver/meta/guest_store_receiver.cm": "//src/cerise/guest_store_receiver:guest_store_receiver_manifest",
+        "pkg/guest_store_receiver/bin/guest_store_receiver": "//src/cerise/guest_store_receiver:guest_store_receiver_bin_stripped.fuchsia",
+        "pkg/guest_store_receiver/lib/ld.so.1": ":libc_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/lib/libc++.so.1": ":libcxx_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/keys/guest_store_pub.ed25519": "//src/cerise/guest_store_receiver:guest_store_pubkey",
+    },
+)
+
+# The trust-root negative control: the same product with the public key NOT staged, and
+# nothing else changed.
+#
+# It exists because "the receiver fails closed without a key" is otherwise a claim that only
+# a host unit test makes. On a live machine, a component that could not find its key might
+# equally well proceed — the code that would tell them apart is one `Option` — so the product
+# that omits it is what turns the host test's `NoPubkey` into an observed refusal on a real
+# push over a real socket.
+cerise_product(
+    name = "qemu-x64-store-push-nokey",
+    board = "//boards/qemu-x64",
+    root_realm = "//src/cerise/realms:root_dfv2acpi_store_push_manifest",
+    bundles = [
+        "//bundles:component_framework",
+        "//bundles:driver_framework",
+        "//bundles:netstack3",
+        "//bundles:network_uplink",
+    ],
+    product_bootfs = {
+        "pkg/guest_store_receiver/meta/guest_store_receiver.cm": "//src/cerise/guest_store_receiver:guest_store_receiver_manifest",
+        "pkg/guest_store_receiver/bin/guest_store_receiver": "//src/cerise/guest_store_receiver:guest_store_receiver_bin_stripped.fuchsia",
+        "pkg/guest_store_receiver/lib/ld.so.1": ":libc_so_guest_store_pkg.fuchsia",
+        "pkg/guest_store_receiver/lib/libc++.so.1": ":libcxx_so_guest_store_pkg.fuchsia",
+        # No keys/ entry. That is the variable.
+    },
+)

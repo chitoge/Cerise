@@ -1,0 +1,79 @@
+# Vendored FreeBSD/Intel e1000 shared code ("HAL"), ported to Cerise DFv2.
+#
+# Provenance (see README.fuchsia): the OS-independent shared code from Fuchsia's
+# removed DFv1 driver zircon/third_party/dev/ethernet/e1000 at commit
+# 171ed3ae9231, itself a port of FreeBSD sys/dev/e1000 (BSD-3-Clause). Only the
+# OS-independent shared code is vendored; the DFv1 glue (fuchsia.c) and the
+# unused FreeBSD iflib files (if_em.c, em_txrx.c, igb_txrx.c) are NOT included.
+# e1000_osdep.h/.c were rewritten for DFv2 (register access via a plain MMIO
+# base pointer; PCI config via C-callable shims implemented by the C++ driver).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//src/cerise/drivers/e1000:__subpackages__"])
+
+exports_files(["LICENSE"])
+
+# The shared code is pure C, OS-independent, and reachable for every e1000
+# family we bind (82540EM legacy, 82574L e1000e, I211/i210, I219/ich8lan). It is
+# compiled with warnings suppressed: it is vendored third-party code that built
+# clean upstream under -Wno-conversion + all_source; we do not churn it.
+cc_library(
+    name = "e1000_hal",
+    srcs = [
+        "e1000_80003es2lan.c",
+        "e1000_82540.c",
+        "e1000_82541.c",
+        "e1000_82542.c",
+        "e1000_82543.c",
+        "e1000_82571.c",
+        "e1000_82575.c",
+        "e1000_api.c",
+        "e1000_i210.c",
+        "e1000_ich8lan.c",
+        "e1000_mac.c",
+        "e1000_manage.c",
+        "e1000_mbx.c",
+        "e1000_nvm.c",
+        "e1000_osdep.c",
+        "e1000_phy.c",
+        "e1000_vf.c",
+    ],
+    hdrs = [
+        "e1000_80003es2lan.h",
+        "e1000_82541.h",
+        "e1000_82543.h",
+        "e1000_82571.h",
+        "e1000_82575.h",
+        "e1000_api.h",
+        "e1000_defines.h",
+        "e1000_hw.h",
+        "e1000_i210.h",
+        "e1000_ich8lan.h",
+        "e1000_mac.h",
+        "e1000_manage.h",
+        "e1000_mbx.h",
+        "e1000_nvm.h",
+        "e1000_osdep.h",
+        "e1000_phy.h",
+        "e1000_regs.h",
+        "e1000_vf.h",
+    ],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    # Export the header dir so the C++ driver can include "e1000_api.h" etc.
+    includes = ["."],
+    # Freestanding-friendly: the shared code only needs memcpy/memset (libc) and
+    # the osdep delay/PCI shims the driver provides; no other runtime deps.
+    linkstatic = True,
+    tags = ["manual"],
+    # NOTE: deliberately NO libc-headers dep. Under the product/driver toolchain
+    # (how this actually ships — see //products:e1000_so.fuchsia) the sysroot is
+    # on the C include path automatically. Depending on
+    # //src/cerise/sysroot:libc_sysroot_headers would PROPAGATE the C sysroot
+    # include dir ahead of libc++ into any C++ consumer of these headers (the
+    # driver TU), breaking libc++'s <cstring>/<cctype>/... wrappers. Consequently
+    # this target does NOT build standalone on the bare //platforms:x64-user
+    # platform (no sysroot there); build it via the product transition.
+)

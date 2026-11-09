@@ -1,0 +1,1441 @@
+// Local host-status protocol for the VM operator console.
+//
+// The externally supported control plane is gRPC. This protocol is the
+// component-local projection of the same status and exists so the framebuffer
+// console does not probe TCP listeners or block devices and invent a second
+// notion of VM state.
+library cerise.vm;
+
+using zx;
+
+type State = flexible enum : uint32 {
+    STOPPED = 1;
+    STARTING = 2;
+    RUNNING = 3;
+    PAUSED = 4;
+    FAILED = 5;
+};
+
+/// Why a requested lifecycle transition was not accepted.
+type ControlError = flexible enum : uint32 {
+    /// The transition is not valid from the worker's current state.
+    INVALID_STATE = 1;
+    /// Another lifecycle transition is still in progress.
+    BUSY = 2;
+    /// The worker attempted the transition and it failed.
+    FAILED = 3;
+};
+
+/// A lifecycle request forwarded from the component-local control service to
+/// the VM run loop.
+type Command = strict enum : uint32 {
+    START = 1;
+    STOP = 2;
+    PAUSE = 3;
+    RESUME = 4;
+    /// Operator-requested disk-preserving cold restart: reboot the running
+    /// guest through firmware from the sealed boot checkpoint (RAM, VMBus,
+    /// devices, partition, VPs) while leaving the mutable disk head and
+    /// execution epoch untouched. Named `COLD_RESTART` rather than `RESET` to
+    /// avoid confusion with `GuestEventKind.RESET`: that value reports a
+    /// reset the guest already performed, while this command asks the worker
+    /// to perform one. Valid only while the worker is `RUNNING`; the worker
+    /// runs the identical boot-checkpoint restore used for a guest-initiated
+    /// reset, but never reports it on the `GuestEvent` channel — doing so
+    /// would fabricate a guest observation that did not occur.
+    COLD_RESTART = 5;
+};
+
+/// Guest-originated lifecycle events, distinct from host control requests.
+type GuestEventKind = flexible enum : uint32 {
+    RESET = 1;
+    POWER_OFF = 2;
+};
+
+/// Durable launch authority for one worker projection.
+type WorkerProjectionIdentity = struct {
+    /// Exact 64-byte lowercase-hex durable catalog incarnation.
+    catalog_incarnation_id string:64;
+    /// Nonzero host boot identity admitted by the launch authority.
+    boot_id uint64;
+    /// Nonzero, never-reused generation within the catalog incarnation.
+    generation uint64;
+};
+
+/// One guest-originated event in an execution timeline.
+type GuestEvent = table {
+    1: kind GuestEventKind;
+    /// Execution epoch in which the guest emitted the event.
+    2: epoch uint64;
+    /// Monotonic within this worker process, for duplicate/stale rejection.
+    3: sequence uint64;
+    /// Complete-machine root durably published before POWER_OFF is emitted.
+    /// Absent for RESET.
+    4: artifact StateArtifact;
+    /// Present only for a worker launched with projection-aware authority.
+    5: worker_projection_identity WorkerProjectionIdentity;
+};
+
+/// Why a VMI request was not accepted by the VM-owning worker.
+type VmiError = flexible enum : uint32 {
+    /// The VM is not paused at the required all-device barrier.
+    INVALID_STATE = 1;
+    /// The request names an execution timeline that is no longer current.
+    STALE_EPOCH = 2;
+    /// The runtime capability generation changed after negotiation.
+    STALE_CAPABILITIES = 3;
+    /// The complete worker/kernel path does not implement the mechanism.
+    UNSUPPORTED = 4;
+    /// The request is malformed or internally inconsistent.
+    INVALID_REQUEST = 5;
+    /// Another host or worker operation owns the plane (an execution operation
+    /// owns the worker, or a host transition/recovery is in flight). Retryable.
+    BUSY = 6;
+    /// The worker attempted the operation and it failed.
+    FAILED = 7;
+    /// The bounded execution reached its cooperative cancellation barrier.
+    CANCELLED = 8;
+};
+
+/// Mechanisms implemented by the worker below the host-facing gRPC API.
+type VmiMechanism = strict enum : uint32 {
+    MONITOR_TRAP_FLAG = 1;
+    SOFTWARE_BREAKPOINT = 2;
+    HOST_TIMER = 3;
+    VMX_PREEMPTION_TIMER = 4;
+    /// Stop after normal handling of one selected architectural VM-exit.
+    VM_EXIT_OBSERVATION = 5;
+    /// Stop after an exact number of normally handled VM exits.
+    VM_EXIT_BUDGET = 6;
+    /// Stop through a guest-only fixed-counter overflow after at least a
+    /// requested number of retired instructions.
+    PMU_RETIRED_INSTRUCTIONS = 7;
+    /// Stop before a selected guest-physical memory access executes.
+    MEMORY_ACCESS = 8;
+    /// Transparent DR-slot breakpoint/watchpoint owned by execution control.
+    HARDWARE_BREAKPOINT = 9;
+};
+
+/// A bounded execution operation. Fields unrelated to the selected operation
+/// must be zero.
+type VmiOperation = strict enum : uint32 {
+    SINGLE_STEP = 1;
+    INSTRUCTION_ADDRESS = 2;
+    WALL_TIME = 3;
+    VM_EXIT = 4;
+    RETIRED_INSTRUCTIONS = 5;
+    MEMORY_ACCESS = 6;
+    HARDWARE_BREAKPOINT = 7;
+};
+
+type VmiStopReason = flexible enum : uint32 {
+    SINGLE_STEP = 1;
+    BREAKPOINT = 2;
+    WALL_TIME_TARGET = 3;
+    WALL_TIME_BUDGET = 4;
+    GUEST_HALT = 5;
+    GUEST_SHUTDOWN = 6;
+    GUEST_RESET = 7;
+    CANCELLED = 8;
+    VM_EXIT = 9;
+    VM_EXIT_BUDGET = 10;
+    RETIRED_INSTRUCTION_TARGET = 11;
+    INSTRUCTION_BUDGET = 12;
+    MEMORY_ACCESS = 13;
+    HARDWARE_BREAKPOINT = 14;
+    /// A complete-or-fail trace segment was sealed before the next VM entry.
+    TRACE_WATERMARK = 15;
+};
+
+/// Precision of guest-only retired-instruction stops. The exact observed
+/// count is returned, but OVERFLOW_INTERRUPT may stop after the requested
+/// minimum because interrupt delivery has skid.
+type VmiInstructionPrecision = strict enum : uint32 {
+    OVERFLOW_INTERRUPT = 1;
+};
+
+/// One opaque primitive implemented by this worker. Primitive numbers are the
+/// shared manager `Primitive` wire values; unknown values are ignored by an
+/// older gateway and rejected by the worker when invoked.
+type VmiPrimitiveCapability = table {
+    1: primitive uint32;
+    2: supported bool;
+    3: unavailable_reason string:256;
+    /// Maximum encoded protobuf request/response carried across this worker
+    /// boundary. Primitive-specific data limits may be smaller.
+    4: max_request_bytes uint64;
+    5: max_response_bytes uint64;
+    6: requires_paused bool;
+};
+
+type VmiIntelPtCpuidLeaf = table {
+    1: subleaf uint32;
+    2: eax uint32;
+    3: ebx uint32;
+    4: ecx uint32;
+    5: edx uint32;
+};
+
+/// Exact runtime result for the worker's raw Intel PT path. `supported` is
+/// true only when CPUID.14, RTIT MSRs, nested VMX controls, the exclusive PMI
+/// route, pinned buffers, and complete-or-fail rotation are all usable.
+type VmiIntelPtCapabilities = table {
+    1: supported bool;
+    2: unavailable_reason string:512;
+    3: complete_or_fail bool;
+    4: branch_tracing bool;
+    5: user_filter bool;
+    6: supervisor_filter bool;
+    7: cr3_filter bool;
+    8: max_address_ranges uint32;
+    9: supported_psb_frequencies uint32;
+    10: supported_mtc_frequencies uint32;
+    11: supported_cycle_thresholds uint32;
+    12: decoder_identity string:256;
+    13: cpu_family uint32;
+    14: cpu_model uint32;
+    15: cpu_stepping uint32;
+    16: cpuid_14 vector<VmiIntelPtCpuidLeaf>:8;
+};
+
+/// Runtime-probed support. A true field means the complete worker-to-kernel
+/// path was exercised successfully, not merely that CPUID advertised it.
+type VmiCapabilities = table {
+    1: epoch uint64;
+    2: capability_generation uint64;
+    3: monitor_trap_flag bool;
+    4: software_breakpoint bool;
+    5: host_timer bool;
+    /// Every configured VP is quiesced when Execute replies.
+    6: stops_all_vps bool;
+    /// Dirty RAM is reported by the guest-memory COW backing, not by PML.
+    7: cow_dirty_pages bool;
+    8: vmx_preemption_timer bool;
+    9: primitives vector<VmiPrimitiveCapability>:32;
+    /// An in-flight Execute observes CancelExecution and replies only after the
+    /// guest and its devices are quiesced again.
+    10: cancellable_execution bool;
+    /// Maximum size of the atomic run-until OR-set.
+    11: max_run_until_conditions uint32;
+    /// The runtime implements handled-before-stop VM-exit observation.
+    12: vm_exit_observation bool;
+    /// The runtime implements exact completed-VM-exit budgets.
+    13: vm_exit_budget bool;
+    /// Architectural basic VM-exit reasons accepted by the runtime.
+    14: observable_vm_exit_reasons vector<uint32>:128;
+    /// A VM-exit observation is delivered only after its ordinary handler and
+    /// before the next guest entry.
+    15: vm_exit_after_handling bool;
+    /// Bounded lossless VM-exit trace sessions are routed by this worker.
+    16: vm_exit_trace bool;
+    17: max_trace_buffer_bytes uint64;
+    18: trace_buffer_alignment uint64;
+    19: max_trace_chunk_bytes uint64;
+    20: per_vp_trace bool;
+    /// Complete guest-only PMU route is available now. False also covers a
+    /// temporary host PMU resource conflict.
+    21: pmu_retired_instructions bool;
+    22: retired_instruction_counter_width uint32;
+    23: max_retired_instruction_budget uint64;
+    24: retired_instruction_precision VmiInstructionPrecision;
+    25: intel_pt VmiIntelPtCapabilities;
+    /// The host-facing typed Events stream is supported. This is independent
+    /// of primitive number 11, whose opaque Invoke encoding remains absent.
+    26: typed_events bool;
+    /// Complete guest-global pre-access EPT stop route is available now.
+    27: memory_access bool;
+    28: max_memory_access_ranges uint32;
+    29: max_memory_access_pages uint32;
+    /// Supported READ=1, WRITE=2, EXECUTE=4 condition bits.
+    30: memory_access_mask uint32;
+    /// Results describe the instruction before its selected access executes.
+    31: memory_access_pre_access bool;
+    /// Complete transparent DR-slot route is available now.
+    32: hardware_breakpoint bool;
+    33: max_hardware_breakpoints uint32;
+    /// EXECUTE=1, WRITE=2, READ_WRITE=4.
+    34: hardware_breakpoint_access_mask uint32;
+    /// Bit values are the supported byte lengths: 1|2|4|8.
+    35: hardware_breakpoint_length_mask uint32;
+    /// PRE_INSTRUCTION=1, POST_ACCESS=2, MIXED=4.
+    36: hardware_breakpoint_boundary_mask uint32;
+    /// Every advertised trace route is cursor/ack bounded and either reports
+    /// explicit loss/gaps or terminates incomplete before loss can be hidden.
+    37: loss_accounting bool;
+    /// VP indices that the live execution and per-VP trace routes can run.
+    /// Other configured VPs remain stopped at the all-VP barrier.
+    38: execution_vps vector<uint32>:64;
+    /// The worker implements ExportRamView: it can hand out a read-only
+    /// immutable copy-on-write snapshot of guest RAM plus the per-VP paging
+    /// registers, so a client may serve paused reads from the snapshot without
+    /// round-tripping bytes. Absent/false means ExportRamView must NEVER be
+    /// called: Vmi is a closed protocol, so an unadvertised strict call would
+    /// close the shared channel rather than return an error.
+    39: supports_ram_view_export bool;
+};
+
+type VmiExecuteRequest = table {
+    1: expected_epoch uint64;
+    2: expected_capability_generation uint64;
+    3: vp uint32;
+    4: operation VmiOperation;
+    5: mechanism VmiMechanism;
+    /// Guest virtual instruction address for INSTRUCTION_ADDRESS.
+    6: instruction_address uint64;
+    /// Target duration for WALL_TIME.
+    7: wall_time_ns uint64;
+    /// Optional upper bound for any operation. Zero means no bound.
+    8: max_wall_time_ns uint64;
+    /// Stable caller idempotency key within this VM epoch.
+    9: request_id string:128;
+    /// Atomic OR-set for run-until. Empty for SINGLE_STEP.
+    10: conditions vector<VmiCondition>:64;
+    /// Mechanism selected for max_wall_time_ns. Absent when that budget is
+    /// zero.
+    11: wall_time_budget_mechanism VmiMechanism;
+    /// Optional exact normally handled VM-exit limit. Zero means no limit.
+    12: max_vm_exits uint64;
+    /// Mechanism selected for max_vm_exits. Absent when that budget is zero.
+    13: vm_exit_budget_mechanism VmiMechanism;
+    /// Optional minimum guest-only retired-instruction bound. Zero means no
+    /// bound.
+    14: max_retired_instructions uint64;
+    /// Mechanism selected for max_retired_instructions. Absent when zero.
+    15: retired_instruction_budget_mechanism VmiMechanism;
+};
+
+type VmiCondition = table {
+    /// Index in the public request's OR-set.
+    1: index uint32;
+    2: operation VmiOperation;
+    3: mechanism VmiMechanism;
+    4: instruction_address uint64;
+    5: wall_time_ns uint64;
+    /// Architectural basic VM-exit reasons for VM_EXIT. Empty is invalid.
+    6: vm_exit_reasons vector<uint32>:128;
+    /// Minimum guest-only retired instructions for RETIRED_INSTRUCTIONS.
+    7: retired_instructions uint64;
+    /// Page-aligned guest-physical range for MEMORY_ACCESS.
+    8: memory_start uint64;
+    9: memory_length uint64;
+    /// Non-zero READ=1, WRITE=2, EXECUTE=4 mask.
+    10: memory_access_mask uint32;
+    /// Canonical guest virtual address for HARDWARE_BREAKPOINT.
+    11: hardware_breakpoint_address uint64;
+    /// Kernel ABI values: EXECUTE=0, WRITE=1, READ_WRITE=3.
+    12: hardware_breakpoint_access uint32;
+    /// One of 1, 2, 4, or 8. EXECUTE requires 1.
+    13: hardware_breakpoint_length uint32;
+};
+
+/// One handled VM-exit boundary. The ordinary exit handler has committed
+/// `resume_rip`, and no subsequent guest entry occurred before this record.
+type VmiVmExitObservation = table {
+    1: sequence uint64;
+    2: exit_rip uint64;
+    3: resume_rip uint64;
+    4: exit_reason uint32;
+    5: trigger_reason bool;
+    6: trigger_budget bool;
+    /// Exact count of normally completed exits since this execution was armed.
+    7: handled_exits uint64;
+};
+
+type VmiInstructionObservation = table {
+    1: sequence uint64;
+    /// Effective minimum programmed into the fixed counter.
+    2: requested_budget uint64;
+    /// Exact guest-only count observed at the stopped boundary.
+    3: retired_instructions uint64;
+    4: rip uint64;
+    5: precision VmiInstructionPrecision;
+};
+
+/// Exact guest-global pre-access EPT boundary. The paused snapshot is captured
+/// before the worker acknowledges `sequence`; the next entry retries the
+/// unchanged instruction after permissions are restored.
+type VmiMemoryAccessObservation = table {
+    1: sequence uint64;
+    2: guest_paddr uint64;
+    3: guest_vaddr uint64;
+    4: has_guest_vaddr bool;
+    5: rip uint64;
+    6: qualification uint64;
+    /// Exactly one of READ=1, WRITE=2, EXECUTE=4.
+    7: access uint32;
+    /// Public OR-set indices for every overlapping condition that matched.
+    8: condition_indices vector<uint32>:16;
+    /// Zero-based VP that took the stop.
+    9: vp uint32;
+};
+
+/// Exact transparent hardware-breakpoint/watchpoint boundary. Execute is a
+/// pre-instruction boundary; data watchpoints are post-access.
+type VmiHardwareBreakpointObservation = table {
+    1: sequence uint64;
+    2: rip uint64;
+    3: raw_dr6 uint64;
+    4: guest_dr6 uint64;
+    5: condition_indices vector<uint32>:4;
+    6: vp uint32;
+    7: slot_mask uint32;
+    /// PRE_INSTRUCTION=1, POST_ACCESS=2, MIXED=3.
+    8: boundary uint32;
+};
+
+type VmiExecutionStop = table {
+    1: condition_indices vector<uint32>:64;
+    2: reason VmiStopReason;
+    3: stop_address uint64;
+    4: vm_exit VmiVmExitObservation;
+    5: instruction VmiInstructionObservation;
+    6: memory_access VmiMemoryAccessObservation;
+    7: hardware_breakpoint VmiHardwareBreakpointObservation;
+};
+
+type VmiExecutionResult = table {
+    1: epoch uint64;
+    2: vp uint32;
+    3: reason VmiStopReason;
+    4: mechanism VmiMechanism;
+    5: stop_address uint64;
+    6: elapsed_ns uint64;
+    /// Mechanism enforcing max_wall_time_ns. Absent only when that budget was
+    /// zero; the stop set says whether the budget won.
+    7: budget_mechanism VmiMechanism;
+    8: request_id string:128;
+    9: stops vector<VmiExecutionStop>:64;
+    /// Mechanisms selected for run-until conditions. Budget mechanisms are
+    /// reported separately.
+    10: mechanisms vector<VmiMechanism>:64;
+    /// Exact normally completed VM-exit count when accounting was armed.
+    11: vm_exits uint64;
+    /// Exact guest-only retired instructions observed while accounting was
+    /// armed. It can exceed the programmed minimum.
+    12: retired_instructions uint64;
+    13: retired_instruction_precision VmiInstructionPrecision;
+};
+
+/// Opaque primitive payload carried in a VMO rather than inline in a Zircon
+/// channel message. The explicit size is authoritative; receivers reject a
+/// size beyond either the VMO or the primitive carrier bound.
+type VmiOpaquePayload = resource table {
+    1: vmo zx.Handle:VMO;
+    2: size uint64;
+};
+
+/// Opaque primitive payload. The bytes use the public gRPC primitive's protobuf
+/// request/response encoding; FIDL only carries them to the owning worker.
+type VmiInvokeRequest = resource table {
+    1: expected_epoch uint64;
+    2: primitive uint32;
+    /// A VMO is required even for an empty protobuf message. This keeps the
+    /// transport shape independent of payload size and prevents a caller from
+    /// accidentally exceeding Zircon's inline channel-message limit.
+    3: payload VmiOpaquePayload;
+    /// Worker-owned capability generation returned by GetCapabilities. The
+    /// worker rejects a stale value before inspecting or changing the head.
+    4: expected_capability_generation uint64;
+};
+
+/// Machine-state artifact understood by a compatible worker.
+///
+/// The process-local kind names state retained inside the owning worker. The
+/// durable kind names a verified manifest in the shared artifact store and may
+/// be installed by another worker with the same launch compatibility tuple.
+type StateArtifactKind = strict enum : uint32 {
+    PROCESS_LOCAL_CHECKPOINT_V1 = 1;
+    DURABLE_MACHINE_STATE_V1 = 2;
+};
+
+type StateArtifact = table {
+    1: kind StateArtifactKind;
+    2: id string:128;
+    3: owner_vm_id string:128;
+    4: source_epoch uint64;
+    5: logical_bytes uint64;
+};
+
+/// Typed prerequisites for machine-state capture/install.
+type StateInstallCapabilities = table {
+    1: process_local_checkpoint_v1 bool;
+    2: durable_machine_state_v1 bool;
+    3: cross_worker_install bool;
+    4: max_process_local_checkpoints uint32;
+    /// Stable explanation for the first unsupported durable/fork operation.
+    5: unavailable_reason string:512;
+};
+
+type StateInstallRequest = table {
+    1: expected_epoch uint64;
+    2: new_epoch uint64;
+    3: artifact StateArtifact;
+    /// Reconstructs a durable catalog epoch in a fresh, never-run worker
+    /// incarnation. This may keep `new_epoch == expected_epoch`; ordinary
+    /// restore must publish the exact successor instead.
+    4: recovery_same_epoch bool;
+    /// Recovery after a guest-initiated shutdown installs only the durable
+    /// disk graph into the cold boot checkpoint. The powered-off VP/device
+    /// image is retained as an artifact but is never resumed. This is valid
+    /// for either one-shot same-epoch worker reconstruction or an ordinary
+    /// exact-successor rollback; both finish Stopped.
+    5: cold_boot_on_start bool;
+};
+
+/// Publishes a complete durable machine artifact.
+///
+/// With no `source`, the worker captures its current paused/stopped state. A
+/// process-local source promotes that frozen checkpoint without changing the
+/// current machine. Objects are durable before the manifest named by the result
+/// becomes visible.
+type DurableStateCaptureRequest = table {
+    1: expected_epoch uint64;
+    2: artifact_id string:128;
+    3: source StateArtifact;
+};
+
+type StateInstallResult = table {
+    1: epoch uint64;
+    2: capability_generation uint64;
+};
+
+/// Trace formats understood by the worker protocol. Availability is still
+/// discovered at runtime; naming a format here does not advertise it.
+type VmiTraceFormat = strict enum : uint32 {
+    VM_EXIT_TRACE = 1;
+    RAW_INTEL_PT = 2;
+};
+
+type VmiTraceTerminal = strict enum : uint32 {
+    ACTIVE = 1;
+    COMPLETE = 2;
+    INCOMPLETE = 3;
+};
+
+type VmiTraceDelivery = strict enum : uint32 {
+    COMPLETE_OR_FAIL = 1;
+    LOSSY_CIRCULAR = 2;
+};
+
+type VmiTraceAddressRange = table {
+    1: start uint64;
+    2: length uint64;
+};
+
+type VmiIntelPtConfig = table {
+    1: delivery VmiTraceDelivery;
+    2: trace_user bool;
+    3: trace_supervisor bool;
+    4: branch_tracing bool;
+    5: psb_frequency uint32;
+    6: has_psb_frequency bool;
+    7: mtc_frequency uint32;
+    8: has_mtc_frequency bool;
+    9: cycle_threshold uint32;
+    10: has_cycle_threshold bool;
+};
+
+type VmiTraceConfig = table {
+    1: format VmiTraceFormat;
+    2: vps vector<uint32>:64;
+    3: buffer_bytes uint64;
+    4: address_ranges vector<VmiTraceAddressRange>:4;
+    5: address_space uint64;
+    6: has_address_space bool;
+    7: intel_pt VmiIntelPtConfig;
+    // Optional exact retry identity for retained raw Intel PT creation. These
+    // fields must be supplied together. The fingerprint is an opaque digest of
+    // the higher-level semantic binding; it never grants tracing authority.
+    8: create_request_id string:128;
+    9: create_fingerprint string:64;
+    /// Guest-physical pages whose first WRITE access terminates this trace
+    /// before the access executes. The worker canonicalizes and hashes this
+    /// set; it never truncates or silently merges overlapping ranges.
+    11: write_watch_ranges vector<VmiTraceAddressRange>:16;
+};
+
+/// A terminal, worker-issued proof that a trace's write-watch lease was bound
+/// to one exact normalized range set. This is not accepted as input and cannot
+/// be fabricated by a raw trace caller.
+type VmiTraceWriteWatchReceipt = table {
+    1: normalized_digest string:64;
+    2: ranges vector<VmiTraceAddressRange>:16;
+    3: continuously_armed bool;
+    4: triggered_gpa uint64;
+    5: has_triggered_gpa bool;
+};
+
+type VmiTraceSession = table {
+    1: id string:128;
+    2: owner_id string:128;
+    3: vm_id string:128;
+    4: epoch uint64;
+    5: capability_generation uint64;
+    6: trace_generation uint64;
+    7: negotiated VmiTraceConfig;
+    8: terminal VmiTraceTerminal;
+    9: terminal_reason string:512;
+    10: decoder_identity string:256;
+    11: cpu_family uint32;
+    12: cpu_model uint32;
+    13: cpu_stepping uint32;
+    14: cpuid_14 vector<VmiIntelPtCpuidLeaf>:8;
+    15: write_watch_receipt VmiTraceWriteWatchReceipt;
+};
+
+type VmiTraceReadRequest = table {
+    1: owner_id string:128;
+    2: vm_id string:128;
+    3: expected_epoch uint64;
+    4: expected_capability_generation uint64;
+    5: session_id string:128;
+    6: vp uint32;
+    7: trace_generation uint64;
+    8: cursor uint64;
+    9: max_bytes uint64;
+};
+
+type VmiTraceChunk = table {
+    1: vm_id string:128;
+    2: epoch uint64;
+    3: session_id string:128;
+    4: vp uint32;
+    5: trace_generation uint64;
+    6: cursor uint64;
+    7: next_cursor uint64;
+    8: data vector<uint8>:65536;
+    9: producer_cursor uint64;
+    10: segment_sequence uint64;
+    11: segment_offset uint64;
+    12: segment_complete bool;
+    13: terminal VmiTraceTerminal;
+    14: terminal_reason string:512;
+    15: hardware_stopped bool;
+    16: lost_bytes uint64;
+    17: gap_before bool;
+    18: hardware_status uint64;
+    19: hardware_error bool;
+    20: watermark_count uint64;
+};
+
+type VmiTraceAckRequest = table {
+    1: owner_id string:128;
+    2: vm_id string:128;
+    3: expected_epoch uint64;
+    4: expected_capability_generation uint64;
+    5: session_id string:128;
+    6: vp uint32;
+    7: trace_generation uint64;
+    8: through_cursor uint64;
+};
+
+type VmiTraceAck = table {
+    1: vm_id string:128;
+    2: epoch uint64;
+    3: session_id string:128;
+    4: vp uint32;
+    5: trace_generation uint64;
+    6: through_cursor uint64;
+};
+
+type VmiTraceStopRequest = table {
+    1: owner_id string:128;
+    2: vm_id string:128;
+    3: expected_epoch uint64;
+    4: expected_capability_generation uint64;
+    5: session_id string:128;
+};
+
+/// Exact-epoch request used by the manager to arbitrate durable VM lifecycle
+/// against worker-owned trace resources. This is an internal control-plane
+/// contract, not a client trace-session operation.
+type VmiTraceRunControlRequest = table {
+    1: expected_epoch uint64;
+};
+
+type Store = table {
+    /// Capacity of the image-store container offered to the VM manager.
+    1: total_bytes uint64;
+    /// Bytes occupied by admitted image content and durable VM artifacts.
+    2: used_bytes uint64;
+    /// Bytes available for another image push. Kept explicit so the authority
+    /// can account for reserved space rather than forcing clients to subtract.
+    3: free_bytes uint64;
+};
+
+type Image = table {
+    1: id string:128;
+    2: name string:128;
+    3: stored_bytes uint64;
+    4: virtual_bytes uint64;
+};
+
+/// Whether the desired VM record currently has a live execution worker.
+///
+/// This is separate from lifecycle state: a durable stopped VM is normally
+/// UNPOPULATED, while a desired-running VM whose worker was lost is DEGRADED.
+type Population = flexible enum : uint32 {
+    UNPOPULATED = 1;
+    POPULATED = 2;
+    DEGRADED = 3;
+    /// The dynamic child exists but has not crossed its stopped launch barrier.
+    POPULATING = 4;
+};
+
+type Vm = table {
+    1: id string:128;
+    2: name string:128;
+    3: image_id string:128;
+    4: state State;
+    5: memory_mib uint64;
+    6: vp_count uint32;
+    7: epoch uint64;
+    8: head_id string:128;
+    9: memory_only bool;
+    10: snapshot_count uint64;
+    11: checkpoint_count uint64;
+    12: last_error string:1024;
+    /// Durable manager intent, independent of whether a worker exists.
+    13: desired_state State;
+    /// Live worker observation. Absent when the VM is not populated.
+    14: observed_state State;
+    15: population Population;
+    /// Hex SHA-256 of the immutable launch graph and worker resource policy.
+    ///
+    /// Component-local population control compares this with the desired
+    /// launch contract before reusing an existing dynamic worker. Operator
+    /// metadata and the mutable lifecycle epoch are intentionally separate.
+    16: launch_identity string:64;
+    /// Dirty writable-overlay bytes currently held in worker RAM.
+    17: resident_dirty_bytes uint64;
+    /// Immutable dirty-overlay slots currently allocated in disposable spill.
+    18: spill_bytes uint64;
+    /// Present only for a worker launched with projection-aware authority.
+    19: worker_projection_identity WorkerProjectionIdentity;
+};
+
+type ServiceHealth = table {
+    1: available bool;
+    2: message string:1024;
+};
+
+type Report = table {
+    1: store Store;
+    2: images vector<Image>:32;
+    3: vms vector<Vm>:64;
+    4: gateway_port uint16;
+    /// Status-service health is not inventory and must never be represented by
+    /// a synthetic VM record.
+    5: health ServiceHealth;
+};
+
+@discoverable
+closed protocol Status {
+    strict GetReport() -> (struct {
+        report Report;
+    });
+};
+
+/// Component-local lifecycle control for one VM worker.
+///
+/// A successful reply means the run loop completed the requested transition,
+/// not merely that the service queued it. A guest-initiated reset and a guest
+/// power-off are reported as guest-originated events (see `GuestEvent`), not
+/// host commands: they describe something the guest already did. An operator
+/// asking the worker to make the guest reboot is the opposite direction and
+/// is a real command, `ColdRestart`.
+@discoverable
+closed protocol Control {
+    strict Start() -> () error ControlError;
+    strict Stop() -> () error ControlError;
+    strict Pause() -> () error ControlError;
+    strict Resume() -> () error ControlError;
+    /// Disk-preserving cold restart: reboot the running guest through
+    /// firmware from the sealed boot checkpoint while retaining the current
+    /// mutable disk head and execution epoch. Valid only from `RUNNING`.
+    /// This performs the same in-place restore as a guest-initiated reset,
+    /// but is never published on the `OnGuestEvent` channel — it is not a
+    /// guest observation.
+    strict ColdRestart() -> () error ControlError;
+
+    /// Sent to every currently connected controller. Events are live
+    /// component-local state and are not replayed after reconnect.
+    strict -> OnGuestEvent(struct {
+        event GuestEvent;
+    });
+};
+
+/// The paging registers of one VP, captured with an exported RAM view. A reader
+/// serving virtual reads or translations from the snapshot walks the guest page
+/// tables (which live in the snapshot itself) using exactly these registers, so
+/// the result is identical to the worker's own read.
+type RamViewVpPaging = table {
+    1: vp uint32;
+    2: cr0 uint64;
+    3: cr3 uint64;
+    4: cr4 uint64;
+};
+
+/// One guest-physical RAM range and its location in the densely packed view
+/// VMO. Ranges are ordered and non-overlapping in GPA space; backing ranges
+/// cover the VMO exactly once from offset zero.
+type RamViewExtent = table {
+    1: gpa_start uint64;
+    2: backing_offset uint64;
+    3: length uint64;
+};
+
+/// Describes an exported RAM view. The bytes themselves are the accompanying
+/// read-only VMO handle; this carries what a reader needs to interpret them.
+type RamViewDescriptor = table {
+    /// Size in bytes of guest RAM, equal to the densely packed exported VMO's
+    /// size. Use ram_extents to translate guest-physical addresses.
+    1: ram_bytes uint64;
+    /// Per-VP paging registers captured at the same stopped barrier.
+    2: vp_paging vector<RamViewVpPaging>:64;
+    /// The execution timeline and capability generation this snapshot belongs
+    /// to; a reader binds its cache to these so a later timeline cannot serve
+    /// stale bytes.
+    3: epoch uint64;
+    4: capability_generation uint64;
+    /// Sparse guest-physical RAM layout over the packed VMO. Addresses outside
+    /// these ranges are MMIO holes and must not be read from the VMO.
+    5: ram_extents vector<RamViewExtent>:64;
+};
+
+/// One exported RAM view: the read-only immutable copy-on-write snapshot of
+/// guest RAM together with the descriptor needed to interpret it.
+type RamView = resource table {
+    /// Densely packed read-only RAM VMO interpreted through the descriptor's
+    /// extents. It is an immutable copy-on-write child, so it never observes a
+    /// later guest write.
+    1: ram zx.Handle:VMO;
+    2: descriptor RamViewDescriptor;
+};
+
+/// Component-local VMI route for one VM worker.
+///
+/// Requests are completed on the thread that owns the Zircon VCPU. The
+/// host-facing API is gRPC; this protocol is an implementation boundary and is
+/// not exposed outside the component realm.
+@discoverable
+closed protocol Vmi {
+    strict GetCapabilities(struct {
+        expected_epoch uint64;
+    }) -> (struct {
+        capabilities VmiCapabilities;
+    }) error VmiError;
+
+    /// Exports a read-only immutable copy-on-write snapshot of guest RAM plus
+    /// the per-VP paging registers, so a client may serve paused
+    /// ReadPhysical/ReadVirtual/Translate from the snapshot without a per-read
+    /// round trip. The snapshot is coherent (immutable) and cannot tear; a
+    /// subsequent guest-RAM mutation does not change it, which is why the caller
+    /// must discard the view when RAM may have changed. The machine stays paused
+    /// and its RAM pins are released and re-armed across the snapshot point
+    /// exactly as a checkpoint does. Callable ONLY when GetCapabilities
+    /// advertised `supports_ram_view_export` (this is a closed protocol).
+    strict ExportRamView(struct {
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+    }) -> (resource struct {
+        view RamView;
+    }) error VmiError;
+
+    strict Execute(VmiExecuteRequest) -> (struct {
+        result VmiExecutionResult;
+    }) error VmiError;
+
+    strict CancelExecution(struct {
+        request_id string:128;
+    }) -> () error VmiError;
+
+    strict Invoke(VmiInvokeRequest) -> (resource struct {
+        /// Same carrier bound as the request. Primitive-specific limits remain
+        /// smaller and are enforced before guest state is accessed.
+        payload VmiOpaquePayload;
+    }) error VmiError;
+
+    /// Executes one trusted, token-bound process-memory mutation. The payload
+    /// is cerise.vmi.v1.ProcessWriteRequest; unlike Invoke, this method has no
+    /// caller-selected primitive number and is never advertised as a raw VMI
+    /// capability. The gateway supplies a service-derived principal (never a
+    /// caller JSON field) and a token. The principal's authorization strength
+    /// comes from deployment transport policy. The worker checks these outer
+    /// fences and the protobuf's independent inner fences against live facts
+    /// before consulting its retained journal.
+    strict ProcessWrite(resource struct {
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+        payload VmiOpaquePayload;
+    }) -> (resource struct {
+        payload VmiOpaquePayload;
+    }) error VmiError;
+
+    /// Queries the retained result of ProcessWrite without dispatching a
+    /// mutation. The payload is cerise.vmi.v1.QueryProcessWriteRequest. A
+    /// mismatched owner is reported as an unknown request by the worker.
+    strict QueryProcessWrite(resource struct {
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+        payload VmiOpaquePayload;
+    }) -> (resource struct {
+        payload VmiOpaquePayload;
+    }) error VmiError;
+
+    /// Describes which manager artifacts this worker can install without
+    /// inferring bytes from an opaque durable reference.
+    strict GetStateInstallCapabilities() -> (struct {
+        capabilities StateInstallCapabilities;
+    });
+
+    /// Captures one complete, process-local stopped-machine image.
+    strict CaptureState(struct {
+        expected_epoch uint64;
+        artifact_id string:128;
+    }) -> (struct {
+        artifact StateArtifact;
+    }) error VmiError;
+
+    /// Captures the current stopped barrier, or promotes a process-local
+    /// checkpoint, into a versioned durable complete-machine manifest.
+    strict CaptureDurableState(DurableStateCaptureRequest) -> (struct {
+        artifact StateArtifact;
+    }) error VmiError;
+
+    /// Installs a compatible process-local or durable image and publishes
+    /// `new_epoch` only after RAM, disk, devices, VMBus, partition, and VP
+    /// state succeed. Success always leaves the machine paused.
+    strict InstallState(StateInstallRequest) -> (struct {
+        result StateInstallResult;
+    }) error VmiError;
+
+    /// Releases a worker-owned process-local image. This remains valid after
+    /// the source VM advances to another epoch.
+    strict ReleaseState(StateArtifact) -> () error VmiError;
+
+    /// Replays durable guest lifecycle notifications after controller loss.
+    /// The current worker retains at most one unacknowledged power-off.
+    strict GetPendingGuestEvents() -> (struct {
+        events vector<GuestEvent>:1;
+    });
+
+    /// Removes exactly the acknowledged durable event. Repeating an
+    /// acknowledgement for the same event is idempotent only while the same
+    /// worker process survives; a restarted worker with an empty outbox has
+    /// no acknowledgement proof and rejects the retry.
+    strict AckGuestEvent(GuestEvent) -> () error VmiError;
+
+    /// Creates a bounded lossless trace session. Only formats advertised by
+    /// GetCapabilities are accepted.
+    strict CreateTraceSession(struct {
+        owner_id string:128;
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+        config VmiTraceConfig;
+    }) -> (struct {
+        session VmiTraceSession;
+    }) error VmiError;
+
+    /// Idempotent cursor read. Storage remains immutable until AckTrace.
+    strict ReadTrace(VmiTraceReadRequest) -> (struct {
+        chunk VmiTraceChunk;
+    }) error VmiError;
+
+    /// Reclaims only complete immutable segments through an exact cursor.
+    strict AckTrace(VmiTraceAckRequest) -> (struct {
+        ack VmiTraceAck;
+    }) error VmiError;
+
+    /// Idempotently seals the session. Buffered segments remain readable.
+    strict StopTraceSession(VmiTraceStopRequest) -> (struct {
+        session VmiTraceSession;
+    }) error VmiError;
+
+    /// Reports whether Resume/Stop/ColdRestart would cross a trace-owned run
+    /// control boundary. Intel PT remains owned after Stop until Release.
+    strict TraceRunControlOwned(VmiTraceRunControlRequest) -> (struct {
+        owned bool;
+    }) error VmiError;
+
+    /// Revokes every trace-owned run-control resource after durable lifecycle
+    /// intent already owns recovery. Implementations must be idempotent.
+    strict RevokeTraceRunControl(VmiTraceRunControlRequest) -> () error VmiError;
+};
+
+/// Version of the private worker/gateway transport boundary.
+///
+/// This is independent of the public gRPC API. Component handles are live
+/// host state and never become part of a VM snapshot.
+const DATA_PLANE_VERSION_V1 uint32 = 1;
+
+type DataPlaneKind = strict enum : uint32 {
+    DISPLAY = 1;
+    INPUT = 2;
+    SERIAL = 3;
+    HVSOCK = 4;
+    NETWORK = 5;
+    REMOTE_PCI = 6;
+    REMOTE_USB = 7;
+    REMOTE_BLUETOOTH = 8;
+    TOUCH = 9;
+};
+
+type DataPlaneError = flexible enum : uint32 {
+    NOT_FOUND = 1;
+    STALE_EPOCH = 2;
+    QUIESCED = 3;
+    BUSY = 4;
+    UNSUPPORTED = 5;
+    INVALID_REQUEST = 6;
+    FAILED = 7;
+    /// The worker and device route are healthy, but the guest has not yet made
+    /// the requested endpoint usable (for example, no mapped framebuffer or
+    /// no listening hvsock service).
+    NOT_READY = 8;
+    /// The worker could not publish the dynamic hvsocket offer before its
+    /// bounded deadline.
+    HVSOCK_OFFER_TIMEOUT = 9;
+    /// The worker failed to publish the dynamic hvsocket offer.
+    HVSOCK_OFFER_FAILED = 10;
+    /// The dynamic hvsocket offer was published, but the guest did not open it
+    /// before the bounded deadline.
+    HVSOCK_GUEST_OPEN_TIMEOUT = 11;
+    /// The dynamic hvsocket offer was published, but accepting the guest open
+    /// failed.
+    HVSOCK_GUEST_OPEN_FAILED = 12;
+    /// The guest opened the dynamic hvsocket offer, but host stream setup
+    /// failed.
+    HVSOCK_STREAM_SETUP_FAILED = 13;
+};
+
+type DataPlaneCapability = table {
+    1: device_id string:128;
+    2: kind DataPlaneKind;
+};
+
+type DataPlaneCapabilities = table {
+    1: version uint32;
+    2: vm_id string:128;
+    3: epoch uint64;
+    4: running bool;
+    5: devices vector<DataPlaneCapability>:128;
+};
+
+/// Identity common to every component-local transport operation.
+///
+/// `expected_epoch` is mandatory at this boundary. The public compatibility
+/// services may discover it before opening, but a worker never accepts an
+/// unqualified operation.
+type DataPlaneOpen = table {
+    1: device_id string:128;
+    2: expected_epoch uint64;
+    3: session_id string:128;
+    /// Display streams set this cursor after receiving a full framebuffer.
+    /// An equal worker generation permits GetFramebuffer to omit pixel bytes.
+    4: after_framebuffer_generation uint64;
+};
+
+type DataPlaneFramebuffer = resource table {
+    1: epoch uint64;
+    2: width uint32;
+    3: height uint32;
+    4: generation uint64;
+    /// Compatibility carrier for small or synthetic frames. Production workers
+    /// use `bgrx_vmo`: a normal-sized guest framebuffer cannot fit in a Zircon
+    /// channel message.
+    5: bgrx_pixels vector<uint8>:33554432;
+    /// Read-only, tightly packed BGRX pixels. Exactly `bgrx_bytes` bytes from
+    /// offset zero are valid; the receiver must also validate width * height * 4.
+    6: bgrx_vmo zx.Handle:VMO;
+    7: bgrx_bytes uint64;
+};
+
+type DataPlaneKeyEvent = table {
+    1: open DataPlaneOpen;
+    2: code uint32;
+    3: make bool;
+};
+
+type DataPlaneMouseEvent = table {
+    1: open DataPlaneOpen;
+    2: x uint32;
+    3: y uint32;
+    4: button_mask uint32;
+};
+
+/// One HID multi-touch contact. `x`/`y` are the device's logical 0..32767
+/// range; wire-to-logical scaling happens at the gRPC boundary, not here.
+type DataPlaneTouchContact = struct {
+    id uint8;
+    x uint16;
+    y uint16;
+    tip bool;
+};
+
+type DataPlaneTouchEvent = table {
+    1: open DataPlaneOpen;
+    2: contacts vector<DataPlaneTouchContact>:4;
+};
+
+type DataPlaneStreamOpen = resource table {
+    1: epoch uint64;
+    2: stream zx.Handle:SOCKET;
+    /// The peer closes only after the worker has fully retired this stream.
+    /// Gateways use this to avoid acknowledging a close while guest-visible
+    /// resources from the old connection are still being revoked.
+    3: completion zx.Handle:EVENTPAIR;
+};
+
+type DataPlaneNetworkOpen = resource table {
+    1: epoch uint64;
+    /// DATAGRAM socket: one datagram is exactly one Ethernet frame.
+    2: frames zx.Handle:SOCKET;
+    3: mac array<uint8, 6>;
+    4: mtu uint32;
+};
+
+type DataPlaneHvsockOpen = table {
+    1: open DataPlaneOpen;
+    /// Opaque Hyper-V service GUID. The special value "console" is not valid
+    /// here; serial has its own configured device and method.
+    2: service_id string:128;
+};
+
+type RemoteCompletionStatus = strict enum : uint32 {
+    OK = 1;
+    STALL = 2;
+    NAK = 3;
+    CANCELLED = 4;
+    ERROR = 5;
+};
+
+type RemoteUsbTransferKind = strict enum : uint32 {
+    CONTROL = 1;
+    BULK = 2;
+    INTERRUPT = 3;
+    ISOCHRONOUS = 4;
+};
+
+type RemotePciAccess = table {
+    /// Absent for PCI configuration space; otherwise the BAR number.
+    1: bar uint8;
+    2: offset uint64;
+    3: write_data vector<uint8>:8;
+    4: read_length uint32;
+};
+
+type RemoteUsbTransfer = table {
+    1: endpoint uint8;
+    2: kind RemoteUsbTransferKind;
+    3: setup array<uint8, 8>;
+    4: data vector<uint8>:16777216;
+    5: read_length uint32;
+};
+
+type RemoteBluetoothPacket = table {
+    1: indicator uint8;
+    2: data vector<uint8>:16777216;
+};
+
+type RemoteDeviceOperation = flexible union {
+    1: pci_access RemotePciAccess;
+    2: usb_transfer RemoteUsbTransfer;
+    3: bluetooth_packet RemoteBluetoothPacket;
+    4: cancel_request_id uint64;
+    5: reset struct {};
+};
+
+type RemoteDeviceEvent = flexible union {
+    1: completion table {
+        1: request_id uint64;
+        2: status RemoteCompletionStatus;
+        3: data vector<uint8>:16777216;
+    };
+    2: pci_interrupt table {
+        1: vector uint32;
+    };
+    3: pci_dma table {
+        1: request_id uint64;
+        2: address uint64;
+        3: write_data vector<uint8>:16777216;
+        4: read_length uint32;
+    };
+    4: usb_ready table {
+        1: endpoint uint8;
+    };
+    5: bluetooth_packet RemoteBluetoothPacket;
+};
+
+type RemoteAdapterCloseReason = strict enum : uint32 {
+    DIRECTORY_RECONFIGURED = 1;
+    WORKER_REPLACED = 2;
+    STATE_RESTORED = 3;
+    DEVICE_REMOVED = 4;
+    VM_DELETED = 5;
+    TRANSPORT_FAILED = 6;
+    ENDPOINT_LOST = 7;
+};
+
+/// Gateway-owned half of one configured remote-device adapter.
+///
+/// The worker is the client: it submits guest-originated operations and
+/// receives provider completions/events. Only copied bounded buffers cross the
+/// component boundary; guest mappings and physical handles never do.
+closed protocol RemoteDeviceAdapter {
+    strict Submit(struct {
+        token uint64;
+        operation RemoteDeviceOperation;
+    });
+    strict CompletePciDma(struct {
+        token uint64;
+        request_id uint64;
+        status RemoteCompletionStatus;
+        data vector<uint8>:16777216;
+    });
+    /// Confirms that one gateway delivery has entered worker-owned state.
+    /// Until this arrives, the gateway retains the event in the durable
+    /// attachment manifest and may replay it after restore.
+    strict AcknowledgeDeviceEvent(struct {
+        delivery_id uint64;
+    });
+
+    strict -> OnAccepted(struct {
+        token uint64;
+        request_id uint64;
+        has_request_id bool;
+    });
+    strict -> OnRejected(struct {
+        token uint64;
+        message string:1024;
+    });
+    strict -> OnDeviceEvent(struct {
+        delivery_id uint64;
+        event RemoteDeviceEvent;
+    });
+    strict -> OnClosed(struct {
+        reason RemoteAdapterCloseReason;
+    });
+};
+
+type DataPlaneRemoteBind = resource table {
+    1: open DataPlaneOpen;
+    2: kind DataPlaneKind;
+    3: adapter client_end:RemoteDeviceAdapter;
+};
+
+/// Component-local transport authority for exactly one VM worker.
+///
+/// Pause, Stop, and capture-only checkpoints quiesce these operations without
+/// closing their handles. A successful state install closes old handles,
+/// advances `epoch`, and leaves the replacement timeline paused.
+@discoverable
+closed protocol DataPlane {
+    strict GetCapabilities() -> (struct {
+        capabilities DataPlaneCapabilities;
+    });
+
+    strict GetFramebuffer(DataPlaneOpen) -> (resource struct {
+        frame DataPlaneFramebuffer;
+    }) error DataPlaneError;
+    strict SendKey(DataPlaneKeyEvent) -> () error DataPlaneError;
+    strict SendMouse(DataPlaneMouseEvent) -> () error DataPlaneError;
+    strict SendTouch(DataPlaneTouchEvent) -> () error DataPlaneError;
+
+    strict OpenSerial(DataPlaneOpen) -> (DataPlaneStreamOpen)
+        error DataPlaneError;
+    strict OpenHvsock(DataPlaneHvsockOpen) -> (DataPlaneStreamOpen)
+        error DataPlaneError;
+    strict OpenNetwork(DataPlaneOpen) -> (DataPlaneNetworkOpen)
+        error DataPlaneError;
+    strict SetNetworkLink(struct {
+        open DataPlaneOpen;
+        up bool;
+    }) -> () error DataPlaneError;
+
+    /// Binds the manager-owned remote-device endpoint to the exact
+    /// guest-facing adapter that was actually constructed by this worker.
+    strict BindRemoteDevice(DataPlaneRemoteBind) -> () error DataPlaneError;
+};
+
+/// Minimal capability handshake for the on-machine fast VMI plane.
+///
+/// This is deliberately NOT the full `VmiCapabilities` projection: the
+/// read-mostly fast loop needs only the authoritative epoch and capability
+/// generation to fence its subsequent `FastControl.Invoke` calls. The complete
+/// worker capability discovery still runs on the gateway (the identical manager
+/// `vmi_capabilities` workflow the gRPC path runs); only these two fence values
+/// cross this boundary.
+type FastVmiCapabilities = table {
+    1: epoch uint64;
+    2: capability_generation uint64;
+};
+
+/// Selects the implementation that must serve a read through the on-machine
+/// VMI surface. `AUTO` permits a safe fallback; the concrete values make
+/// correctness and latency measurements self-identifying.
+type FastVmiReadPath = strict enum : uint32 {
+    AUTO = 0;
+    BROKERED = 1;
+    RAM_VIEW = 2;
+};
+
+/// One immutable, runtime-added introspection package available through the
+/// on-machine fast plane. The exact `name@version` ID is the stable selector;
+/// adding another version never changes an existing package.
+type FastVmiRuntimeCapability = table {
+    1: id string:256;
+    2: host_functions vector<string:128>:64;
+    3: max_input_bytes uint64;
+    4: max_output_bytes uint64;
+    5: max_guest_bytes uint64;
+    6: max_concurrency uint32;
+};
+
+/// On-machine fast control/VMI surface brokered by the gateway. An on-machine
+/// client reaches the epoch/capability-generation
+/// fenced VMI primitive of a gateway-owned worker over ONE FIDL hop, without
+/// the localhost TCP + HTTP/2 + protobuf + netstack3 round trip the external
+/// gRPC control plane requires.
+///
+/// The gateway remains the single authority. Every call runs the SAME manager
+/// workflow the gRPC `VmiGateway` path runs (`vmi_capabilities`, `invoke_vmi`)
+/// against an authoritative manager projection, with the same worker capability
+/// discovery and the same explicit epoch + capability-generation fences. The
+/// fast plane reuses one cached projection across calls (rebuilding it on any
+/// manager rejection, and refusing while the durable catalog is unavailable).
+/// Reuse is made sound by two cooperating mechanisms rather than by the fences
+/// alone: (1) each check+invoke runs under the SAME per-VM operation-coordinator
+/// lease every lifecycle mutation, reconciliation, and recovery takes, so a fast
+/// call never overlaps a mutation on the same VM -- closing the window in which a
+/// lifecycle op has committed the durable catalog but not yet published it to
+/// the shared view or applied the transition to the worker; and (2) the cached
+/// projection is rebuilt whenever the monotonic whole-catalog revision has
+/// advanced since it was built. These together, not "a stale cache can only
+/// reject", are what prevent an unfenced admission. As a third, catch-all
+/// guard the plane also fails closed with `BUSY` whenever the host-operation
+/// gate is not `SERVING` -- a host transition, or startup/platform recovery
+/// that mutates VM state outside the per-VM lease -- so those windows are
+/// refused structurally. This is therefore NOT a raw proxy to the worker's
+/// `Vmi` protocol and cannot bypass gateway transition fencing. Workers live in
+/// the gateway's dynamic collection and are reachable only through it.
+///
+/// Only read-mostly primitives (`ReadVirtual`, `GetVpState`, `GetCapabilities`)
+/// are carried here. The opaque `Invoke` request/response bytes are the shared
+/// manager primitive protobuf encoding, byte-identical to what
+/// `VmiGateway.Invoke` carries; bulk transfers above the inline bound stay on
+/// the gRPC/VMO-carrier path.
+@discoverable
+closed protocol FastControl {
+    /// Runs the manager `vmi_capabilities` workflow (full worker capability
+    /// discovery, epoch fence) and returns the two fence values the read loop
+    /// needs. A stale epoch is rejected with `STALE_EPOCH`.
+    strict GetCapabilities(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+    }) -> (struct {
+        capabilities FastVmiCapabilities;
+    }) error VmiError;
+
+    /// Runs the manager `invoke_vmi` workflow for one read-mostly VMI
+    /// primitive. `primitive` is the shared manager `Primitive` wire value;
+    /// `request` and the returned `response` carry that primitive's protobuf
+    /// encoding exactly as `VmiGateway.Invoke` does. The gateway re-validates
+    /// the epoch and capability generation against the live worker before any
+    /// guest state is read.
+    strict Invoke(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+        primitive uint32;
+        request vector<uint8>:32768;
+    }) -> (struct {
+        response vector<uint8>:32768;
+    }) error VmiError;
+
+    /// Runs the same read workflow while requiring a particular serving path,
+    /// and reports the concrete path that produced the response. A required
+    /// RAM view fails if no valid immutable view is available; it never times
+    /// a brokered fallback and labels it as a view-backed read.
+    strict InvokeWithReadPath(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+        expected_capability_generation uint64;
+        primitive uint32;
+        request vector<uint8>:32768;
+        required_read_path FastVmiReadPath;
+    }) -> (struct {
+        response vector<uint8>:32768;
+        read_path FastVmiReadPath;
+    }) error VmiError;
+
+    /// Runs an on-machine rhai introspection script next to the worker,
+    /// collapsing many guest reads into one result without a per-op round trip.
+    ///
+    /// The script engine is a CLIENT of this same plane, NOT a new surface:
+    /// every guest read a script performs is dispatched through the identical
+    /// `invoke_vmi` workflow `Invoke` uses, under the same host-operation
+    /// admission permit, per-VM operation-coordinator lease, session-cache
+    /// coherence, and in-call worker deadline. The only capabilities bound into
+    /// the engine are the read-only introspection host functions
+    /// (`read_virtual`/`read_physical`/`vp_rip`/`vp_cr3`/`translate`) plus pure
+    /// plane-side transforms (`disasm`, `hex`): NO mutating primitive is bound,
+    /// so a script has no binding through which to perform one (a call to an
+    /// unbound name simply fails at call time and dispatches nothing), and
+    /// dynamic `eval` is disabled. It thus cannot mutate guest state or bypass
+    /// transition fencing. `read_virtual` and `translate` also have overloads
+    /// that accept an explicit CR3, allowing a discovered address space to be
+    /// inspected without changing VP state. Runaway scripts are bounded by the
+    /// engine's operation/recursion/allocation limits and a cumulative
+    /// read-bytes budget.
+    /// An N-read script is N+1 gated calls (one capability discovery, then N
+    /// reads), each individually fenced.
+    ///
+    /// The script's final expression is returned: a byte buffer verbatim, a
+    /// string as UTF-8, an integer as 8-byte little-endian.
+    strict RunScript(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+        source string:32768;
+    }) -> (struct {
+        result vector<uint8>:32768;
+    }) error VmiError;
+
+    /// Lists the exact immutable runtime packages currently active. A package
+    /// registered through the authoritative control plane becomes visible here
+    /// only after its full dependency closure has validated and compiled.
+    strict ListRuntimeCapabilities() -> (struct {
+        capabilities vector<FastVmiRuntimeCapability>:256;
+    }) error VmiError;
+
+    /// Runs one active runtime package with bounded JSON input and output. The
+    /// package executes through the same epoch-fenced read-only substrate as
+    /// `RunScript`; only the package's declared host bindings are installed.
+    strict InvokeRuntimeCapability(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+        capability string:256;
+        input_json vector<uint8>:32768;
+    }) -> (struct {
+        output_json vector<uint8>:32768;
+    }) error VmiError;
+
+    /// Runs one operation of the compiled, retained process-trace capability
+    /// through the same admission and lifecycle service as the authoritative
+    /// gRPC extension route.  This is deliberately a dedicated method rather
+    /// than a generic runtime-capability invocation: PDB providers and native
+    /// trace authority are never exposed as Rhai or package host bindings.
+    ///
+    /// The component route is the FastControl principal boundary.  The
+    /// gateway derives that stable component identity; neither the lifecycle
+    /// JSON nor this request carries a caller-selected principal, CR3, range,
+    /// VP, or paging option.
+    strict InvokeProcessTrace(struct {
+        vm_id string:128;
+        expected_epoch uint64;
+        capability string:256;
+        input_json vector<uint8>:32768;
+    }) -> (struct {
+        output_json vector<uint8>:32768;
+    }) error VmiError;
+};

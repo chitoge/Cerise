@@ -1,0 +1,270 @@
+# Bazel integration for this imported target. The upstream
+# build is BUILD.gn (kept alongside as reference); the upstream BUILD.bazel was
+# a non-reusable Fuchsia-specific fragment (fx_cc_library getifaddrs-internal)
+# and is replaced here.
+#
+# This is the source-build musl port. It provides the public header surface,
+# compiled libc and CRT objects, the dynamic linker, and the assembled sysroot.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# musl public header surface (the libc header declarations). x86_64 bits live
+# under include/bits; arch/x86_64 holds ldso/pthread internals (not public).
+# Pre-generated include/bits/alltypes.h is present (no codegen needed here).
+# musl's public header surface. Fuchsia's libc is a musl +
+# llvm-libc hybrid — musl is primary, but musl/include/features.h pulls the
+# llvm-libc shared macro header <__llvm-libc-common.h>. That header lives in
+# @llvm-project//libc/include and is not individually referenceable, so the
+# correct provision is a curated SYSROOT header assembly (musl headers + the
+# llvm-libc shared headers, musl-first). This target
+# exposes only the musl half; headers that pull __llvm-libc-common.h won't
+# compile standalone (see //examples/libc-probe, tagged manual).
+cc_library(
+    name = "libc_headers",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+)
+
+# Private headers shared across musl source modules. Bazel resolves quoted
+# includes via -I (not the source file's dir), so each module dir that owns a
+# quoted internal header must be on the path: src/internal (libc.h, asan_impl.h,
+# threads_impl.h), third_party/include (libm.h), src/errno (__strerror.h),
+# src/ipc (ipc.h), arch/x86_64 (pthread_arch.h, reloc.h).
+cc_library(
+    name = "libc_private_headers",
+    hdrs = glob(
+        [
+            "src/**/*.h",
+            "src/**/*.inc",
+            "arch/x86_64/**/*.h",
+            "third_party/**/*.h",
+            "third_party/**/*.inc",
+            "ldso/**/*.h",
+            # Public headers staged as inputs (NOT on the -I path) so musl's
+            # relative includes (e.g. "../../include/limits.h" from src/internal)
+            # resolve. The public headers reach the compile as -isystem via the
+            # assembled sysroot, not -I (which would shadow libc++).
+            "include/**/*.h",
+            "include/**/*.inc",
+        ],
+        allow_empty = True,
+    ),
+    includes = [
+        "arch/x86_64",
+        "ldso",
+        "src/errno",
+        "src/internal",
+        "src/ipc",
+        "src/locale",
+        "third_party/include",
+    ],
+)
+
+# musl's `string` module (all pure C) compiles and archives for the
+# x86_64-unknown-fuchsia target against the assembled sysroot and the vendored
+# zircon header closure (zircon-internal, sdk/lib/c, zircon-assert, the full
+# zircon public glob). Proves musl source — not just headers — builds for the
+# Fuchsia target. The remaining common-impl modules + the zither syscall surface
+# plus CRT and the dynamic loader. This BUILD is under src/upstream (not
+# no_policy-scanned), so vendored build flags live here; local_defines mirrors
+# musl BUILD.gn (_XOPEN_SOURCE=700).
+_LIBC_HEADER_DEPS = [
+    ":libc_private_headers",
+    "//src/cerise/sysroot:libc_sysroot_headers",
+    "//src/upstream/fuchsia/sdk/lib/c:headers",
+    "//src/upstream/fuchsia/sdk/lib/zircon-assert:headers",
+    "//src/upstream/fuchsia/zircon/system/public:public",
+    "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    "//src/upstream/fuchsia/zircon/system/ulib/sync:headers",
+]
+
+cc_library(
+    name = "libc_string",
+    # Include the x86_64 string asm: memset.S/memcpy.S define the HIDDEN
+    # __libc_memset/__libc_memcpy the ldso bootstrap (dlstart/dynlink) uses via
+    # .weakref before its own PLT is resolved — without them the call goes through
+    # an unresolved PLT lazy stub and faults.
+    srcs = glob(["src/string/*.c", "src/string/x86_64/*.S"]),
+    local_defines = ["_XOPEN_SOURCE=700"],
+    # Internal libc symbols must be hidden so they are PC-relative (RELATIVE/RELR)
+    # and resolved by _dl_start's bootstrap; without this they leak as symbolic
+    # GLOB_DAT GOT entries that are unresolved when __dls2 runs (null deref).
+    copts = ["-fvisibility=hidden", "-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    deps = _LIBC_HEADER_DEPS,
+)
+
+# The musl common-implementation module set (the bulk of libc) compiles and archives
+# for x86_64-unknown-fuchsia (liblibc_common.a, ~800 sources). Excludes the
+# separately-built dynamic linker (src/ldso) and a few files that need the
+# GENERATED syscall/status surface (mman: <zircon/status.h>) or are stubs/
+# linux-compat (sem_open, settimeofday) — those land with the syscall codegen.
+cc_library(
+    name = "libc_common",
+    srcs = glob(
+        [
+            "src/*/*.c",
+            # x86_64 string asm: memset.S/memcpy.S define the HIDDEN
+            # __libc_memset/__libc_memcpy the ldso bootstrap calls (via .weakref)
+            # before its own PLT is resolved. libc_common is the lib actually
+            # linked into libc.so (libc_string is not), so they must live here.
+            "src/string/x86_64/*.S",
+            "pthread/*.c",
+            "third_party/tre/*.c",
+            # musl's math + complex impls live under third_party/ (not src/math):
+            # atan2, catan, cexp, csqrt, ... referenced by libc functions.
+            "third_party/math/*.c",
+            "third_party/complex/*.c",
+        ],
+        exclude = [
+            "src/ldso/*.c",  # legacy-impl (dynamic linker), built separately
+            # Use the x86_64 .S versions (which also define the hidden __libc_*
+            # aliases) instead of the generic C; both would be duplicate symbols.
+            "src/string/memset.c",
+            "src/string/memcpy.c",
+            "src/string/memmove.c",
+            "src/string/mempcpy.c",
+            # ENOSYS stub that omits <semaphore.h> (uses sem_t/SEM_FAILED): TODO revisit.
+            "pthread/sem_open.c",
+            # Linux-compat shim using BSD TIMEVAL_TO_TIMESPEC (not on Fuchsia): TODO.
+            "src/linux/settimeofday.c",
+        ],
+        allow_empty = True,
+    ),
+    local_defines = ["_XOPEN_SOURCE=700"],
+    # Internal libc symbols must be hidden so they are PC-relative (RELATIVE/RELR)
+    # and resolved by _dl_start's bootstrap; without this they leak as symbolic
+    # GLOB_DAT GOT entries that are unresolved when __dls2 runs (null deref).
+    # No -fvisibility=hidden: the public POSIX/C API must reach libc.so's .dynsym so
+    # std/other shared libs resolve against it. Exports are controlled by the libc.ifs
+    # version script on the libc_so link; internals match its `local: *` and lld
+    # relaxes them to PC-relative for the ldso bootstrap (replaces the blunt -fhidden).
+    copts = ["-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    deps = _LIBC_HEADER_DEPS + [
+        "//src/upstream/fuchsia/third_party/llvm-libc:llvm_libc_common_header",
+        # scudo (LLVM compiler-rt standalone) is the production malloc family. A dep of
+        # libc_common (not libc_so) so musl's own malloc callers reference it ->
+        # cc_shared_library keeps it (it prunes unreferenced libc_so deps at the Bazel
+        # level, ignoring -u/version). Replaces the interim src/cerise/libc-malloc.
+        "//src/upstream/fuchsia/third_party/scudo/standalone:scudo",
+    ],
+)
+
+# Link the compiled musl objects into a shared libc.so against libzircon
+# (the zx syscall ABI). WIP toward the sysroot — surfaces the remaining gap
+# (ldso/crt/startup symbols). Shared libs allow undefined symbols (resolved at
+# load), so this links partially even before ldso/crt are built.
+# musl's integrated dynamic linker (ld.so.1) — dynlink.c + dlstart.c.
+# Uses musl's own ELF relocation (no elfldltl), processargs, and the zx ABI.
+cc_library(
+    name = "libc_ldso",
+    srcs = [
+        # The ld.so.1 ELF entry point: _start (calls _dl_start). libc.so's e_entry
+        # must point here, else jumping to it faults (the boot loads ld.so.1 and
+        # jumps to e_entry).
+        "arch/x86_64/dl-entry.S",
+        "ldso/dlstart.c",
+        "ldso/dynlink.c",
+        "src/ldso/dlclose.c",
+        "src/ldso/dlerror.c",
+        "src/ldso/dlinfo.c",
+        "src/ldso/x86_64/tlsdesc.S",
+    ],
+    local_defines = ["_XOPEN_SOURCE=700"],
+    # No -fvisibility=hidden: the ldso's public dlfcn API (dl_iterate_phdr, dladdr,
+    # dlinfo, ...) must export. Internals are kept out of .dynsym by the libc.ifs
+    # version script (local: *); lld relaxes the now-local refs to PC-relative — the
+    # same property the bootstrap needs (RELATIVE/RELR before __dls2), validated by the
+    # C probe still booting. (-fno-stack-protector/-safe-stack stay: pre-%fs bootstrap.)
+    copts = ["-fno-stack-protector", "-fno-sanitize=safe-stack"],
+    alwayslink = True,
+    tags = ["manual"],
+    deps = _LIBC_HEADER_DEPS + [
+        "//src/upstream/fuchsia/third_party/llvm-libc:llvm_libc_common_header",
+        "//src/upstream/fuchsia/sdk/lib/c:processargs",
+        "//src/upstream/fuchsia/sdk/lib/fidl_base:headers",
+        "//src/upstream/fuchsia/zircon/system/ulib/ldmsg",
+        "//src/cerise/sysroot/musl-gen:musl_gen_headers",
+    ],
+)
+
+cc_shared_library(
+    name = "libc_so",
+    shared_lib_name = "libc.so",
+    tags = ["manual"],
+    user_link_flags = [
+        "-nostdlib",
+        "-Wl,-soname,libc.so",
+        # libc.so IS ld.so.1: set the ELF entry to the ldso bootstrap _start
+        # (from dl-entry.S). cc_shared_library otherwise leaves e_entry=0.
+        "-Wl,-e,_start",
+        # Pack ALL relative relocations into DT_RELR. _dl_start's bootstrap applies
+        # RELR (apply_relr) + only DT_RELCOUNT-counted REL relocs; the linker was
+        # emitting uncounted DT_REL relative relocs (no DT_RELCOUNT) that the
+        # bootstrap never applied, leaving function pointers base-less (faulting
+        # calls to bare offsets). RELR-packing routes them all through apply_relr.
+        "-Wl,--pack-dyn-relocs=relr",
+        # BIND_NOW: the ldso cannot lazily resolve its OWN PLT during bootstrap
+        # (the lazy resolver isn't set up — a PLT call faults in the lazy stub, as
+        # at the .plt at 0x108246). Resolve all PLT/GOT eagerly at load (the
+        # support-library closure is complete, so every symbol resolves).
+        "-Wl,-z,now",
+        # Export the public ABI (libc.ifs) + make everything else local. Without
+        # this the public API (write/read/memcmp/...) isn't exported and Rust std /
+        # other shared libs can't link against libc.so.
+        "-Wl,--version-script=$(location //src/upstream/fuchsia/sdk/lib/c:libc_version_script)",
+        # Force the bump allocator's malloc in as a GC root (cc_shared_library +
+        # --gc-sections otherwise drops it — nothing inside libc.so references it; std
+        # does, at runtime). Pulls free/calloc/realloc/... from the same object.
+        "-Wl,-u,malloc",
+        # libc.ifs lists the full upstream ABI; our (still-growing) libc.so doesn't
+        # define every symbol yet (~50 entries: __sanitizer_* introspection, some
+        # fenv/wcs*/inttypes llvm-libc entrypoints, _zx_*_self accessors). lld
+        # defaults to erroring on version-script symbols that aren't defined —
+        # allow them (the undefined ones are simply not exported). setjmp/longjmp
+        # no longer rely on this: all six jmp entries are defined.
+        "-Wl,--undefined-version",
+    ],
+    additional_linker_inputs = ["//src/upstream/fuchsia/sdk/lib/c:libc_version_script"],
+    deps = [
+        ":libc_common",
+        ":libc_ldso",
+        "//src/upstream/fuchsia/sdk/lib/c:libc_impl",
+        "//src/upstream/fuchsia/sdk/lib/c:processargs",
+        # Support-library closure libc.so's own C++ glue references (linked so
+        # BIND_NOW resolves them): the zx:: C++ wrappers, compiler-rt builtins +
+        # runtime stubs (__muldc3/__stack_chk_fail/__libcpp_verbose_abort).
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        "//src/upstream/fuchsia/third_party/compiler-rt-builtins:compiler_rt_builtins",
+        # ld::Log/Debugdata (dynamic-linker logging) + elfldltl::Self (self phdrs),
+        # used by libc.so's startup/thread support.
+        "//src/upstream/fuchsia/sdk/lib/ld:ld",
+        "//src/upstream/fuchsia/src/lib/elfldltl:self",
+        # libsync (sync_mutex_*/sync_completion_* over zx_futex), used by musl's
+        # thread code.
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        # The llvm-libc entrypoints Fuchsia's stripped musl omits (atoi/strtoul,
+        # ctype, fenv, wchar).
+        "//src/upstream/fuchsia/third_party/llvm-libc:entrypoints",
+        # __zx_panic (ZX_ASSERT/ZX_PANIC) for libc.so's own C++ glue — without it
+        # the ldso _exit(127)s on "__zx_panic: symbol not found".
+        "//src/upstream/fuchsia/sdk/lib/zircon-assert:zircon-assert-libc",
+    ],
+    # DT_NEEDED libzircon.so (the vDSO's SONAME). Without it the ldso never marks
+    # the stitched vDSO as a linked dependency (vdso.global stays at the sentinel
+    # -1, never > 0), so its vDSO-linkage sanity check (dynlink.c: vdso.global<=0
+    # "doesn't link in vDSO") _exit(127)s before reaching the program's main.
+    # gdb-confirmed root cause. The ldso matches this NEEDED to the already-loaded
+    # vDSO (same SONAME), so the _zx_* resolve to the vDSO, not the link-time stub.
+    dynamic_deps = ["//src/cerise/sysroot/libzircon:libzircon"],
+)
+
+# Plain filegroup of the public musl headers, for the toolchain's
+# fuchsia_c_system_headers cc_args data (filegroups avoid the cc_library->
+# toolchain dependency cycle).
+filegroup(
+    name = "public_header_files",
+    srcs = glob(["include/**/*.h", "include/**/*.inc"], allow_empty = True),
+)

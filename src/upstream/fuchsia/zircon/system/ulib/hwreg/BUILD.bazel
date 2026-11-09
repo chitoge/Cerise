@@ -1,0 +1,14 @@
+# Cerise BUILD (authored locally) — hwreg (register bitfield helpers). Upstream is GN.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "hwreg",
+    srcs = ["printers.cc"],
+    hdrs = glob(["include/hwreg/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

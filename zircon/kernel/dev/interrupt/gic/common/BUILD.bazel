@@ -1,0 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "gic_common",
+    srcs = ["arm_gic_hw_interface.cc"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)

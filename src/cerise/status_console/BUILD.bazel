@@ -1,0 +1,159 @@
+# Cerise status console — an ESXi-DCUI-style full-screen status screen rendered to a
+# real QEMU framebuffer.
+#
+# There is no display stack vendored in this tree, and the netstack-sized products boot
+# via the direct-kernel path (no UEFI GOP), so the framebuffer is produced by a plain
+# CFv2 component that drives QEMU stdvga directly over PCI CF8/CFC + Bochs VBE, mapping
+# the framebuffer BAR via zx_vmo_create_physical. No display driver, no driver-index,
+# no bind rules — just the fuchsia.kernel.{Mmio,Ioport}Resource capabilities.
+#
+# initial prototype (this): fb_spike — proves the driverless framebuffer path with a QMP screendump.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "meta/fb_spike.cml",
+    "meta/status_console.cml",
+    # The 8x8 glyph table, exported so //validation:console-boot can PARSE it and
+    # assert on the panel's actual pixels. A transcribed copy in the test would drift
+    # from the renderer silently, and a matcher that has stopped describing the real
+    # glyphs is one that passes for the wrong reason.
+    "src/font.rs",
+    # The spike's paint, exported for the same reason: //validation:console-spike-boot
+    # rebuilds the exact frame it expects from these constants and this call sequence,
+    # so a changed pattern fails the gate loudly instead of leaving it asserting a
+    # picture nothing draws.
+    "src/fb_spike.rs",
+])
+
+# ---------------------------------------------------------------------------
+# initial prototype: fb_spike — the framebuffer de-risk spike.
+# ---------------------------------------------------------------------------
+rust_binary(
+    name = "fb_spike_bin",
+    srcs = [
+        "src/fb_raw.rs",
+        "src/fb_spike.rs",
+    ],
+    crate_name = "fb_spike",
+    crate_root = "src/fb_spike.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fidl_fuchsia_kernel",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:anyhow",
+    ],
+)
+
+fuchsia_stripped(
+    name = "fb_spike_bin_stripped.fuchsia",
+    src = ":fb_spike_bin",
+)
+
+# cerise_component compiles meta/fb_spike.cml -> meta/fb_spike.cm via cmc (the real
+# .cml path). The product stages :fb_spike_manifest + the stripped
+# binary into bootfs.
+cerise_component(
+    name = "fb_spike",
+    binary = ":fb_spike_bin_stripped.fuchsia",
+    manifest = "meta/fb_spike.cml",
+)
+
+# ---------------------------------------------------------------------------
+# service integration: status_console — the real ESXi-DCUI-style status screen.
+# ---------------------------------------------------------------------------
+rust_binary(
+    name = "status_console_bin",
+    srcs = [
+        "src/fb.rs",
+        "src/font.rs",
+        "src/main.rs",
+        "src/metrics.rs",
+        "src/storage.rs",
+        "src/vm.rs",
+    ],
+    crate_name = "status_console",
+    crate_root = "src/main.rs",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    edition = "2021",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        # The console holds ZERO hardware capability: it acquires the framebuffer as a
+        # FIDL client of the display driver (cerise.display), not via kernel MMIO/Ioport.
+        "//src/cerise/fidl/cerise.display:fidl_cerise_display",
+        # The storage verdict, from the component that MAKES it (the file server). The
+        # console renders what it is told and probes no block device itself — it holds
+        # no block capability at all.
+        "//src/cerise/fidl/cerise.storage:fidl_cerise_storage",
+        "//src/cerise/fidl/cerise.vm:fidl_cerise_vm",
+        # Memory + CPU. fuchsia.kernel.Stats is the DECODED-stats protocol: the console
+        # never holds a kernel resource handle (contrast fb_spike above, which does).
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.kernel:fidl_fuchsia_kernel",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces:fidl_fuchsia_net_interfaces",
+        "//src/upstream/fuchsia/sdk/lib/fdio:fdio",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "@crates//:anyhow",
+        # select! over the interface Watcher and the sampling tick, in ONE loop.
+        "@crates//:futures",
+    ],
+)
+
+fuchsia_stripped(
+    name = "status_console_bin_stripped.fuchsia",
+    src = ":status_console_bin",
+)
+
+# The PURE half of src/metrics.rs (the memory/CPU arithmetic), compiled standalone for
+# the HOST so the utilisation delta and the byte formatters are unit-testable without a
+# boot — the same host-testability split //src/cerise/fileserver's claim.rs uses. The
+# FIDL client half is behind `#[cfg(target_os = "fuchsia")]`, and the console binary
+# includes the identical source via `mod metrics;`, so the two cannot drift.
+rust_library(
+    name = "metrics_math",
+    srcs = ["src/metrics.rs"],
+    crate_name = "metrics_math",
+    crate_root = "src/metrics.rs",
+    edition = "2021",
+    deps = ["@crates//:anyhow"],
+)
+
+# Utilisation is a delta between two samples, which is precisely the shape of thing that
+# is wrong in ways a screenshot cannot show: a zero interval, a core count that changed
+# between samples, idle time running backwards after a core came back online, or idle
+# advancing faster than wall time. Each of those must yield "still measuring" or a
+# clamped figure, never a plausible-looking percentage.
+rust_test(
+    name = "metrics_math_test",
+    crate = ":metrics_math",
+    edition = "2021",
+)
+
+cerise_component(
+    name = "status_console",
+    binary = ":status_console_bin_stripped.fuchsia",
+    manifest = "meta/status_console.cml",
+)

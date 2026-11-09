@@ -1,0 +1,53 @@
+# Cerise. A dynamically-linked executable against
+# libc.so AND a custom shared library (libgreet.so) — proving ld.so.1 loads an
+# arbitrary DT_NEEDED .so and resolves a cross-module call (the "libc + a shared lib"
+# part of the dynamic-linking gate).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# The custom shared library the probe calls into.
+cc_library(
+    name = "greet",
+    srcs = ["greet.c"],
+    hdrs = ["greet.h"],
+    copts = ["-fno-stack-protector"],
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+    alwayslink = True,
+)
+
+cc_shared_library(
+    name = "libgreet_so",
+    shared_lib_name = "libgreet.so",
+    tags = ["manual"],
+    user_link_flags = [
+        "-nostdlib",
+        "-Wl,-soname,libgreet.so",
+        "-Wl,--allow-shlib-undefined",
+    ],
+    deps = [":greet"],
+    dynamic_deps = ["//src/cerise/sysroot/libzircon:libzircon"],
+)
+
+cc_binary(
+    name = "libc_link_probe",
+    srcs = ["main.c"],
+    copts = ["-fno-stack-protector"],
+    linkopts = [
+        "-nostdlib",
+        # libc.so's fdio-delegated POSIX IO + compiler-rt builtins resolve at
+        # runtime (via fdio.so / the C runtime); defer them at exe link.
+        "-Wl,--allow-shlib-undefined",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":greet",
+        "//src/upstream/fuchsia/sdk/lib/c:crt1",
+    ],
+    dynamic_deps = [
+        ":libgreet_so",
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+        "//src/cerise/sysroot/libzircon:libzircon",
+    ],
+)

@@ -1,0 +1,22 @@
+# Authored locally for Cerise. fidl_fuchsia_net_ext: ergonomic
+# Rust extension traits/types over fuchsia.net's raw FIDL bindings, a real
+# non-test dep of netstack3-bindings' common_deps.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_ext",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "@crates//:paste",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_common",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)

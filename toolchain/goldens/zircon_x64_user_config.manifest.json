@@ -1,0 +1,59 @@
+{
+	"asmopts": [],
+	"copts": [
+		"--target=x86_64-unknown-linux-gnu",
+		"-ffreestanding",
+		"-fno-builtin",
+		"-fno-stack-protector",
+		"-fno-unwind-tables",
+		"-fno-asynchronous-unwind-tables",
+		"-fPIE",
+		"-fPIC",
+		"-nostdlibinc"
+	],
+	"cpu": "x64",
+	"cxxopts": [
+		"-fno-exceptions",
+		"-fno-rtti",
+		"-fno-threadsafe-statics",
+		"-std=c++20",
+		"-nostdinc++"
+	],
+	"defines": [
+		"ZIRCON_TOOLCHAIN"
+	],
+	"environment": "user",
+	"feature_docs": {
+		"cpu.x64.user": "x64 userboot code-generation constraints.",
+		"env.user": "User environment definitions for userboot and userspace components.",
+		"lang.user_cxx": "C++ restrictions expected by Zircon userboot and userland code.",
+		"lang.user_cxx_std": "C++ language mode for Zircon userboot and userland code.",
+		"link.user": "Userboot link baseline for the freestanding user payload.",
+		"stdlib.c_headers": "Hermetic C headers provided by the Zircon toolchain environment.",
+		"stdlib.cxx_headers": "Hermetic libc++ headers provided by the vendored LLVM overlay."
+	},
+	"features": [
+		"cpu.x64.user",
+		"env.user",
+		"lang.user_cxx",
+		"lang.user_cxx_std",
+		"stdlib.c_headers",
+		"stdlib.cxx_headers",
+		"link.user"
+	],
+	"linkopts": [
+		"-nostdlib",
+		"-nodefaultlibs",
+		"-nostartfiles",
+		"-pie",
+		"-Wl,--no-dynamic-linker",
+		"-Wl,--gc-sections",
+		"-Wl,-z,max-page-size=4096",
+		"-Wl,-z,stack-size=0x100000",
+		"-Wl,--entry=_start"
+	],
+	"name": "zircon.x64.user",
+	"stdlib_include_dirs": [
+		"@llvm-project//libcxx:libcxx_headers_include_search_directory"
+	]
+}

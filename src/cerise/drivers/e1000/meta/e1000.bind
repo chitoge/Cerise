@@ -1,0 +1,48 @@
+// Cerise e1000/e1000e-family driver: COMPOSITE bind rules.
+//
+// bus-pci publishes every PCI device as a composite node spec (pci parent +
+// acpi parent); driver-index prioritizes spec matches, so a NIC driver must be
+// a composite driver matching that spec. The primary "pci" parent carries the
+// PCI Service + VID/DID; the "acpi" parent matches the acpi child.
+//
+// DID accept-list — verified against the vendored HAL device table
+// (third_party/e1000/e1000_hw.h E1000_DEV_ID_*):
+//   0x100e  82540EM        (QEMU `-device e1000`, legacy; keeps qemu-x64-pci green)
+//   0x10d3  82574L         (QEMU `-device e1000e`, the live e1000e gate)
+//   0x1539  I211           (Intel gigabit, i210/i211 family)
+//   0x156f  I219-LM (SPT)     Skylake / Sunrise-Point I219 set. 0x156f/0x1570
+//   0x1570  I219-V  (SPT)     (SPT-LP LM/V) common Intel client NICs.
+//   0x15b7  I219-LM2
+//   0x15b8  I219-V2
+//   0x15d6  I219-V5
+//   0x15d7  I219-LM4
+//   0x15d8  I219-V4
+//   0x15e3  I219-LM5
+composite e1000;
+
+using fuchsia.acpi;
+using fuchsia.pci;
+using fuchsia.hardware.pci;
+
+primary parent "pci" {
+  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
+  accept fuchsia.BIND_PCI_DID {
+    0x100e,
+    0x10d3,
+    0x1539,
+    0x156f,
+    0x1570,
+    0x15b7,
+    0x15b8,
+    0x15d6,
+    0x15d7,
+    0x15d8,
+    0x15e3,
+  }
+}
+
+parent "acpi" {
+  fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
+  fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.PCI;
+}

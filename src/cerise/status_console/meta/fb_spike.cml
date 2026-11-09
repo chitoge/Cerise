@@ -1,0 +1,21 @@
+// initial prototype framebuffer spike component. Uses only the two kernel resources it needs to
+// program QEMU stdvga directly (PCI config + VBE via IoportResource, framebuffer BAR
+// mapping via MmioResource). Markers use the direct-serial zx_debug_write
+// syscall, so no LogSink is used. A real .cml is compiled by cmc through
+// cerise_component.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/fb_spike",
+    },
+    use: [
+        { protocol: "fuchsia.kernel.MmioResource" },
+        { protocol: "fuchsia.kernel.IoportResource" },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

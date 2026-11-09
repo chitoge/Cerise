@@ -1,0 +1,111 @@
+# Vendored-at-baseline (Fuchsia @ 0f3c21bc) realtek-8111 ethernet driver.
+# Upstream: src/connectivity/ethernet/drivers/realtek-8111/.
+#
+# SHAPE: DFv1 / legacy (banjo EthernetImpl protocol, ZIRCON_DRIVER, ddktl, io-buffer).
+# It rides the compat shim (compat.so) exactly like platform-bus-x86 and bus-pci:
+#   - The impl is a cc_library.
+#   - The driver .so is a cc_binary(-shared) with -nodefaultlibs / --allow-shlib-undefined,
+#     so the 29 DFv1 ABI symbols (device_add_from_driver, zxlogf/driver_log*, get_*_resource,
+#     ...) are left UND and resolved at dlopen time against compat.so (RTLD_GLOBAL in the
+#     same driver_host). A version script exports ONLY __zircon_driver_note__ /
+#     __zircon_driver_rec__ (dlsym'd by cerise_load_compat_module) and hides all the FIDL/
+#     banjo/ddk globals (same .dynsym-minimization lesson as platform-bus-x86.so).
+# Modeled on src/devices/board/drivers/x86/BUILD.bazel (platform-bus-x86.so) — the proven
+# non-trivial DFv1-on-compat .so in this tree — and on src/cerise/drivers/e1000/BUILD.bazel
+# for the composite driver_bind_rules shape.
+#
+# BUILD-ONLY: QEMU cannot emulate RTL8111, so this driver is build-verified only. It is
+# intended to first run on a real Apollo Lake NUC (RTL8111HN, PCI 10ec:8168).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+load("//build:structured_config.bzl", "compiled_manifest")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/realtek-8111.cml"])
+
+# Driver component manifest -> realtek-8111.cm. Same DFv1/compat manifest shape as
+# platform-bus-x86 (program.compat = the legacy .so, compat.shard.cml include). Staged
+# at pkg/realtek-8111/meta/realtek-8111.cm on a product that includes this driver.
+compiled_manifest(
+    name = "realtek-8111-manifest",
+    src = "meta/realtek-8111.cml",
+    output_name = "realtek-8111.cm",
+    # Provides the compat/inspect/syslog .shard.cml files the manifest includes
+    # (same filegroup platform-bus-x86-manifest uses).
+    includes = ["//src/upstream/fuchsia/sdk/lib:structured_config_cml_shards"],
+    tags = ["manual"],
+)
+
+# COMPOSITE bind rules matching the composite node spec bus-pci publishes for the
+# Realtek NIC (pci parent + acpi parent). See meta/realtek_rtl8111.bind for the
+# composite/direct rationale and the divergences from upstream. Same include set as
+# e1000-bind, plus the ACPI bus-type extension.
+driver_bind_rules(
+    name = "realtek-8111-bind",
+    rules = "meta/realtek_rtl8111.bind",
+    output_name = "realtek_rtl8111_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+    ],
+    tags = ["manual"],
+)
+
+# Driver implementation, split from the cc_binary(-shared) so the .so can whole-archive
+# it (same split as platform-bus-x86 :x86 / e1000 :e1000_impl). device-protocol-pci
+# transitively supplies ddk, ddktl, mmio/cpp, fuchsia.hardware.pci_cpp and zx headers.
+cc_library(
+    name = "realtek-8111_impl",
+    srcs = ["rtl8111.cc"],
+    hdrs = ["rtl8111.h"],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+    ],
+    # Upstream BUILD.gn enables config //build/config:all_source, which defines
+    # _ALL_SOURCE — it unlocks the Fuchsia libc extension thrd_create_with_name()
+    # (guarded in <threads.h>) that the driver's irq-thread spawn uses. Same mechanism
+    # acpica_fuchsia uses.
+    local_defines = ["_ALL_SOURCE"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
+        "//src/upstream/fuchsia/src/devices/pci/lib/device-protocol-pci:device-protocol-pci",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/src/lib/ddk:ddk",
+        "//src/upstream/fuchsia/src/lib/ddktl:ddktl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+# Legacy (DFv1) driver .so — cc_binary(-shared), same recipe as platform-bus-x86.so.
+# fuchsia.hardware.pci_cpp is a DIRECT dep so its out-of-line FIDL wire/natural symbols
+# (used by ddk::Pci's client calls) are whole-archived into the .so rather than left UND
+# (compat.so does NOT export them). compiler-rt builtins supply 128-bit helpers excluded
+# by -nodefaultlibs.
+cc_binary(
+    name = "realtek-8111.so",
+    additional_linker_inputs = ["realtek-8111.ld"],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,realtek-8111.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        # Root the ZIRCON_DRIVER registration symbols against --gc-sections.
+        "-Wl,-u,__zircon_driver_note__",
+        "-Wl,-u,__zircon_driver_rec__",
+        # Export ONLY the two registration symbols; hide all other defined globals.
+        "-Wl,--version-script=$(location realtek-8111.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":realtek-8111_impl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

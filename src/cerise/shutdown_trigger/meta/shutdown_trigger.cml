@@ -1,0 +1,16 @@
+// shutdown_trigger — a CFv2 ELF component that requests a graceful poweroff once
+// the system is up. It gates on driver_manager readiness by reading `dev`, then connects
+// to the shim's fuchsia.hardware.power.statecontrol.Admin and calls Poweroff(). Markers use
+// the direct-serial zx_debug_write syscall, so no LogSink is used.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/shutdown_trigger",
+    },
+    use: [
+        // Readiness gate + shutdown-ordering edge: trigger depends on driver_manager.
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        // The public system-shutdown entry point, served by the shim.
+        { protocol: "fuchsia.hardware.power.statecontrol.Admin" },
+    ],
+}

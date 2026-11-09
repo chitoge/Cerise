@@ -1,0 +1,166 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/params.gni")
+
+source_set("vm") {
+  public_deps = [ ":headers" ]
+
+  sources = [
+    "anonymous_page_request.cc",
+    "compression.cc",
+    "compressor.cc",
+    "continuous_attribution_tracker.cc",
+    "debug_compressor.cc",
+    "discardable_vmo_tracker.cc",
+    "evictor.cc",
+    "kstack.cc",
+    "lz4_compressor.cc",
+    "mem_command.cc",
+    "memory_stats.cc",
+    "page.cc",
+    "page_queues.cc",
+    "page_source.cc",
+    "page_state.cc",
+    "physical_page_borrowing_config.cc",
+    "physical_page_provider.cc",
+    "pinned_vm_object.cc",
+    "pmm.cc",
+    "pmm_arena.cc",
+    "pmm_checker.cc",
+    "pmm_node.cc",
+    "ppb_command.cc",
+    "scanner.cc",
+    "slot_page_storage.cc",
+    "stream_size_manager.cc",
+    "vm.cc",
+    "vm_address_region.cc",
+    "vm_address_region_or_mapping.cc",
+    "vm_aspace.cc",
+    "vm_cow_pages.cc",
+    "vm_mapping.cc",
+    "vm_object.cc",
+    "vm_object_paged.cc",
+    "vm_object_physical.cc",
+    "vm_page_list.cc",
+    "vmm.cc",
+  ]
+  deps = [
+    "//src/lib/zbitl",
+    "//zircon/kernel/lib/arch",
+    "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/btree",
+    "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/counters",
+    "//zircon/kernel/lib/dump",
+    "//zircon/kernel/lib/fbl",
+    "//zircon/kernel/lib/heap/cmpctmalloc:headers",
+    "//zircon/kernel/lib/init",
+    "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/ktrace",
+    "//zircon/kernel/lib/page",
+    "//zircon/kernel/lib/page_cache",
+    "//zircon/kernel/lib/thread-stack",
+    "//zircon/kernel/lib/user_copy",
+    "//zircon/kernel/lib/userabi",
+    "//zircon/kernel/phys:handoff",
+    "//zircon/kernel/phys:zircon-abi-spec",
+    "//zircon/kernel/phys/lib/memalloc:range",
+    "//zircon/system/ulib/affine",
+    "//zircon/system/ulib/ffl",
+    "//zircon/system/ulib/lazy_init",
+    "//zircon/system/ulib/pretty",
+    "//zircon/third_party/ulib/lz4",
+  ]
+
+  defines = [
+    "LZ4_STATIC_LINKING_ONLY",
+    "LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
+  ]
+
+  # GCC figures out some cases where we have a global variable that's used as a
+  # RefPtr and so appears like it might be passed to delete.  We always leak
+  # the reference so it will never actually be called, but the compiler can't
+  # figure that out statically so we must disable its warning.
+  configs += [ ":suppress-nonheap-warning" ]
+}
+
+library_headers("headers") {
+  headers = []
+
+  public_deps = [
+    # <vm/page.h> has #include <vm/phys/arena.h>.
+    "phys:headers",
+
+    # <vm/vm_page_list.h> has #include <ktl/unique_ptr.h>.
+    "//zircon/kernel/lib/ktl:headers",
+
+    # <vm/vm_object.h> has #include <fbl/name.h>.
+    "//zircon/kernel/lib/fbl:headers",
+
+    # <vm/vm_object.h> has #include <lib/user_copy/user_ptr.h>.
+    "//zircon/kernel/lib/user_copy:headers",
+
+    # <vm/vm_aspace.h> has #include <lib/crypto/prng.h>
+    "//zircon/kernel/lib/crypto:headers",
+
+    # Many headers naturally have #include <lib/page/size.h>
+    "//zircon/kernel/lib/page:headers",
+
+    # <vm/vm_cow_pages.h> has #include <lib/page_cache.h>
+    "//zircon/kernel/lib/page_cache:headers",
+
+    # <vm/vm_object.h> has #include <ffl/fixed.h>
+    "//zircon/system/ulib/ffl:headers",
+
+    # "pmm_arena.h" has #include <lib/zx/result.h>.
+    "//zircon/system/ulib/zx:headers",
+
+    # <vm/pmm_checker.h> has #include <lib/boot-options/boot-options.h>.
+    "//zircon/kernel/lib/boot-options:headers",
+    "//zircon/kernel/lib/btree:headers",
+  ]
+
+  public_configs = [
+    # <vm/physical_page_provider.h> has #include <object/port_dispatcher.h>.
+    # But this is a circular dependency, so we can't use its :headers in deps.
+    "//zircon/kernel/object:headers.config",
+  ]
+}
+
+config("suppress-nonheap-warning") {
+  visibility = [ ":*" ]
+  if (is_gcc) {
+    cflags = [ "-Wno-free-nonheap-object" ]
+  }
+}
+
+source_set("tests") {
+  testonly = true
+  sources = [
+    "unittests/aspace_unittest.cc",
+    "unittests/compression_unittest.cc",
+    "unittests/continuous_attribution_unittest.cc",
+    "unittests/evictor_unittest.cc",
+    "unittests/page_queues_unittest.cc",
+    "unittests/pmm_unittest.cc",
+    "unittests/slab_unittest.cc",
+    "unittests/test_helper.cc",
+    "unittests/vmo_unittest.cc",
+    "unittests/vmpl_unittest.cc",
+  ]
+  deps = [
+    "//zircon/kernel/lib/page",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/third_party/ulib/lz4",
+  ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
+}

@@ -1,0 +1,226 @@
+# route_check — build-time CFv2 capability-routing + least-privilege checker.
+#
+# Decodes each product's compiled `.cm` graph with the vendored cm_rust and runs
+# two static checks at `bazel test` (host, no boot): an over-privilege lint (only
+# the driver framework + drivers may use kernel/root resources) and a routing-
+# completeness check (every use-from-parent has a matching ancestor offer). See
+# src/cerise/tools/route_check/src/lib.rs.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+# cm_rust exposes fdecl (fuchsia.component.decl) + fidl; the same dep set as the
+# other host tools that round-trip component decls (cmc, configc).
+_DECL_DEPS = [
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+    "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+    "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types",
+]
+
+rust_library(
+    name = "route_check",
+    srcs = ["src/lib.rs"],
+    crate_name = "route_check",
+    edition = "2021",
+    deps = _DECL_DEPS,
+)
+
+# Standalone host CLI (see src/main.rs for the --pool/--product/--expect-violations
+# contract). Not itself wired into a product; the tests below drive the library
+# directly, and this binary is the reusable entry point for ad-hoc runs.
+rust_binary(
+    name = "route_check_bin",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = [":route_check"],
+)
+
+# ── The realm .cm pool: the union of every child component the six real product
+# roots reference by URL, keyed below (in POOL) by the meta-name in that URL. Note
+# `driver_index` (URL meta-name) resolves to driver_index_acpi.cm, matching the
+# products' pkg/driver_index/meta/driver_index.cm staging. ──
+_POOL_MANIFESTS = {
+    "elf_runner": "//src/cerise/realms:elf_runner_manifest",
+    "cerise_logsink": "//src/cerise/realms:cerise_logsink_manifest",
+    "driver_manager_rust_dfv2acpi": "//src/cerise/realms:driver_manager_rust_dfv2acpi_manifest",
+    "driver_index": "//src/cerise/realms:driver_index_acpi_manifest",
+    "netdev_probe": "//src/cerise/realms:netdev_probe_manifest",
+    "netstack3": "//src/cerise/realms:netstack3_manifest",
+    "netstack3_probe": "//src/cerise/realms:netstack3_probe_manifest",
+    "nvme_probe": "//src/cerise/realms:nvme_probe_manifest",
+    "ahci_probe": "//src/cerise/realms:ahci_probe_manifest",
+    "crypt_fxfs": "//src/cerise/realms:crypt_fxfs_manifest",
+    "fxfs_probe": "//src/cerise/realms:fxfs_probe_manifest",
+    "fxfs_provisioner": "//src/cerise/realms:fxfs_provisioner_manifest",
+    "fxfs": "//src/cerise/realms:fxfs_manifest",
+    "fshost": "//src/cerise/realms:fshost_manifest",
+    "fshost_probe": "//src/cerise/realms:fshost_probe_manifest",
+    "pkg_probe": "//src/cerise/realms:pkg_probe_manifest",
+    "pkg_resolver": "//src/cerise/realms:pkg_resolver_manifest",
+    # packages: the network update driver for x64-pkg-update.
+    "pkg_fetcher": "//src/cerise/realms:pkg_fetcher_manifest",
+    # packages (post-storage app tier): the fileserver-package fetcher for x64-console-pkg.
+    "apptier_fetcher": "//src/cerise/realms:apptier_fetcher_manifest",
+    # OS-self-OTA (qemu-x64-ota): the in-OS updater + the shutdown-capable
+    # driver_manager variant + the builtin shutdown_shim its realm references.
+    "ota_updater": "//src/cerise/ota_updater:ota_updater_manifest",
+    "driver_manager_rust_dfv2acpi_shutdown": "//src/cerise/realms:driver_manager_rust_dfv2acpi_shutdown_manifest",
+    "shutdown_shim": "//src/cerise/realms:shutdown_shim_manifest",
+    "fileserver": "//src/cerise/realms:fileserver_manifest",
+    "status_console": "//src/cerise/status_console:status_console_manifest",
+    "archivist": "//src/cerise/archivist:archivist_manifest",
+    "archivist_reader": "//src/cerise/archivist_reader:archivist_reader_manifest",
+    # post-mortem gate: the root-job crash observer + its null-deref fixture.
+    "crash_handler": "//src/cerise/realms:crash_handler_manifest",
+    "crasher": "//src/cerise/realms:crasher_manifest",
+    # PMU path A: the raw hardware performance-counter client (the one permitted
+    # privileged use: perfmon + fuchsia.kernel.DebugResource).
+    "perfmon": "//src/cerise/realms:perfmon_manifest",
+    # Virtualization: the VMM leaf. Its program is built under a path this pool
+    # never names — realm manifests are compiled manifest-only — but its .cml is
+    # here precisely so the two kernel resources it holds are linted rather than
+    # trusted.
+    "cryogen_vmm": "//src/cerise/realms:cryogen_vmm_manifest",
+    # Virtualization: the component that RECEIVES a pushed guest image and writes
+    # it to a raw partition. Linted rather than trusted because it is a disk
+    # writer holding the aggregated block Service.
+    "guest_store_receiver": "//src/cerise/guest_store_receiver:guest_store_receiver_manifest",
+}
+
+# The real products: logical name -> root realm .cm manifest. Spike products
+# (console-spike/fb_spike, fasync-spike) are intentionally excluded. The pkg realm
+# (packages) is included so its routing — including the one permitted
+# privileged use (pkg_resolver + fuchsia.kernel.VmexResource) — is gated statically.
+_PRODUCT_ROOTS = {
+    "pci": "//src/cerise/realms:root_dfv2acpi_manifest",
+    "fshost": "//src/cerise/realms:root_dfv2acpi_fshost_manifest",
+    "netstack3": "//src/cerise/realms:root_dfv2acpi_netstack3_manifest",
+    "fileserver": "//src/cerise/realms:root_dfv2acpi_fileserver_manifest",
+    "console": "//src/cerise/realms:root_dfv2acpi_console_manifest",
+    "diagnostics": "//src/cerise/realms:root_dfv2acpi_diagnostics_manifest",
+    "pkg": "//src/cerise/realms:root_dfv2acpi_pkg_manifest",
+    # packages: the updatable-packages realm. Gated so its routing — the fetcher's
+    # ordinary caps + the pkg_resolver Resolver protocol + VmexResource (still the one permitted
+    # privileged use) — is linted statically.
+    "pkg-update": "//src/cerise/realms:root_dfv2acpi_pkg_update_manifest",
+    # packages (post-storage app tier): the fileserver-from-package console realm. Gated so its
+    # routing — the fileserver's storage/crypt/network caps into the pkg-resolved slot + VmexResource
+    # (still the one permitted privileged use) — is linted statically.
+    "console-pkg": "//src/cerise/realms:root_dfv2acpi_console_pkg_manifest",
+    # OS-self-update realm: its raw-block and network routing is gated
+    # statically; the stager deliberately holds no terminal power authority.
+    "ota": "//src/cerise/realms:root_dfv2acpi_ota_manifest",
+    # post-mortem gate: the minimal root-job crash-observer realm.
+    # Included so its routing — including the one permitted privileged use
+    # (crash_handler + fuchsia.kernel.RootJob) — is gated statically.
+    "crash-handler": "//src/cerise/realms:root_crash_handler_manifest",
+    # PMU path A: the minimal profiling realm. Included so its routing — including the
+    # one permitted privileged use (perfmon + fuchsia.kernel.DebugResource) — is gated
+    # statically.
+    "perfmon": "//src/cerise/realms:root_perfmon_manifest",
+    # Virtualization: the console realm with the VMM added. Included so its
+    # routing — the two permitted privileged uses (cryogen_vmm +
+    # HypervisorResource, cryogen_vmm + VmexResource) and the aggregated block
+    # Service reaching a second non-driver consumer — is gated statically.
+    "console-vmm": "//src/cerise/realms:root_dfv2acpi_console_vmm_manifest",
+    # Virtualization: the guest-image push realm. Included so its routing — the
+    # aggregated block Service reaching a component whose job is to WRITE a
+    # partition, and the absence of any privileged kernel resource — is gated
+    # statically rather than reasoned about.
+    "store-push": "//src/cerise/realms:root_dfv2acpi_store_push_manifest",
+}
+
+# POSITIVE gate: every real product must be clean (zero violations).
+rust_test(
+    name = "route_check_test",
+    srcs = ["tests/positive.rs"],
+    edition = "2021",
+    size = "small",
+    data = _PRODUCT_ROOTS.values() + _POOL_MANIFESTS.values(),
+    env = {
+        "PRODUCT_NAMES": " ".join(_PRODUCT_ROOTS.keys()),
+        "POOL": " ".join([
+            "%s=$(rootpath %s)" % (name, label)
+            for name, label in _POOL_MANIFESTS.items()
+        ]),
+    } | {
+        "ROOT_%s" % name: "$(rootpath %s)" % label
+        for name, label in _PRODUCT_ROOTS.items()
+    },
+    deps = [":route_check"],
+)
+
+# ── Negative-test fixtures (compiled the same way as real components, via cmc,
+# but never staged into any product). evil_app illegitimately uses MmioResource;
+# evil_root routes everything correctly, isolating the over-privilege finding. ──
+cerise_component(
+    name = "evil_app",
+    manifest = "fixtures/evil_app.cml",
+)
+
+cerise_component(
+    name = "evil_root",
+    manifest = "fixtures/evil_root.cml",
+)
+
+cerise_component(
+    name = "orphan_app",
+    manifest = "fixtures/orphan_app.cml",
+)
+
+cerise_component(
+    name = "orphan_root",
+    manifest = "fixtures/orphan_root.cml",
+)
+
+# The VMM grant's red control: a SECOND vmm, named `cryogen_vmm_v2`, using both
+# privileged protocols the real one is permitted. The allowlist matches the name
+# with `==`, so this must be rejected — and before this fixture existed the two
+# new entries had no negative coverage at all, since negative.rs covered only
+# fuchsia.kernel.MmioResource.
+cerise_component(
+    name = "vmm_v2_app",
+    manifest = "fixtures/vmm_v2_app.cml",
+)
+
+cerise_component(
+    name = "vmm_v2_root",
+    manifest = "fixtures/vmm_v2_root.cml",
+)
+
+# NEGATIVE gate: the checker must FAIL the fixtures — proving BOTH the over-privilege
+# lint (evil_*) and the routing-completeness check (orphan_*) are non-vacuous.
+rust_test(
+    name = "route_check_negative_test",
+    srcs = ["tests/negative.rs"],
+    edition = "2021",
+    size = "small",
+    data = [
+        ":evil_app_manifest",
+        ":evil_root_manifest",
+        ":orphan_app_manifest",
+        ":orphan_root_manifest",
+        ":vmm_v2_app_manifest",
+        ":vmm_v2_root_manifest",
+    ],
+    env = {
+        "EVIL_APP": "$(rootpath :evil_app_manifest)",
+        "EVIL_ROOT": "$(rootpath :evil_root_manifest)",
+        "ORPHAN_APP": "$(rootpath :orphan_app_manifest)",
+        "ORPHAN_ROOT": "$(rootpath :orphan_root_manifest)",
+        "VMM_V2_APP": "$(rootpath :vmm_v2_app_manifest)",
+        "VMM_V2_ROOT": "$(rootpath :vmm_v2_root_manifest)",
+    },
+    deps = [":route_check"],
+)
+
+# Convenience: both gates.
+test_suite(
+    name = "route_check_all",
+    tests = [
+        ":route_check_test",
+        ":route_check_negative_test",
+    ],
+)

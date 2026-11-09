@@ -1,0 +1,79 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/testing/boot_tests/boot_test.gni")
+import("//build/toolchain/zircon/user_basic_redirect.gni")
+import("//zircon/kernel/phys/kernel_elf_binary.gni")
+
+user_basic_redirect("userboot") {
+  public_deps = [ ":userboot.executable" ]
+}
+
+source_set("fidl") {
+  visibility = [ ":*" ]
+  public = [ "fidl.h" ]
+  public_deps = [
+    "//sdk/lib/fidl",
+    "//sdk/lib/fidl_base",
+    "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+source_set("util") {
+  visibility = [ ":*" ]
+  public = [ "util.h" ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
+  sources = [ "util.cc" ]
+}
+
+kernel_elf_binary("userboot.executable") {
+  visibility = [ ":*" ]
+
+  install_name = "userboot"
+
+  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
+  has_patches = false
+
+  sources = [
+    "bootfs.cc",
+    "loader-service.cc",
+    "option.cc",
+    "start.cc",
+    "userboot-elf.cc",
+    "zbi.cc",
+  ]
+  defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
+
+  ldflags = [ "-Wl,-z,stack-size=0x100000" ]
+  deps = [
+    ":fidl",
+    ":ubsan-runtime",
+    ":util",
+    "//sdk/lib/ld:standalone",
+    "//src/lib/elfldltl",
+    "//src/lib/elfldltl/test:static-pie",
+    "//src/lib/zbitl",
+    "//src/zircon/lib/zircon",
+    "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/userabi:headers",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/ldmsg",
+    "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+source_set("ubsan-runtime") {
+  visibility = [ ":*" ]
+  if (is_ubsan) {
+    sources = [ "ubsan-runtime.cc" ]
+    deps = [
+      ":util",
+      "//src/lib/ubsan-custom:handlers",
+    ]
+  }
+}

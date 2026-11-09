@@ -1,0 +1,10 @@
+// A FIDL library that imports cerise.probe — exercises fidl_library's
+// transitive dependency propagation (fidlc gets both libraries via --files).
+library cerise.probe.dep;
+
+using cerise.probe;
+
+type Shape = struct {
+    origin cerise.probe.Point;
+    label string:32;
+};

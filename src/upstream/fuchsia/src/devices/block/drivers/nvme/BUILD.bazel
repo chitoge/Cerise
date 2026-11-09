@@ -1,0 +1,137 @@
+# Cerise BUILD for the real upstream NVMe DFv2 driver (storage driver validation).
+# Vendored from src/devices/block/drivers/nvme (pinned commit). Test-only sources
+# (fake/*, *-test.cc) are NOT vendored — this BUILD covers only the real driver
+# (export.cc, namespace.cc, nvme.cc, queue.cc, queue-pair.cc).
+#
+# Two upstream common_deps entries are deliberately NOT vendored/linked:
+# src/devices/block/lib/common and src/devices/lib/dev-operation. Verified (grep
+# across every .cc/.h actually compiled into nvme-driver, including commands/*.h)
+# that NEITHER header is #included anywhere in the real driver sources — both are
+# vestigial GN deps left over from an earlier (pre-block_server) architecture.
+# Skipping them changes zero bytes of the compiled output; this is not "stripping
+# a variant to dodge a dependency" (no_self_invented_shortcuts) since nothing here
+# is actually used.
+#
+# Bind rule matches by PCI class/subclass/interface (MASS_STORAGE/NVMEM/2), not by
+# VID/DID like e1000/virtio-net — this is upstream's real nvme.bind, so it matches
+# any real NVMe controller, not just QEMU's. Composite spec's acpi parent is
+# upstream `optional` — Cerise's vendored bindc parser
+# (src/devices/lib/bind/src/parser/bind_composite.rs) supports the `optional`
+# keyword, but driver-index's composite-spec matcher in this tree has zero
+# references to ParentType::Optional (unexercised at this pin). Verified via a real
+# boot (PCI-NODE-PUBLISHED) that QEMU's NVMe controller reports acpi=1 (same as
+# every other PCI device in this environment) — so meta/nvme.bind declares the
+# acpi parent MANDATORY (matching e1000/virtio-net's proven 2-parent shape)
+# rather than exercising the untested `optional` path (see
+# meta/nvme.bind for the full reasoning).
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//build/fidl:fidl.bzl", "driver_bind_rules")
+
+package(default_visibility = ["//visibility:public"])
+
+driver_bind_rules(
+    name = "nvme-bind",
+    rules = "meta/nvme.bind",
+    output_name = "nvme_bind.bindbc",
+    includes = [
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci:fuchsia.pci.bind",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.pci.massstorage:fuchsia.pci.massstorage.bind",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia.acpi:fuchsia.acpi.bind",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp_gen",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "nvme_impl",
+    srcs = [
+        "export.cc",
+        "namespace.cc",
+        "nvme.cc",
+        "queue-pair.cc",
+        "queue.cc",
+    ],
+    hdrs = [
+        "commands.h",
+        "io-command.h",
+        "namespace.h",
+        "nvme.h",
+        "queue-pair.h",
+        "queue.h",
+        "registers.h",
+        "commands/features.h",
+        "commands/identify.h",
+        "commands/nvme-io.h",
+        "commands/queue.h",
+    ],
+    copts = [
+        # _ALL_SOURCE: musl gates non-standard extensions (thrd_create_with_name,
+        # used by nvme.cc's IRQ thread) behind this feature-test macro — same
+        # pattern network-device's device/BUILD.bazel already established.
+        "-D_ALL_SOURCE",
+        "-Isrc/upstream/fuchsia",
+        "-ffuchsia-api-level=4292870144",
+    ],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/mmio/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/inspect/component/cpp:cpp",
+        "//src/upstream/fuchsia/src/devices/lib/dma-buffer:dma-buffer",
+        "//src/upstream/fuchsia/src/devices/pci/lib/device-protocol-pci:device-protocol-pci",
+        "//src/upstream/fuchsia/src/devices/pci/lib/pci:pci",
+        "//src/upstream/fuchsia/src/storage/lib/block_server:block_server_cc",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/fzl:fzl",
+        "//src/upstream/fuchsia/zircon/system/ulib/hwreg:hwreg",
+        "//src/upstream/fuchsia/zircon/system/ulib/inspect:inspect",
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync-cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:headers",
+    ],
+)
+
+# DFv2-native nvme driver .so — cc_binary(-shared), non-colocated (own driver_host),
+# version-script pattern matching e1000/virtio-net/network-device.
+cc_binary(
+    name = "nvme.so",
+    additional_linker_inputs = [
+        "nvme.ld",
+        # nvme is the FIRST driver .so in this repo to statically link a Rust
+        # staticlib (block_server_c, via block_server_cc). Rust's std for the
+        # x86_64-unknown-fuchsia target embeds native-lib link requirements
+        # (-lzircon -lfdio) that e1000/virtio-net/network-device's pure-C++ .so
+        # targets never triggered. Resolve them the same way netdev_probe (a plain
+        # executable with the same need) does: pass --sysroot pointing at this
+        # repo's link-sysroot assembly (see src/cerise/sysroot/BUILD.bazel's
+        # fuchsia_link_sysroot comment: "rustc's fuchsia target spec (Scrt1.o -lc
+        # -lzircon -lfdio) resolves" via this exact mechanism).
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    linkopts = [
+        "-shared",
+        "-Wl,-soname,nvme.so",
+        "-nodefaultlibs",
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-Wl,--no-dependent-libraries",
+        "-Wl,-u,__fuchsia_driver_registration__",
+        "-Wl,--version-script=$(location nvme.ld)",
+    ],
+    stamp = 0,
+    tags = ["manual"],
+    deps = [
+        ":nvme_impl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/syslog/structured_backend:structured_backend",
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)

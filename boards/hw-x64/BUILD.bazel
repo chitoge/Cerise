@@ -1,0 +1,32 @@
+"""Board: hw-x64 — a generic UEFI + ACPI x86-64 hardware board.
+
+The physical-hardware counterpart to qemu-x64: no emulated devices. It provides
+a GOP framebuffer display, AHCI + NVMe storage, and the ACPI/PCI enumeration
+stack, taking serial from the legacy COM1-compatible UART.
+
+Differences from qemu-x64:
+  * kernel.serial=legacy — the COM1-compatible legacy UART (harmless where no
+    such UART exists).
+  * No virtio devices, no stdvga display driver, no emulated NIC. Display is
+    gop_display (PCI display-class composite + the shim's ZBI_TYPE_FRAMEBUFFER).
+  * Storage drivers (AHCI + NVMe) staged as on qemu-x64 (SATA/NVMe disks; no
+    eMMC driver).
+
+The board advertises the e1000 implementation and the network-device framework
+it stages. It does not claim a virtio device.
+"""
+
+load("//assembly:defs.bzl", "cerise_board")
+load(":drivers.bzl", "HW_X64_BOOTFS", "HW_X64_BOOT_DRIVERS", "HW_X64_PROVIDED_FEATURES")
+
+package(default_visibility = ["//visibility:public"])
+
+cerise_board(
+    name = "hw-x64",
+    platform = "//platforms:x64-fuchsia",
+    boot_drivers = HW_X64_BOOT_DRIVERS,
+    provided_features = HW_X64_PROVIDED_FEATURES,
+    # legacy COM1-compatible serial; ignored where no such UART exists.
+    kernel_cmdline = ["kernel.serial=legacy"],
+    bootfs = HW_X64_BOOTFS,
+)

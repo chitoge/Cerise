@@ -1,0 +1,63 @@
+# Aggregate suite of vendored Fuchsia crates' own unit tests, wired up as
+# host-runnable `bazel test` targets. Rung 1: crates
+# needing zero new external crates. See each crate's BUILD.bazel for
+# per-target wiring notes, and for the (many) `# tests excluded: <reason>`
+# comments on crates whose tests could not be wired at this rung — mostly
+# because they depend, directly or transitively, on the real
+# "//src/upstream/fuchsia/sdk/rust/zx:zx" crate (raw Zircon syscall FFI),
+# which is fuchsia-target-only (zx-sys gates its syscall bindings on
+# `#[cfg(target_os = "fuchsia")]`) and so cannot compile for the host/exec
+# platform these tests run under.
+test_suite(
+    name = "unit_tests",
+    tests = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl_test",
+        "//src/upstream/fuchsia/src/storage/crypt/fxfs/common:fxfs_crypt_common_test",
+        "//src/upstream/fuchsia/src/sys/lib/cm_config:cm_config_test",
+        "//src/upstream/fuchsia/src/sys/lib/cm_types:cm_types_test",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker_test",
+
+        # crates unblocked by rand_xorshift/difference/futures-test
+        # (the 3 new @crates unlocks) plus test-case/proptest (already in
+        # @crates from rung 1's test-infra unlock). See each crate's
+        # BUILD.bazel for per-target wiring notes.
+        "//src/upstream/fuchsia/src/connectivity/lib/internet-checksum:internet-checksum_test",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types_test",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust_test",
+        "//src/upstream/fuchsia/src/sys/lib/cm_fidl_validator:cm_fidl_validator_test",
+        "//src/upstream/fuchsia/src/sys/lib/component_id_index:component_id_index_test",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash_test",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle_test",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg_test",
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors_test",
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy_test",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/rust:diagnostics_log_test",
+
+        # netstack3-core. Needs 3 vendored (not just @crates-unlocked)
+        # test-infra crates that were missing from the curated src/upstream
+        # tree entirely - ip-test-macro, proptest-support, and the
+        # already-vendored (just newly BUILD-wired) teststd - plus a
+        # criterion unlock (testutil/benchmarks.rs's unconditional
+        # `RealBencher` re-export). See core/base/BUILD.bazel's comments for
+        # the full rationale, including the `_testutils`-variant pattern
+        # (mirrored across core/{ip,tcp,udp,device,filter,icmp_echo,datagram,
+        # sync}/BUILD.bazel where applicable) that lets one crate's tests see
+        # another's `#[cfg(feature = "testutils")]` fakes.
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base_test",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/sync:netstack3-sync_test",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats:packet-formats_test",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/ip:netstack3-ip_test",
+        "//src/upstream/fuchsia/src/lib/test_util:test_util_test",
+
+        # crates unblocked by the Cerise host-zx shim
+        # (//src/cerise/lib/zx_host), a `crate_name = "zx"` drop-in for the
+        # host/exec platform that re-exports fuchsia-async's emulated_handle
+        # backend (one shared handle table across zx <-> fuchsia_async <->
+        # fidl) plus host cprng_draw/page_size. Swapped in per-crate via a
+        # `select()` on @platforms//os:fuchsia in each consumer's deps. See
+        # //src/cerise/lib/zx_host and each crate's BUILD.bazel wiring note.
+        "//src/upstream/fuchsia/src/storage/lib/key-bag:key-bag_test",
+        "//src/upstream/fuchsia/src/storage/crypt/zxcrypt:zxcrypt_crypt_test",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next_codec:fidl_next_codec_test",
+    ],
+)

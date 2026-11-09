@@ -1,0 +1,12 @@
+# Bazel integration for this imported target. explicit: a small
+# dependency-free netstack3 support crate. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "explicit",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+)

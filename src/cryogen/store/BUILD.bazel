@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Content-addressed page-blob store with copy-on-write snapshot generations.
+# no_std core (needs alloc, provided by the linking binary's allocator).
+#
+# Deliberately unconstrained by platform: this is portable core/alloc code with
+# no system calls, so it builds both for the freestanding target that runs a
+# guest and for host tools that prepare or inspect a store.
+rust_library(
+    name = "cryogen_store",
+    srcs = ["lib.rs"],
+    edition = "2021",
+)
+
+# Unit tests run on the build host (std): dedup, copy-on-write isolation, and
+# snapshot-cost accounting. No Zircon syscalls, no hardware virtualization.
+rust_test(
+    name = "cryogen_store_test",
+    srcs = ["lib.rs"],
+    edition = "2021",
+)

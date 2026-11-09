@@ -1,0 +1,15 @@
+# Cerise stub: fdf:: driver-runtime symbol shims for plain (non-driver) executables
+# that link a fidl_cpp-generated library. See fdf_link_stub.cc for the full explanation
+# of why this is needed and why it's safe only for driver-transport-inert consumers.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fdf_link_stub",
+    srcs = ["fdf_link_stub.cc"],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+    ],
+)

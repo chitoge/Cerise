@@ -1,0 +1,36 @@
+# Cerise host-image staging control. The leaf updater serves this protocol; the
+# host lifecycle coordinator consumes it and separately owns reboot/shutdown.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "cerise.update",
+    srcs = ["update.fidl"],
+    tags = ["manual"],
+)
+
+fidl_rust(
+    name = "cerise.update_rs",
+    library = ":cerise.update",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_cerise_update",
+    srcs = [":cerise.update_rs"],
+    crate_name = "fidl_cerise_update",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

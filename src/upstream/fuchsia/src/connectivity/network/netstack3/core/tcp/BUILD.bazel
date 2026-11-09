@@ -1,0 +1,50 @@
+# Authored locally for Cerise. netstack3-tcp (netstack3-core sub-crate),
+# x86_64-unknown-fuchsia. Base feature variant; test/loom/instrumented variants omitted.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "netstack3-tcp",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    rustc_flags = ["-Zcrate-attr=feature(maybe_uninit_write_slice)"],
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+    deps = [
+        "@crates//:assert_matches",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types",
+        "//src/upstream/fuchsia/src/connectivity/lib/packet-formats",
+        "//src/upstream/fuchsia/src/connectivity/network/lib/explicit",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/hashmap",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/ip:netstack3-ip",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/lock-order",
+        "//src/upstream/fuchsia/src/connectivity/network/netstack3/core/trace:netstack3-trace",
+        "//src/upstream/fuchsia/src/lib/network/packet",
+        "//src/upstream/fuchsia/src/lib/replace-with",
+        "@crates//:arrayvec",
+        "@crates//:cfg-if",
+        "@crates//:log",
+        "@crates//:rand",
+        "@crates//:siphasher",
+        "@crates//:smallvec",
+        "@crates//:thiserror",
+    ],
+)
+
+# tests excluded: src/state/info.rs's
+# #[cfg(test)] mod does `use diagnostics_assertions::assert_data_tree;` and
+# `use fuchsia_inspect::Inspector;` (the real inspect crate, needing real
+# VMOs / the real `zx` crate transitively) - same blocker as
+# netstack3-filter's own test (see that BUILD.bazel's comment); out of scope
+# this rung (zx-shim hard wall), not a small standalone port like
+# ip-test-macro/test_util/proptest-support. A netstack3-tcp_testutils
+# variant (for udp's/icmp_echo's/datagram's own tests, which depend on
+# netstack3-tcp - see ip/tests/BUILD.gn's deps list for confirmation this is
+# needed) was not attempted either: breadth-over-depth stop-loss after
+# landing base/sync/ip/packet-formats (base, ip, packet-formats: 365 + 848 +
+# 236 tests); left for a follow-up rung.

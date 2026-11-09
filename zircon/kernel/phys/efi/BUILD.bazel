@@ -1,0 +1,111 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/phys:efi_rules.bzl", "zircon_efi_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# All phys/efi include headers in one place.
+# protocol.cc needs main.h and main.cc needs protocol.h — GN resolves this via
+# allow_circular_includes_from. In Bazel we break the cycle with a header-only lib.
+cc_library(
+    name = "efi_phys_headers",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "//:efi_headers",
+        "//:kernel_cc_headers",
+        "//sdk/lib/fit:fit",
+    ],
+)
+
+# EFI protocol open/close wrappers (no kernel deps, used by main and file).
+cc_library(
+    name = "efi_protocol",
+    srcs = ["protocol.cc"],
+    deps = [":efi_phys_headers"],
+)
+
+# EFI entry point + allocation + stdout.
+# efi-main.cc: defines EfiMain, ConvertUtf16Args, static ctor/dtor dispatch.
+# allocation.cc: operator new/delete via EFI AllocatePages/FreePages.
+# stdout.cc: UART/SimpleTextOutput-backed printf backend.
+cc_library(
+    name = "efi_main_lib",
+    srcs = [
+        "allocation.cc",
+        "efi-main.cc",
+        "stdout.cc",
+    ],
+    deps = [
+        ":efi_phys_headers",
+        ":efi_protocol",
+        "//src/lib/utf_conversion:utf_conversion",
+        "//zircon/kernel/arch/x86/phys/efi:efi_arch_setup",
+        "//zircon/kernel/lib/boot-options:phys_boot_options",
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/uart:uart",
+    ],
+    alwayslink = True,
+)
+
+# EFI file-system helpers (open root, open file by name).
+cc_library(
+    name = "efi_file",
+    srcs = ["file.cc"],
+    deps = [
+        ":efi_main_lib",
+        ":efi_phys_headers",
+        ":efi_protocol",
+        "//src/lib/utf_conversion:utf_conversion",
+        "//zircon/system/ulib/fbl:fbl",
+    ],
+    alwayslink = True,
+)
+
+# ZBI-from-file loader used by the efi-zbi tool.
+cc_library(
+    name = "efi_boot_zbi",
+    srcs = ["efi-boot-zbi.cc"],
+    deps = [
+        ":efi_file",
+        ":efi_main_lib",
+        ":efi_phys_headers",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/kernel/phys/lib/memalloc:memalloc",
+    ],
+    alwayslink = True,
+)
+
+# Main tool source: efi-zbi.cc (calls main(), lists ZBI contents from EFI file).
+# Does NOT use EfiBootZbi — only EfiFilePtr + zbitl::View. Avoids BootZbi/ElfImage deps.
+cc_library(
+    name = "efi_zbi_main",
+    srcs = ["efi-zbi.cc"],
+    deps = [
+        ":efi_file",
+        ":efi_phys_headers",
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/phys:phys_efi_lib",
+    ],
+    alwayslink = True,
+)
+
+# efi-zbi: EFI tool that reads and lists a ZBI image from disk.
+# Produces a PE/COFF .efi binary via lld-link under the x64-efi toolchain.
+zircon_efi_binary(
+    name = "efi_zbi",
+    deps = [
+        ":efi_file",
+        ":efi_main_lib",
+        ":efi_zbi_main",
+        "//:efi_lib",
+        "//zircon/kernel/arch/x86/phys/efi:efi_arch_setup",
+        "//zircon/kernel/lib/libc:phys_libc",
+        "//zircon/kernel/phys:phys_efi_lib",
+        "//zircon/kernel/phys/lib/memalloc:memalloc",
+        "//zircon/system/ulib/fbl:fbl",
+        "//zircon/system/ulib/pretty:pretty",
+        "//zircon/system/ulib/uart:uart",
+    ],
+)

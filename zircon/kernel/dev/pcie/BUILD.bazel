@@ -1,0 +1,62 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pcie",
+    srcs = [
+        "debug.cc",
+        "pci_config.cc",
+        "pcie_bridge.cc",
+        "pcie_bus_driver.cc",
+        "pcie_caps.cc",
+        "pcie_device.cc",
+        "pcie_irqs.cc",
+        "pcie_quirks.cc",
+        "pcie_root.cc",
+        "pcie_upstream_node.cc",
+        "address_provider/designware.cc",
+        "address_provider/ecam_region.cc",
+        "address_provider/mmio.cc",
+        "address_provider/pio.cc",
+    ],
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    alwayslink = True,
+    deps = [
+        "//zircon/kernel/lib/kpci",
+        "//zircon/system/ulib/mmio-ptr",
+        "//zircon/system/ulib/region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "pcie_sources",
+    srcs = [
+        "debug.cc",
+        "pci_config.cc",
+        "pcie_bridge.cc",
+        "pcie_bus_driver.cc",
+        "pcie_caps.cc",
+        "pcie_device.cc",
+        "pcie_irqs.cc",
+        "pcie_quirks.cc",
+        "pcie_root.cc",
+        "pcie_upstream_node.cc",
+        "address_provider/designware.cc",
+        "address_provider/ecam_region.cc",
+        "address_provider/mmio.cc",
+        "address_provider/pio.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

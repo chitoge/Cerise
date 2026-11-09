@@ -1,0 +1,333 @@
+// cryogen_vmm — the virtual machine monitor, as a component.
+//
+// The same VMM that boots real UEFI firmware and a guest operating system today,
+// launched by component_manager instead of by userboot. What changes is where it
+// gets things, not what it does to a guest:
+//
+//   userboot.next                     component
+//   ─────────────────────────────     ─────────────────────────────────────────
+//   PA_SYSTEM_RESOURCE (0x54), the    fuchsia.kernel.HypervisorResource and
+//   ranged ROOT system resource       fuchsia.kernel.VmexResource, two separate
+//                                     FIDL protocols whose Get() returns a handle
+//   PA_VMO_BOOTFS (0x1b)              /pkg/data, read with ordinary std::fs
+//   compile-time constants            structured config, delivered as a VMO
+//
+// TWO kernel resources, not one, and this is the single most likely way to get a
+// confusing failure. `zx_guest_create` validates a SYSTEM resource at
+// ZX_RSRC_SYSTEM_HYPERVISOR_BASE; `zx_vmo_replace_as_executable` validates one at
+// ZX_RSRC_SYSTEM_VMEX_BASE. The VMM performs BOTH — it creates the partition and
+// it re-mints its guest-RAM VMO executable, because zx_vmo_create grants no
+// ZX_RIGHT_EXECUTE and the guest firmware fetches every one of its instructions
+// out of that VMO. Under userboot one handle covers both only because the ROOT
+// system resource short-circuits the base check entirely; a HypervisorResource
+// child is base 0 size 1 and does NOT satisfy the vmex check.
+//
+// `job_policy_ambient_mark_vmo_exec` is deliberately NOT set in `program`. The
+// syscall enforces ZX_POL_AMBIENT_MARK_VMO_EXEC only when the vmex handle is
+// invalid, and passing a real one takes the other branch — while the tree's
+// job_policy allowlist for that flag is empty (default-deny), so asking for it
+// would fail loudly for no benefit.
+//
+// Markers go directly to serial via zx_debug_write, the same choice
+// status_console makes: a boot gate greps the serial log and a LogSink record
+// does not appear there. LogSink is used for ops output only.
+//
+// THE BLOCK CAPABILITY IS WRITE-CAPABLE AND READ-ONLY IS NOT ENFORCED. The
+// routed member of fuchsia.hardware.block.volume.Service is
+// fuchsia.storage.block.Block, which carries writes. The VMM's use of it is
+// read-only by construction — every guest write goes to the RAM layer above the
+// content-addressed one — but that is a property of the code, not of the
+// capability. A bounded read-only broker would make it a property of the
+// capability; until one exists this is an accepted trust boundary, stated here
+// rather than left unsaid.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/cryogen_vmm",
+    },
+
+    // Structured-config SCHEMA. The values live in BUILD.bazel and travel
+    // dict -> JSON5 -> configc -> meta/cryogen_vmm.cvf -> the config VMO.
+    //
+    // `low_mmio_mb` is deliberately ABSENT. It is settable at build time today
+    // for exactly one reason: a separately-built binary with a 24 MiB window is
+    // what makes the LAPIC guard actually fire on a live guest, and that is one
+    // of the few negative controls in this package that has been observed red.
+    // Moving it to config is strictly better only if the control becomes a second
+    // product with a different .cvf, and strictly worse if the control quietly
+    // disappears in the conversion. It moves last, with the red run in hand.
+    config: {
+        // Guest RAM. Unchecked input reaching an allocation — there is no
+        // per-component memory quota in this tree — so the program validates it
+        // with checked arithmetic and a host reserve before mapping anything.
+        guest_mem_mb: {
+            type: "uint32",
+            mutability: [ "parent" ],
+        },
+        // Stable operator identities. They describe the catalog entry selected
+        // by the deployment, not a transport endpoint.
+        vm_id: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        vm_name: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        image_id: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        image_name: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        // Virtual processors. One today; SMP is a separate workstream, and a
+        // config field means trying it needs no rebuild.
+        vp_count: {
+            type: "uint8",
+            mutability: [ "parent" ],
+        },
+        // The bound on the content-addressed layer's page cache. Small values are
+        // load-bearing in the synthetic gate — four pages is what makes every run
+        // exercise eviction — and useless against a real operating-system image.
+        cryogen_cache_pages: {
+            type: "uint32",
+            mutability: [ "parent" ],
+        },
+        // Maximum number of dirty 4 KiB delta pages kept resident above the
+        // immutable image. Older pages spill to disposable Fxfs storage over
+        // gRPC. Zero is valid and sends every dirty page directly to spill.
+        spill_resident_pages: {
+            type: "uint32",
+            mutability: [ "parent" ],
+        },
+        // Optional diagnostic stop in seconds. Zero is the normal long-lived
+        // VM policy: only an explicit lifecycle action or guest halt stops it.
+        // A diagnostic product supplies a finite bound so it can sample the VP
+        // and still leave time for reporting and teardown.
+        guest_deadline_secs: {
+            type: "uint32",
+            mutability: [ "parent" ],
+        },
+        // Guest serial lines to carry before dropping. Past the budget every line
+        // is counted and DROPPED, which silently disarms any "the guest never
+        // said X" assertion.
+        fw_line_budget: {
+            type: "uint32",
+            mutability: [ "parent" ],
+        },
+        // Where the firmware image is, in this component's own package
+        // directory. A config fact rather than a constant, so the package layout
+        // and the program cannot disagree silently.
+        firmware_path: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        // "none" | "block" | "remote".
+        //
+        //   none   — no store; the guest gets a disk that exists and is blank.
+        //            A deliberately producible intermediate state.
+        //   block  — a .cryostore in a GPT partition on a whole disk reached
+        //            through the aggregated block Service. The store is then
+        //            REQUIRED: absence, a damaged GPT and an invalid header are
+        //            three distinct hard failures with their own markers, never a
+        //            fallback to blank. Booting blank is a supported success
+        //            state, so allowing it as a fallback would make the failure
+        //            look exactly like the success it must look different from.
+        //   remote — a .cryostore served over the network.
+        store_source: {
+            type: "string",
+            max_size: 16,
+            mutability: [ "parent" ],
+        },
+        // The GPT type GUID identifying the guest-image partition, so which GUID
+        // is looked for is a routing fact rather than a baked-in constant.
+        store_partition_guid: {
+            type: "string",
+            max_size: 64,
+            mutability: [ "parent" ],
+        },
+        // For store_source = "remote": the path within the remote file server...
+        store_path: {
+            type: "string",
+            max_size: 256,
+            mutability: [ "parent" ],
+        },
+        // ...and the host:port to reach it at.
+        store_server: {
+            type: "string",
+            max_size: 128,
+            mutability: [ "parent" ],
+        },
+        // Publish the component-local VMI protocol. A host gateway may route
+        // it externally without assigning this worker a public listener.
+        vmi_enabled: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
+        // Compatibility-product listener ports. Zero disables the worker-owned
+        // endpoint; the ordinary host sets all three to zero and routes through
+        // its gateway.
+        vmi_port: {
+            type: "uint16",
+            mutability: [ "parent" ],
+        },
+        hvsock_port: {
+            type: "uint16",
+            mutability: [ "parent" ],
+        },
+        display_port: {
+            type: "uint16",
+            mutability: [ "parent" ],
+        },
+        // Inventory-only instances validate and publish an image without
+        // allocating guest RAM or creating a partition.
+        inventory_only: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
+        // A dynamically populated worker must remain stopped until the
+        // manager crosses its Start barrier. Named hardware fixtures retain
+        // the historical eager-running behavior.
+        autostart: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
+        // Dynamic workers receive their complete device graph in an immutable
+        // startup VMO. These scalar values bind that opaque document to the
+        // component instance and make a missing, stale, or incompatible launch
+        // handle fail before guest or device construction. Compatibility
+        // products leave both values zero/empty and retain their named shape.
+        launch_spec_version: {
+            type: "uint16",
+            mutability: [ "parent" ],
+        },
+        launch_spec_digest: {
+            type: "string",
+            max_size: 64,
+            mutability: [ "parent" ],
+        },
+    },
+
+    use: [
+        // Ops output. The gate's markers do NOT come this way.
+        { protocol: "fuchsia.logger.LogSink" },
+        // zx_guest_create. Inventory-only instances do not create a guest and
+        // are intentionally not offered this authority. Execution instances
+        // acquire it synchronously and fail loudly before allocating memory if
+        // the optional route is absent.
+        {
+            protocol: "fuchsia.kernel.HypervisorResource",
+            availability: "optional",
+        },
+        // zx_vmo_replace_as_executable on the guest-RAM VMO. The same
+        // inventory-only exception and runtime enforcement apply.
+        {
+            protocol: "fuchsia.kernel.VmexResource",
+            availability: "optional",
+        },
+        // The guest image's disk. Optional: store_source = "none" is a supported
+        // configuration and an unrouted optional capability is a legal, explicit
+        // routing decision. The program refuses loudly if it is configured for
+        // "block" and the capability is not there, rather than booting blank.
+        {
+            service: "fuchsia.hardware.block.volume.Service",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.posix.socket.Provider",
+            availability: "optional",
+        },
+        // Optional peer inventory feeds. Ordinary worker instances leave these
+        // unrouted; an inventory-only instance can aggregate them into the
+        // single host-facing manager gateway.
+        {
+            protocol: "cerise.vm.Status.vm1",
+            path: "/svc/cerise.vm.Status.vm1",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Status.vm2",
+            path: "/svc/cerise.vm.Status.vm2",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Status.vm3",
+            path: "/svc/cerise.vm.Status.vm3",
+            availability: "optional",
+        },
+        // Component-local lifecycle controls used only by an inventory
+        // aggregator. Ordinary workers leave these optional aliases unrouted.
+        {
+            protocol: "cerise.vm.Control.vm1",
+            path: "/svc/cerise.vm.Control.vm1",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Control.vm2",
+            path: "/svc/cerise.vm.Control.vm2",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Control.vm3",
+            path: "/svc/cerise.vm.Control.vm3",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Vmi.vm1",
+            path: "/svc/cerise.vm.Vmi.vm1",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Vmi.vm2",
+            path: "/svc/cerise.vm.Vmi.vm2",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.vm.Vmi.vm3",
+            path: "/svc/cerise.vm.Vmi.vm3",
+            availability: "optional",
+        },
+    ],
+
+    capabilities: [
+        { protocol: "cerise.vm.Status" },
+        { protocol: "cerise.vm.Control" },
+        { protocol: "cerise.vm.Vmi" },
+        { protocol: "cerise.vm.DataPlane" },
+    ],
+
+    expose: [
+        {
+            protocol: "cerise.vm.Status",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.Control",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.Vmi",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.DataPlane",
+            from: "self",
+        },
+        // From the first version of this manifest, not later. A component with no
+        // framework Binder cannot be started or restarted by anything, ever, and
+        // adding it afterwards is the kind of edit that gets forgotten. The child
+        // is eager today, so nothing needs to bind it for a boot gate to work —
+        // startup mode and this expose answer different questions.
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

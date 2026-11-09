@@ -1,0 +1,220 @@
+// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use crate::model::component::{ComponentInstance, WeakComponentInstance, WeakExtendedInstance};
+use crate::sandbox_util::LaunchTaskOnReceive;
+use ::routing::component_instance::ComponentInstanceInterface;
+use ::routing::error::RoutingError;
+use async_trait::async_trait;
+use capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
+use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
+use futures::FutureExt;
+use futures::future::BoxFuture;
+use moniker::Moniker;
+use router_error::RouterError;
+use runtime_capabilities::{Dictionary, Routable, Router, WeakInstanceToken};
+use std::sync::Arc;
+
+pub mod binder;
+pub mod capabilities;
+pub mod capability_store;
+pub mod component_sandbox_retriever;
+pub mod config_override;
+pub mod controller;
+pub mod introspector;
+pub mod lifecycle_controller;
+pub mod namespace;
+pub mod realm;
+pub mod realm_query;
+pub mod route_validator;
+
+/// Returns a router that returns a dictionary containing routers for all of the framework
+/// capabilities scoped to the component `scope`. Making this a Router instead of a Dictionary
+/// saves memory compared to generating a Dictionary of framework capabilities for each component
+/// up front.
+pub(crate) fn get_framework_router(scope: &Arc<ComponentInstance>) -> Router<Dictionary> {
+    Router::new(FrameworkRouter { scope: scope.moniker.clone() })
+}
+
+struct FrameworkRouter {
+    scope: Moniker,
+}
+
+#[async_trait]
+impl Routable<Dictionary> for FrameworkRouter {
+    async fn route(
+        &self,
+        _request: fruntime::RouteRequest,
+        target: WeakInstanceToken,
+    ) -> Result<Option<Dictionary>, RouterError> {
+        let target = target
+            .inner
+            .as_any()
+            .downcast_ref::<WeakExtendedInstance>()
+            .ok_or(RouterError::Unknown)?;
+        let component = match target {
+            WeakExtendedInstance::Component(c) => c,
+            WeakExtendedInstance::AboveRoot(_) => {
+                return Err(RouterError::InvalidArgs);
+            }
+        };
+        let component = component.upgrade().map_err(RoutingError::from)?;
+        if component.moniker != self.scope {
+            return Err(RouterError::InvalidArgs);
+        }
+
+        let framework_dictionary = Dictionary::new();
+        add_protocol::<fcomponent::BinderMarker>(&component, &framework_dictionary, binder::serve);
+        add_protocol::<fruntime::CapabilitiesMarker>(
+            &component,
+            &framework_dictionary,
+            capabilities::serve,
+        );
+        add_protocol::<fsandbox::CapabilityStoreMarker>(
+            &component,
+            &framework_dictionary,
+            capability_store::serve,
+        );
+        if component.context.runtime_config().enable_introspection {
+            add_protocol::<fsys::ConfigOverrideMarker>(
+                &component,
+                &framework_dictionary,
+                config_override::serve,
+            );
+            add_protocol::<fsys::LifecycleControllerMarker>(
+                &component,
+                &framework_dictionary,
+                lifecycle_controller::serve,
+            );
+            add_protocol::<fsys::RealmQueryMarker>(
+                &component,
+                &framework_dictionary,
+                realm_query::serve,
+            );
+            add_protocol::<fsys::RouteValidatorMarker>(
+                &component,
+                &framework_dictionary,
+                route_validator::serve,
+            );
+        }
+        add_protocol::<fcomponent::IntrospectorMarker>(
+            &component,
+            &framework_dictionary,
+            introspector::serve,
+        );
+        add_protocol::<fcomponent::NamespaceMarker>(
+            &component,
+            &framework_dictionary,
+            namespace::serve,
+        );
+        add_protocol::<fcomponent::RealmMarker>(&component, &framework_dictionary, realm::serve);
+        add_pkg_dir(&component, &framework_dictionary);
+        add_protocol::<finternal::ComponentSandboxRetrieverMarker>(
+            &component,
+            &framework_dictionary,
+            component_sandbox_retriever::serve,
+        );
+        #[cfg(test)]
+        {
+            let extra_framework_capabilities =
+                component.context.extra_framework_capabilities.lock();
+            for (name, capability) in extra_framework_capabilities.iter() {
+                // Internal capabilities added for a test should preempt existing ones that have
+                // the same name.
+                let _ = framework_dictionary.insert(name.clone(), capability.clone());
+            }
+        }
+        Ok(Some(framework_dictionary))
+    }
+
+    async fn route_debug(
+        &self,
+        _request: fruntime::RouteRequest,
+        _target: WeakInstanceToken,
+    ) -> Result<CapabilitySource, RouterError> {
+        panic!("framework router does not support debug routes");
+    }
+}
+
+fn add_protocol<P: DiscoverableProtocolMarker>(
+    component: &Arc<ComponentInstance>,
+    dict: &Dictionary,
+    task_to_launch: impl Fn(
+        zx::Channel,
+        /*target: */ WeakComponentInstance,
+        /*scope: */ WeakComponentInstance,
+    ) -> BoxFuture<'static, Result<(), anyhow::Error>>
+    + Sync
+    + Send
+    + 'static,
+) {
+    let capability_source = CapabilitySource::Framework(FrameworkSource {
+        capability: InternalCapability::Protocol(P::PROTOCOL_NAME.parse().unwrap()),
+        moniker: component.moniker.clone(),
+    });
+    // Dictionary inserts succeed even when they return an error.
+    let source = component.as_weak();
+    let prev = dict.insert(
+        P::PROTOCOL_NAME.parse().unwrap(),
+        LaunchTaskOnReceive::new(
+            capability_source,
+            component.execution_scope.as_weak(),
+            format!("framework dispatcher for {}", P::PROTOCOL_NAME),
+            Some(component.context.policy().clone()),
+            Arc::new(move |chan, target, _path, _rights| {
+                task_to_launch(chan, target, source.clone())
+            }),
+        )
+        .into_router()
+        .into(),
+    );
+    assert!(prev.is_none(), "conflict found in framework dictionary");
+}
+
+fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
+    let weak_source_component = component.as_weak();
+    let launch_task_on_receive = LaunchTaskOnReceive::new(
+        CapabilitySource::Framework(FrameworkSource {
+            capability: InternalCapability::Directory("pkg".parse().unwrap()),
+            moniker: component.moniker.clone(),
+        }),
+        component.execution_scope.as_weak(),
+        "framework_pkg_directory",
+        Some(component.context.policy().clone()),
+        Arc::new(move |channel, _weak_target_component, relative_path, rights| {
+            let weak_source_component = weak_source_component.clone();
+            async move {
+                let source_component = weak_source_component.upgrade()?;
+                let resolved_state = source_component.lock_resolved_state().await?;
+                let package =
+                    resolved_state.resolved_component.package.as_ref().ok_or_else(|| {
+                        anyhow::format_err!(
+                            "source component {} missing package",
+                            source_component.moniker
+                        )
+                    })?;
+                let flags = fio::Flags::from_bits(rights.bits())
+                    .expect("failed to convert operations to flags");
+                let path: String = relative_path.clone().into();
+                fio::DirectoryProxy::open(
+                    &package.package_dir,
+                    &path,
+                    flags,
+                    &fio::Options::default(),
+                    channel,
+                )?;
+                Ok(())
+            }
+            .boxed()
+        }),
+    );
+    let prev = dict.insert("pkg".parse().unwrap(), launch_task_on_receive.into_dir_router().into());
+    assert!(prev.is_none(), "conflict with pkg directory in framework dictionary");
+}

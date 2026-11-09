@@ -1,0 +1,44 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+_COPTS = [
+    "--target=x86_64-unknown-linux-gnu",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-fno-stack-protector",
+    "-fno-unwind-tables",
+    "-fno-asynchronous-unwind-tables",
+    "-fPIE",
+    "-fPIC",
+    "-Wall",
+    "-Werror",
+]
+
+# Minimal freestanding userboot payload for x64-smoke: emits CERISE-SMOKE-OK via
+# the debuglog and exits. No lwIP/networking (the legacy HTTP-echo demo and its
+# //sdk/lib/net dependency were removed in the Cerise legacy purge).
+cc_binary(
+    name = "userboot-smoke",
+    srcs = ["userboot_smoke.cc"],
+    copts = _COPTS + [
+        "-fno-exceptions",
+        "-fno-rtti",
+        "-fno-threadsafe-statics",
+        "-std=c++20",
+    ],
+    linkopts = [
+        "-Wno-unused-command-line-argument",
+        "-nostdlib",
+        "-nodefaultlibs",
+        "-nostartfiles",
+        "-pie",
+        "-Wl,--no-dynamic-linker",
+        "-Wl,--gc-sections",
+        "-Wl,-z,max-page-size=4096",
+        "-Wl,-z,stack-size=0x100000",
+        "-Wl,--entry=_start",
+    ],
+)

@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "arch_arm64",
+    srcs = [
+        "cache.cc",
+        "cache-ops.S",
+        "drop-el.S",
+        "random.cc",
+        "shadow-call-stack.S",
+    ],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

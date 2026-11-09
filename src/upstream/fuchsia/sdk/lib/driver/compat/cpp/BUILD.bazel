@@ -1,0 +1,55 @@
+# Cerise BUILD (authored locally). //sdk/lib/driver/compat/cpp — the compat
+# library (device_server / banjo bridge / service offers) used by the compat shim
+# driver. Headers live under include/lib/driver/compat/cpp and are consumed as
+# <lib/driver/compat/cpp/...>.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Header-only: the DFv1 device-context symbol table shared with the shim.
+cc_library(
+    name = "symbols",
+    hdrs = ["include/lib/driver/compat/cpp/symbols.h"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "cpp",
+    srcs = [
+        "banjo_client.cc",
+        "connect.cc",
+        "device_server.cc",
+        "service_offers.cc",
+    ],
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/lib/driver/compat/cpp/logging.h"],
+        allow_empty = True,
+    ),
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        ":symbols",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/component/outgoing/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/async-helpers/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/component/cpp:cpp",
+        "//src/upstream/fuchsia/src/devices/bind/fuchsia:fuchsia_cpp",
+    ],
+)
+
+cc_library(
+    name = "logging",
+    srcs = ["logging.cc"],
+    hdrs = ["include/lib/driver/compat/cpp/logging.h"],
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "include",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+    ],
+)

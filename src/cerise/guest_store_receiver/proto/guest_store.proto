@@ -1,0 +1,74 @@
+// Cerise guest-store push contract.
+//
+// The appliance is the SERVER: a development host pushes a guest image to it and
+// the appliance writes that image to its raw guest-image GPT partition. Pull —
+// the appliance fetching pages lazily from a host — is a different contract with
+// different failure modes and is not this one.
+//
+// Small stores may be accumulated in bounded memory. Large stores are streamed
+// to a dedicated inactive staging partition. Commit hashes and validates that
+// staged payload and only then promotes it to the active guest-image partition.
+// Rejected bytes may exist in staging but never touch the active image.
+syntax = "proto3";
+
+package cerise.gueststore.v1;
+
+// Append `data` at `offset` in the staging buffer.
+//
+// UNARY with an explicit offset, rather than a client stream, for the reason the
+// file server's Write records: client-stream flow control buys nothing here and
+// costs a dependency-free host client the ability to drive it.
+//
+// `offset` must be 0 (which RESETS the buffer, so a retried push does not append
+// to a half-finished one) or exactly the number of bytes already staged. There
+// are no holes: a buffer with a gap in it would be a payload whose digest is
+// computed over bytes nobody sent.
+message StageRequest {
+  uint64 offset = 1;
+  bytes data = 2;
+}
+
+message StageResponse {
+  // Bytes staged after this call — what the next call's `offset` must be.
+  uint64 staged = 1;
+}
+
+// Check the staged bytes and, only if every check passes, write them to the
+// guest-image partition.
+//
+// `manifest_json` is a `{"sha256","size","signature"}` document produced by the
+// build-time signer. It is checked against the public key staged in the
+// receiver's package before anything is located or written.
+message CommitRequest {
+  string manifest_json = 1;
+}
+
+message CommitResponse {
+  // Where the store was written, in bytes, on the device that was selected.
+  uint64 partition_offset = 1;
+  uint64 partition_len = 2;
+  uint64 bytes_written = 3;
+  // The store's own root hash, lowercase hex — the same value the VMM prints
+  // when it later opens this partition, so a push and a later boot can be tied
+  // together by a name neither of them chose.
+  string root_hash = 4;
+}
+
+// Where the receiver would write, and what it currently thinks is there.
+//
+// Read-only: it locates the partition and reports, and never writes. It exists so
+// that a pusher can tell "this appliance has no guest-image partition" from "the
+// push failed", without having to push a store to find out.
+message ProbeRequest {}
+
+message ProbeResponse {
+  uint64 partition_offset = 1;
+  uint64 partition_len = 2;
+  uint64 staged = 3;
+}
+
+service GuestStore {
+  rpc Stage(StageRequest) returns (StageResponse);
+  rpc Commit(CommitRequest) returns (CommitResponse);
+  rpc Probe(ProbeRequest) returns (ProbeResponse);
+}

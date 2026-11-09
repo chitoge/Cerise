@@ -1,0 +1,55 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/drivers.gni")
+
+driver_bind_rules("realtek_rtl8111_bind") {
+  rules = "meta/realtek_rtl8111.bind"
+  tests = "meta/bind-tests.json"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
+    "//src/devices/bind/fuchsia.acpi",
+    "//src/devices/bind/fuchsia.pci",
+  ]
+}
+
+if (current_cpu == "x64") {
+  fuchsia_cc_driver("realtek-8111-driver") {
+    legacy = true
+    output_name = "realtek-8111"
+    configs += [
+      "//build/config:all_source",
+      "//build/config/fuchsia:enable_zircon_asserts",
+    ]
+    sources = [ "rtl8111.cc" ]
+    deps = [
+      ":realtek_rtl8111_bind",
+      "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
+      "//sdk/lib/driver/mmio/cpp",
+      "//src/devices/lib/driver",
+      "//src/devices/pci/lib/device-protocol-pci",
+      "//src/lib/ddk",
+      "//zircon/system/ulib/fbl",
+      "//zircon/system/ulib/zircon-internal",
+    ]
+  }
+
+  fuchsia_driver_component("realtek-8111") {
+    component_name = "realtek-8111"
+    deps = [ ":realtek-8111-driver" ]
+    info = "meta/realtek-8111-info.json"
+    manifest = "meta/realtek-8111.cml"
+  }
+
+  fuchsia_driver_package("package") {
+    package_name = "realtek-8111"
+    driver_components = [ ":realtek-8111" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":realtek_rtl8111_bind_test" ]
+}

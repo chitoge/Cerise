@@ -1,0 +1,137 @@
+// Copyright 2019 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Stub for Cerise. Provides the types needed by component_manager/builtins.
+// Items.Get2 is omitted (stub items.rs handles it); all other methods have correct signatures.
+
+@available(added=7)
+library fuchsia.boot;
+
+using zx;
+
+// uint16 so that Rust's `usize: From<u16>` applies for `.into()` comparisons.
+const MAX_ARGS_VECTOR_LENGTH uint16 = 4096;
+const MAX_ARG_NAME_LENGTH uint32 = 256;
+const MAX_ARG_VALUE_LENGTH uint32 = 4096;
+const MAX_BOOTLOADER_FILE_LENGTH uint32 = 4096;
+
+type BoolPair = struct {
+    key string:MAX_ARG_NAME_LENGTH;
+    defaultval bool;
+};
+
+type BootfsFileVmo = resource struct {
+    offset uint32;
+    contents zx.Handle:VMO;
+};
+
+// Cerise: renamed from ExtraPartition to Extra so that fidlgen_cpp generates
+// fuchsia_boot::wire::Extra (used by platform-bus.cc's GetBootItem wrapper).
+type Extra = struct {
+    n uint32;
+};
+
+type RetrievedItems = resource struct {
+    payload zx.Handle:VMO;
+    length uint32;
+    extra uint32;
+};
+
+@discoverable
+closed protocol Arguments {
+    strict GetString(struct {
+        key string:MAX_ARG_NAME_LENGTH;
+    }) -> (struct {
+        value string:<MAX_ARG_VALUE_LENGTH, optional>;
+    });
+    strict GetStrings(struct {
+        keys vector<string:MAX_ARG_NAME_LENGTH>:MAX_ARGS_VECTOR_LENGTH;
+    }) -> (struct {
+        values vector<string:<MAX_ARG_VALUE_LENGTH, optional>>:MAX_ARGS_VECTOR_LENGTH;
+    });
+    strict GetBool(struct {
+        key string:MAX_ARG_NAME_LENGTH;
+        defaultval bool;
+    }) -> (struct {
+        value bool;
+    });
+    strict GetBools(struct {
+        keys vector<BoolPair>:MAX_ARGS_VECTOR_LENGTH;
+    }) -> (struct {
+        values vector<bool>:MAX_ARGS_VECTOR_LENGTH;
+    });
+    strict Collect(struct {
+        prefix string:MAX_ARG_NAME_LENGTH;
+    }) -> (struct {
+        results vector<string:MAX_ARG_VALUE_LENGTH>:MAX_ARGS_VECTOR_LENGTH;
+    });
+};
+
+@discoverable
+closed protocol Items {
+    strict Get(struct {
+        type uint32;
+        extra uint32;
+    }) -> (resource struct {
+        payload zx.Handle:<VMO, optional>;
+        length uint32;
+    });
+    // Get2 returns vector wrapped in single-field struct; Fuchsia Rust codegen flattens
+    // single-field success payloads → send(Result<Vec<RetrievedItems>, int32>).
+    strict Get2(struct {
+        type uint32;
+        extra box<Extra>;
+    }) -> (resource struct {
+        // Cerise: field renamed from "items" to "retrieved_items" to match upstream C++ usage
+        // (platform-bus.cc: result->value()->retrieved_items).
+        retrieved_items vector<RetrievedItems>:MAX_ARGS_VECTOR_LENGTH;
+    }) error int32;
+    strict GetBootloaderFile(struct {
+        filename string:MAX_BOOTLOADER_FILE_LENGTH;
+    }) -> (resource struct {
+        payload zx.Handle:<VMO, optional>;
+    });
+};
+
+@discoverable
+open protocol FactoryItems {
+    strict Get(struct {
+        extra uint32;
+    }) -> (resource struct {
+        payload zx.Handle:<VMO, optional>;
+        length uint32;
+    });
+};
+
+@discoverable
+open protocol ReadOnlyLog {
+    strict Get() -> (resource struct {
+        log zx.Handle:LOG;
+    });
+};
+
+@discoverable
+open protocol WriteOnlyLog {
+    strict Get() -> (resource struct {
+        log zx.Handle:LOG;
+    });
+};
+
+open protocol SvcStash {};
+
+@discoverable
+open protocol SvcStashProvider {
+    strict Get() -> (resource struct {
+        svc_endpoint server_end:SvcStash;
+    }) error int32;
+};
+
+open protocol Userboot {
+    strict PostBootfsFiles(resource struct {
+        files vector<BootfsFileVmo>:64;
+    });
+    strict PostStashSvc(resource struct {
+        stash_svc_endpoint server_end:SvcStash;
+    });
+};

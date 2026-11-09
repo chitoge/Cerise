@@ -1,0 +1,46 @@
+# Cerise FDF runtime bring-up spike (DFv2 runtime bring-up, Component 1).
+# A dynamically-linked C++ bootfs binary that brings up the real libfdf runtime,
+# creates an fdf dispatcher, and runs a task on it (CERISE-FDF-RUNTIME-OK).
+# Links the driver_runtime implementation statically (alwayslink); libc/libc++/
+# libfdio resolve at runtime from the sysroot. Booted directly via userboot.next.
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_artifact")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "fdf_runtime_spike",
+    srcs = ["spike.cc"],
+    additional_linker_inputs = [
+        "//src/cerise/sysroot:fuchsia_link_sysroot",
+    ],
+    copts = [
+        "-Isrc/upstream/fuchsia",
+        "-DNTRACE",
+    ],
+    linkopts = [
+        "--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-resource-dir=$(location //src/cerise/sysroot:fuchsia_link_sysroot)/lib/clang/22",
+        "-Wl,--allow-shlib-undefined",
+        "-lzircon",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/devices/bin/driver_runtime:driver_runtime_impl",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        # Impl libs the statically-linked runtime needs (normally runtime-resolved
+        # via libfdf.so's DT_NEEDEDs; supplied statically here for a self-contained
+        # bootfs binary): sync_completion/sync_mutex, zx C++ wrappers, fdio stub.
+        "//src/upstream/fuchsia/zircon/system/ulib/sync:sync",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+        "//src/cerise/sysroot/fdio-stub:fdio_stub",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+        "//sdk/lib/fit:fit",
+    ],
+)
+
+fuchsia_artifact(
+    name = "fdf_runtime_spike.fuchsia",
+    src = ":fdf_runtime_spike",
+)

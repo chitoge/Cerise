@@ -1,0 +1,24 @@
+# Cerise. A `std` Rust binary for x86_64-unknown-fuchsia,
+# linked against the ported musl libc.so + the vDSO. The initial runtime proof:
+# proves upstream Fuchsia `std` links + runs against our libc. Build/run for fuchsia:
+#   bazel build //examples/hello-rust-std:hello_rust_std --platforms=//platforms:x64-fuchsia
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "hello_rust_std",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    # rustc's fuchsia spec emits Scrt1.o/-lc/-lzircon/-lfdio; point clang at our
+    # assembled link sysroot. Per-target (not a toolchain arg) to avoid the
+    # toolchain<->sysroot cycle (the sysroot's libc.so is built by the toolchain).
+    rustc_flags = ["-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)"],
+    # compile_data (not data): the sysroot must be a BUILD-time input so it's staged
+    # in the link sandbox (data is runtime-only).
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    # The bump allocator linked directly into the binary (cc_shared_library prunes it
+    # from libc.so); Rust std's `malloc` reference resolves to it. Spike-only.
+    deps = ["//src/cerise/libc-malloc:cerise_malloc"],
+    tags = ["manual"],
+)

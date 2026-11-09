@@ -1,0 +1,42 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "component_id_index",
+    srcs = [
+        "src/fidl_convert.rs",
+        "src/instance_id.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "component_id_index",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/src/fidl/fuchsia.component.internal:fidl_fuchsia_component_internal",
+        "//src/upstream/fuchsia/src/lib/error/clonable_error:clonable_error",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:anyhow",
+        "@crates//:camino",
+        "@crates//:hex",
+        "@crates//:rand",
+        "@crates//:thiserror",
+    ],
+)
+
+# lib.rs's, instance_id.rs's, and fidl_convert.rs's
+# #[cfg(test)] mods do `use proptest::prelude::*;` and `use test_case::test_case;`.
+# Recompiled at API level 30 like the library (rust_test's `crate` attribute
+# does not inherit rustc_flags).
+rust_test(
+    name = "component_id_index_test",
+    crate = ":component_id_index",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "@crates//:proptest",
+        "@crates//:test-case",
+    ],
+)

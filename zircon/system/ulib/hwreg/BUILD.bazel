@@ -1,0 +1,25 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "asm_source",
+    srcs = ["asm.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+cc_library(
+    name = "hwreg",
+    hdrs = [":headers"],
+    includes = ["include"],
+    deps = ["//zircon/system/ulib/mmio-ptr:mmio-ptr"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

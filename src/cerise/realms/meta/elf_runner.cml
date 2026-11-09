@@ -1,0 +1,16 @@
+// elf_runner leaf — the ELF runner component (uses the builtin_elf_runner, declares
+// and exposes the `elf` runner registered in each realm's elf-env).
+{
+    program: {
+        runner: "builtin_elf_runner",
+    },
+    capabilities: [
+        { runner: "elf", path: "/svc/fuchsia.component.runner.ComponentRunner" },
+    ],
+    use: [
+        { protocol: "fuchsia.process.Launcher" },
+    ],
+    expose: [
+        { runner: "elf", from: "self" },
+    ],
+}

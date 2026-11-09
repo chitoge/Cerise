@@ -1,0 +1,22 @@
+# Authored locally for Cerise. fdomain/client:flex_fidl:
+# non-fdomain shim (crate name "flex_client") that re-exports fidl::* and zx
+# types. Used by fuchsia-fs and fuchsia-component when fdomain feature is off.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# flex_fidl: non-fdomain variant of the flex transport shim.
+# flex.rs conditionally re-exports ::fidl::* when NOT compiled with fdomain feature.
+rust_library(
+    name = "flex_fidl",
+    srcs = ["src/flex.rs"],
+    crate_name = "flex_client",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

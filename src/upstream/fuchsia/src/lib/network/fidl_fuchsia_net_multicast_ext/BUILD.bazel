@@ -1,0 +1,20 @@
+# Authored locally for Cerise. fidl_fuchsia_net_multicast_ext:
+# ergonomic Rust extension types over fuchsia.net.multicast.admin's raw FIDL
+# bindings, a real non-test dep of netstack3-bindings' common_deps.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_multicast_ext",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.multicast.admin:fidl_fuchsia_net_multicast_admin",
+        "//src/upstream/fuchsia/src/connectivity/lib/net-types:net-types",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_ext:fidl_fuchsia_net_ext",
+        "@crates//:futures",
+    ],
+)

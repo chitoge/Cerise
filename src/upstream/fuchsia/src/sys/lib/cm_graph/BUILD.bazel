@@ -1,0 +1,19 @@
+# Bazel integration for this imported target.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cm_graph",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "cm_graph",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/src/lib/directed_graph:directed_graph",
+        "@crates//:flyweights",
+    ],
+)

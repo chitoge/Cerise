@@ -1,0 +1,30 @@
+# Authored locally for Cerise. pcap: real netstack3
+# dependency. Only the base (non-"compile"-feature) variant is needed —
+# netstack3 depends on plain "pcap", not "pcap-compile" (which needs
+# third_party/libpcap, a real C library, and ebpf/linux_uapi for its
+# BPF-compile feature — genuinely unneeded here, not a stub: the base variant
+# is complete, real, working code on its own upstream feature-set boundary).
+# bindgen.sh/wrapper.h (the "compile" feature's C bindgen inputs) are
+# therefore deliberately not vendored. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "pcap",
+    srcs = [
+        "src/bindings.rs",
+        "src/compile.rs",
+        "src/lib.rs",
+    ],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:nom",
+        "@crates//:thiserror",
+        "@crates//:zerocopy",
+    ],
+    proc_macro_deps = [
+        "@crates//:strum_macros",
+    ],
+)

@@ -1,0 +1,41 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# fshost Phase 1: zxcrypt_crypt - the zxcrypt client library (key wrap/unwrap +
+# fuchsia.fxfs/Crypt server implementation for zxcrypt-format volumes). See
+# src/lib.rs's top-of-file comment for the disclosed removal of the
+# TEE-specific match arm (no TEE hardware exists on any Cerise target).
+rust_library(
+    name = "zxcrypt_crypt",
+    srcs = ["src/lib.rs"],
+    crate_name = "zxcrypt_crypt",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.fxfs:fidl_fuchsia_fxfs",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/storage/crypt/policy:crypt_policy",
+        "@crates//:aes-gcm-siv",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:hkdf",
+        "@crates//:log",
+        "@crates//:sha2",
+        "@crates//:uuid",
+        "@crates//:zerocopy",
+    ] + select({
+        # Host: zxcrypt_crypt only touches zx::Status + zx::cprng_draw, both
+        # provided by the Cerise host-zx shim. See //src/cerise/lib/zx_host.
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": ["//src/cerise/lib/zx_host:zx_host"],
+    }),
+)
+
+# Host-runnable unit tests via the Cerise host-zx shim:
+# tests exercise zx::Status + zx::cprng_draw and the Crypt FIDL service logic.
+rust_test(
+    name = "zxcrypt_crypt_test",
+    crate = ":zxcrypt_crypt",
+    deps = ["//src/upstream/fuchsia/src/lib/fuchsia:fuchsia"],
+)

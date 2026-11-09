@@ -1,0 +1,10 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "include_bytes_from_working_dir",
+    srcs = ["src/lib.rs"],
+    crate_name = "include_bytes_from_working_dir",
+    edition = "2024",
+)

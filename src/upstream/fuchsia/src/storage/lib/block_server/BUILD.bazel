@@ -1,0 +1,96 @@
+# Bazel integration for this imported target. Real upstream
+# block_server — the shared session/FIFO/VMO server library NVMe (and future
+# AHCI) block drivers use to serve fuchsia.storage.block clients. Compression
+# support (zstd) is a genuine, unconditional production dependency (see
+# ActiveRequestsInner::complete in src/lib.rs) — vendored for real, not stubbed
+# (storage configuration).
+#
+# decompression_tests.rs is NOT vendored: it's `#[cfg(test)] mod
+# decompression_tests;` in src/lib.rs, so it's never referenced by a non-test
+# build — matches upstream's own semantics (BUILD.gn lists it only because GN's
+# with_unit_tests=true needs it present for the test variant).
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_BLOCK_SERVER_SRCS = [
+    "src/async_interface.rs",
+    "src/c_interface.rs",
+    "src/callback_interface.rs",
+    "src/lib.rs",
+]
+
+_BLOCK_SERVER_DEPS = [
+    "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+    "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+    "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+    "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+    "//src/upstream/fuchsia/src/lib/trace/rust:trace",
+    "//src/upstream/fuchsia/src/storage/lib/block_protocol:block_protocol",
+    "//src/upstream/fuchsia/src/storage/lib/storage_device:storage_device",
+    "@crates//:anyhow",
+    "@crates//:futures",
+    "@crates//:log",
+    "@crates//:scopeguard",
+    "@crates//:slab",
+    "@crates//:zstd",
+] + select({
+    "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+    "//conditions:default": [],
+})
+
+# tests excluded (host) - ON-TARGET-ONLY, documented reason:
+# Not fixable by the Cerise host-zx shim (//src/cerise/lib/zx_host). block_server's
+# tests create zx::Fifo (the block-protocol FIFO) + zx::Vmo and drive them
+# through fasync - the Zircon FIFO has no userspace host emulation. It also
+# transitively depends on fuchsia-runtime + storage_device (Fuchsia runtime
+# primitives: thread/process/job/vmar self handles, startup handles, UTC
+# reference). Belongs to a future on-target (zircon-test) product.
+
+# rust_static_library (not a plain rust_library): block_server_cc (C++) links this
+# as a CcInfo dep via its cbindgen-generated C ABI (block_server_c.h) — the
+# established Rust->C interop pattern for this repo.
+rust_static_library(
+    name = "block_server_c",
+    srcs = _BLOCK_SERVER_SRCS,
+    crate_name = "block_server",
+    edition = "2024",
+    tags = ["manual"],
+    deps = _BLOCK_SERVER_DEPS,
+)
+
+# fshost: plain rust_library variant, for pure-Rust `--extern` consumption
+# (block_server/vmo_backed is the first such consumer - upstream's own real
+# vmo_backed/BUILD.gn depends on plain "//src/storage/lib/block_server", distinct
+# from block_server_cc's C-ABI-only use of block_server_c above). Same sources,
+# same crate_name - a rust_static_library isn't picked up as a normal rlib dep by
+# another rust_library's `deps`.
+rust_library(
+    name = "block_server",
+    srcs = _BLOCK_SERVER_SRCS,
+    crate_name = "block_server",
+    edition = "2024",
+    tags = ["manual"],
+    deps = _BLOCK_SERVER_DEPS,
+)
+
+cc_library(
+    name = "block_server_cc",
+    srcs = ["block_server.cc"],
+    hdrs = ["block_server.h", "block_server_c.h"],
+    copts = [
+        # block_server.cc includes its own header via full workspace-root path.
+        "-Isrc/upstream/fuchsia",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":block_server_c",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+        "//src/upstream/fuchsia/sdk/lib/async:async-cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/logging/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/runtime:driver_runtime_cpp",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:zx",
+    ],
+)

@@ -1,0 +1,37 @@
+# Bazel integration for this imported target. netstack3-bindings
+# dependency: real fidl_fuchsia_net_neighbor_ext (BUILD.gn target
+# "fidl_fuchsia_net_neighbor_ext", non-fdomain instantiation only -- Cerise has
+# no remote-FDomain use case, "_fdomain" sibling target intentionally not vendored).
+# testutil.rs is real upstream source but only compiled behind `feature =
+# "testutils"`/`cfg(test)`, matching unmodified upstream -- not enabled here.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fidl_fuchsia_net_neighbor_ext",
+    srcs = [
+        "src/lib.rs",
+        "src/testutil.rs",
+    ],
+    crate_root = "src/lib.rs",
+    crate_name = "fidl_fuchsia_net_neighbor_ext",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        # DTA-####: HEAD-backed instance (not the plain :flex_fuchsia_net), to
+        # match fuchsia.net.neighbor's retargeted dependency and
+        # fidl_fuchsia_net_ext's fidl_fuchsia_net_common-based conversions --
+        # see fuchsia.net/BUILD.bazel's flex_fuchsia_net_for_neighbor comment.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:flex_fuchsia_net_for_neighbor",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.neighbor:flex_fuchsia_net_neighbor",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/src/lib/async-utils:async-utils",
+        "//src/upstream/fuchsia/src/lib/fdomain/client:flex_fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl_table_validation:fidl_table_validation",
+        "//src/upstream/fuchsia/src/lib/network/fidl_fuchsia_net_ext:fidl_fuchsia_net_ext",
+        "@crates//:futures",
+        "@crates//:thiserror",
+    ],
+)

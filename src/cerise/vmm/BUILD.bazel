@@ -1,0 +1,119 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_COPTS = [
+    "--target=x86_64-unknown-linux-gnu",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-fno-stack-protector",
+    "-fno-unwind-tables",
+    "-fno-asynchronous-unwind-tables",
+    "-fPIE",
+    "-fPIC",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-fno-threadsafe-statics",
+    "-std=c++20",
+    "-Wall",
+    "-Werror",
+]
+
+# ─── Minimal Rust VMM ─────────────────────────────────────────────────
+
+_CERISE_USER = [
+    "@platforms//cpu:x86_64",
+    "//platforms/os:cerise",
+    "//platforms/env:user",
+]
+
+# Converts the flat guest binary into a Rust source file with an embedded &[u8].
+genrule(
+    name = "guest_blob_embed_rs",
+    srcs = ["//src/cerise/vmm/guest-blob:guest_blob"],
+    outs = ["guest_blob_embed.rs"],
+    cmd = (
+        "python3 -c \"" +
+        "d=open('$(location //src/cerise/vmm/guest-blob:guest_blob)','rb').read();" +
+        "print('#![no_std]' + chr(10) + 'pub const GUEST_BLOB: &[u8] = &[' + ','.join(str(b) for b in d) + '];')" +
+        "\" > $@"
+    ),
+)
+
+rust_library(
+    name = "guest_blob_embed",
+    srcs = [":guest_blob_embed_rs"],
+    crate_root = ":guest_blob_embed_rs",
+    edition = "2021",
+    target_compatible_with = _CERISE_USER,
+)
+
+rust_binary(
+    name = "cerise-vmm",
+    srcs = ["main.rs"],
+    edition = "2021",
+    deps = [
+        "//src/cerise/rt:cerise_rt",
+        "//src/cerise/vmm/backend:vmm_backend",
+        "//src/cerise/vmm/guest-memory:guest_memory",
+        ":guest_blob_embed",
+    ],
+    target_compatible_with = _CERISE_USER,
+)
+
+# ─── VMM with virtio device models ────────────────────────────────────
+
+genrule(
+    name = "guest_virtio_blob_embed_rs",
+    srcs = ["//src/cerise/vmm/guest-virtio:guest_virtio_blob"],
+    outs = ["guest_virtio_blob_embed.rs"],
+    cmd = (
+        "python3 -c \"" +
+        "d=open('$(location //src/cerise/vmm/guest-virtio:guest_virtio_blob)','rb').read();" +
+        "print('#![no_std]' + chr(10) + 'pub const GUEST_VIRTIO_BLOB: &[u8] = &[' + ','.join(str(b) for b in d) + '];')" +
+        "\" > $@"
+    ),
+)
+
+rust_library(
+    name = "guest_virtio_blob_embed",
+    srcs = [":guest_virtio_blob_embed_rs"],
+    crate_root = ":guest_virtio_blob_embed_rs",
+    edition = "2021",
+    target_compatible_with = _CERISE_USER,
+)
+
+rust_binary(
+    name = "cerise-vmm-virtio",
+    srcs = ["main-virtio.rs"],
+    edition = "2021",
+    deps = [
+        "//src/cerise/rt:cerise_rt",
+        "//src/cerise/vmm/backend:vmm_backend",
+        "//src/cerise/vmm/virtio-console:virtio_console",
+        "//src/cerise/vmm/virtio-net-dev:virtio_net_dev",
+        ":guest_virtio_blob_embed",
+    ],
+    target_compatible_with = _CERISE_USER,
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+cc_binary(
+    name = "hv-probe",
+    srcs = ["hv-probe.cc"],
+    copts = _COPTS,
+    linkopts = [
+        "-Wno-unused-command-line-argument",
+        "-nostdlib",
+        "-nodefaultlibs",
+        "-nostartfiles",
+        "-pie",
+        "-Wl,--no-dynamic-linker",
+        "-Wl,--gc-sections",
+        "-Wl,-z,max-page-size=4096",
+        "-Wl,-z,stack-size=0x100000",
+        "-Wl,--entry=_start",
+    ],
+)

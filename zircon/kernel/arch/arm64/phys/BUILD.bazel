@@ -1,0 +1,90 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "phys_arch_headers_fg",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+_ARM64_PHYS_PRIVATE_HDRS = [
+    "arch-phys-info-asm.h",
+    "psci.h",
+    "regs.h",
+    "smccc.h",
+]
+
+_ARM64_PHYS_COMMON_DEPS = [
+    "//build/phys:phys_include_overrides",
+    "//:kernel_cc_headers",
+    "//src/lib/zbitl:phys_zbitl",
+    "//zircon/kernel/phys/lib/memalloc:memalloc",
+    "//zircon/kernel/lib/boot-options:phys_boot_options",
+    "//zircon/system/ulib/uart:uart",
+    "//zircon/kernel/lib/page:headers",
+    "//zircon/system/ulib/explicit-memory:explicit-memory",
+    "//:phys_elfldltl",
+    "//:symbolizer_markup_headers",
+    "//zircon/kernel/lib/arch/include:headers_cc",
+    "//zircon/kernel/lib/arch/arm64:arch_arm64",
+]
+
+_ARM64_PHYS_LIB_DEPS = _ARM64_PHYS_COMMON_DEPS + [
+    "//zircon/kernel/phys:phys_common_lib",
+]
+
+_ARM64_PHYSBOOT_LIB_DEPS = _ARM64_PHYS_COMMON_DEPS + [
+    "//zircon/kernel/phys:physboot_phys_lib",
+]
+
+# physload: full physload sources including address-space.cc and arch-physload.cc.
+cc_library(
+    name = "arm64_phys_common_lib",
+    srcs = [
+        "start.S",
+        "exception.S",
+        "address-space.cc",
+        "arch-physload.cc",
+        "psci.cc",
+        "psci.S",
+        "reset.cc",
+        "setup.cc",
+    ],
+    hdrs = _ARM64_PHYS_PRIVATE_HDRS + glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = _ARM64_PHYS_LIB_DEPS,
+)
+
+# physboot module base: excludes address-space.cc, arch-physload.cc, and setup.cc.
+# setup.cc defines gArchPhysInfo (provided by physload-module.cc in physboot mode)
+# and ArchSetUpCpu/ArchSetUpZbi (never called in module mode; physload runs these).
+cc_library(
+    name = "arm64_physboot_base_lib",
+    srcs = [
+        "start.S",
+        "exception.S",
+        "psci.cc",
+        "psci.S",
+        "reset.cc",
+    ],
+    hdrs = _ARM64_PHYS_PRIVATE_HDRS + glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = _ARM64_PHYSBOOT_LIB_DEPS,
+)
+
+# physboot extra: ZBI processing + handoff prep.
+cc_library(
+    name = "arm64_physboot_extra_lib",
+    srcs = [
+        "arch-boot-zbi.cc",
+        "arch-handoff-prep.cc",
+        "arch-on-physload-handoff.cc",
+        "code-patches.cc",
+    ],
+    hdrs = _ARM64_PHYS_PRIVATE_HDRS + glob(["include/**/*.h"]),
+    includes = ["include"],
+    alwayslink = True,
+    deps = _ARM64_PHYSBOOT_LIB_DEPS,
+)

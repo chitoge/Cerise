@@ -1,0 +1,31 @@
+# Authored locally for Cerise. fuchsia-component/client:
+# FIDL service connection and component launching utilities.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "client",
+    srcs = [
+        "src/fidl_next.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fuchsia_component_client",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component:fidl_fuchsia_component",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fdio/rust:fdio",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fidl/rust_next/fidl_next:fidl_next",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component/directory:directory",
+        "//src/upstream/fuchsia/src/lib/fuchsia-fs:fuchsia-fs",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:pin-project",
+    ],
+)

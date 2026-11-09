@@ -1,0 +1,23 @@
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library")
+package(default_visibility = ["//visibility:public"])
+fidl_library(
+    name = "fuchsia.hardware.platform.device",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = ["//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework", "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power", "//src/upstream/fuchsia/zircon/vdso:zx"],
+)
+fidl_cpp(
+    name = "fuchsia.hardware.platform.device_cpp",
+    library = ":fuchsia.hardware.platform.device",
+    tags = ["manual"],
+    deps = [
+        # fuchsia.hardware.platform.device imports fuchsia.driver.framework and
+        # fuchsia.hardware.power; generated C++ headers need their _cpp includes.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)

@@ -1,0 +1,47 @@
+# Bazel integration for this imported target. Real upstream
+# block_client (Rust) — the FIFO-based client library storage_device's
+# block_device.rs uses to talk to a remote block server over fuchsia.storage.block.
+# Vendored in full per explicit user direction (reversing an earlier deferral,
+# see): storage_device is meant to be a portable Device abstraction and
+# omitting block_device would leave that abstraction incomplete for any future
+# consumer.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "block_client",
+    srcs = [
+        "src/cache.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "block_client",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.storage.block:fidl_fuchsia_storage_block",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync:fuchsia-sync",
+        "//src/upstream/fuchsia/src/storage/lib/block_protocol:block_protocol",
+        "//src/upstream/fuchsia/src/storage/lib/trace:storage_trace",
+        "@crates//:anyhow",
+        "@crates//:futures",
+        "@crates//:linked-hash-map",
+        "@crates//:log",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# tests excluded (host) - ON-TARGET-ONLY, documented reason:
+# Not fixable by the Cerise host-zx shim (//src/cerise/lib/zx_host). Two hard
+# blockers: (1) block_client's core FifoState uses fasync::Fifo carrying the
+# block protocol (BlockFifoRequest/Response) and its tests create zx::Fifo -
+# the Zircon FIFO object has no userspace host emulation (fuchsia-async gates
+# its Fifo on cfg(target_os="fuchsia")); (2) it depends unconditionally on
+# fuchsia-runtime (thread/process/job/vmar self handles, startup-handle table,
+# UTC reference), genuine Fuchsia runtime primitives a host process lacks. Plus
+# zx::Vmo. Belongs to a future on-target (zircon-test) product.

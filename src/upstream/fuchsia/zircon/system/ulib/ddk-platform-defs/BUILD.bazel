@@ -1,0 +1,9 @@
+# Cerise BUILD (authored locally) — ddk-platform-defs: <lib/ddk/platform-defs.h>
+# (platform/vid/pid bind constants). Header-only.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "ddk-platform-defs",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)

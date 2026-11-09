@@ -1,0 +1,19 @@
+# Cerise BUILD (authored locally). //sdk/lib/driver/promise/cpp:cpp — fpromise
+# helpers for connecting to driver-framework services. Used by the compat shim.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "cpp",
+    srcs = glob(["*.cc"], exclude = ["*test*"], allow_empty = True),
+    hdrs = glob(["**/*.h"], allow_empty = True),
+    copts = ["-ffuchsia-api-level=4292870144"],
+    strip_include_prefix = "/src/upstream/fuchsia/sdk",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+        "//src/upstream/fuchsia/sdk/lib/driver/incoming/cpp:cpp",
+        "//src/upstream/fuchsia/sdk/lib/fit-promise:fit-promise",
+    ],
+)

@@ -1,0 +1,76 @@
+# Bazel integration for this imported target. Generated FIDL library
+# + Rust bindings for the netstack3-bindings dependency closure.
+load("//build/fidl:fidl.bzl", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# bumped to HEAD -- fuchsia.net.root
+# is wholly @available(added=HEAD)-gated in real upstream FIDL (the whole
+# library does not exist below HEAD at all), and has no consumer in this tree
+# other than the netstack3 _ext crates being vendored in the networking import. Safe by
+# construction: nothing at level 30 could resolve this library either way.
+fidl_library(
+    name = "fuchsia.net.root",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fuchsia.net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.filter:fuchsia.net.filter",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.net.root_rs",
+    library = ":fuchsia.net.root",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_net_root",
+    srcs = [":fuchsia.net.root_rs"],
+    crate_name = "fidl_fuchsia_net_root",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net:fidl_fuchsia_net_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.filter:fidl_fuchsia_net_filter",
+        # netstack3 imports the HEAD instance of interfaces.admin throughout for
+        # internal consistency; fuchsia.net.root composes interfaces.admin.Control
+        # in its own GetAdmin API, so its Rust codegen must link the SAME instance
+        # or callers hit "two different versions of crate" type errors. This is
+        # the Rust dep only -- fuchsia.net.root has no other real consumer, so no
+        # parallel FIDL/rust target is needed, just this swap.
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.interfaces.admin:fidl_fuchsia_net_interfaces_admin_head",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.net.routes.admin:fidl_fuchsia_net_routes_admin",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)
+
+# "_rust_flex" pure re-export -- see
+# fuchsia.net's `flex_fuchsia_net` target comment for the full rationale.
+genrule(
+    name = "flex_fuchsia_net_root_rs_gen",
+    outs = ["flex_fuchsia_net_root.rs"],
+    cmd = "printf 'pub use fidl_fuchsia_net_root::*;\\n' > $(OUTS)",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "flex_fuchsia_net_root",
+    srcs = [":flex_fuchsia_net_root_rs_gen"],
+    crate_name = "flex_fuchsia_net_root",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [":fidl_fuchsia_net_root"],
+)

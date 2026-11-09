@@ -1,0 +1,48 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "diagnostics_selectors",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_selectors",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    tags = ["manual"],
+    aliases = {
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics": "fidl_fuchsia_diagnostics_common",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect": "fidl_fuchsia_inspect_common",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics.types:fidl_fuchsia_diagnostics_types",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.inspect:fidl_fuchsia_inspect",
+        "//src/upstream/fuchsia/src/lib/buf-read-ext:buf-read-ext",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "@crates//:anyhow",
+        "@crates//:bitflags",
+        "@crates//:itertools",
+        "@crates//:thiserror",
+        "@crates//:winnow",
+    ],
+)
+
+# src/selectors.rs's #[cfg(test)] mod does
+# `use tempfile::TempDir;` and `use test_case::test_case;`; several test fns
+# across the crate use the `#[fuchsia::test]` attribute (from
+# //src/upstream/fuchsia/src/lib/fuchsia, a thin `#[test]` + logging-setup
+# wrapper - host-buildable). Recompiled at API level 30 like the library
+# (rust_test's `crate` attribute does not inherit rustc_flags).
+rust_test(
+    name = "diagnostics_selectors_test",
+    crate = ":diagnostics_selectors",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fuchsia",
+        "@crates//:assert_matches",
+        "@crates//:tempfile",
+        "@crates//:test-case",
+    ],
+)

@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "router_error",
+    srcs = ["src/lib.rs"],
+    crate_name = "router_error",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS,
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.runtime:fidl_fuchsia_component_runtime",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.sandbox:fidl_fuchsia_component_sandbox",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "@crates//:thiserror",
+    ],
+)

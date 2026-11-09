@@ -1,0 +1,38 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Cerise packages foundation: the HOST tool that builds a real meta.far from the
+# vendored fuchsia-pkg library and emits the ingest manifest pkg_probe reads on-target. See
+# src/main.rs. Built from the vendored libs — no checked-in generated meta.far artifacts.
+rust_binary(
+    name = "pkg_builder",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+# Golden host test: build a package from fixed byte contents and assert the produced
+# meta.far merkle + content-blob merkles are the deterministic golden values, and that a
+# corrupted blob's merkle diverges (merkle-verification would reject it). Deterministic —
+# proves the package rule's hashing is reproducible.
+rust_test(
+    name = "pkg_builder_golden_test",
+    srcs = ["tests/golden_test.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-pkg:fuchsia-pkg",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-merkle:fuchsia-merkle",
+        "//src/upstream/fuchsia/src/sys/pkg/lib/fuchsia-hash:fuchsia-hash",
+        "//src/cerise/stubs/delivery_blob:delivery_blob",
+        "@crates//:crc",
+        "@crates//:tempfile",
+    ],
+)

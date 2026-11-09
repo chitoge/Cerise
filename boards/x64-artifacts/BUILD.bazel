@@ -1,0 +1,82 @@
+"""Staged x86-64 board-driver artifacts.
+
+These targets apply the Fuchsia transition and strip the driver binaries before
+boards place them in bootfs.  They are shared by the QEMU and physical x86-64
+boards, so they live below product composition.
+"""
+
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+
+package(default_visibility = ["//visibility:public"])
+
+fuchsia_stripped(
+    name = "platform_bus_x86_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/board/drivers/x86:platform-bus-x86.so",
+)
+
+fuchsia_stripped(
+    name = "platform_bus_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/bus/drivers/platform:platform-bus.so",
+)
+
+fuchsia_stripped(
+    name = "platform_bus_x86_so_dh.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/board/drivers/x86:platform-bus-x86.so",
+)
+
+fuchsia_stripped(
+    name = "bus_pci_so_dh.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/bus/drivers/pci:bus-pci.so",
+)
+
+fuchsia_stripped(
+    name = "bus_pci_so_pkg.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/bus/drivers/pci:bus-pci.so",
+)
+
+fuchsia_stripped(
+    name = "cerise_pci_probe_so.fuchsia",
+    src = "//src/cerise/drivers/pci_probe:cerise_pci_probe.so",
+)
+
+fuchsia_stripped(
+    name = "virtio_netdevice_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/connectivity/ethernet/drivers/virtio:virtio_netdevice.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "network_device_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/connectivity/network/drivers/network-device:network-device.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "e1000_so.fuchsia",
+    src = "//src/cerise/drivers/e1000:e1000.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "display_so.fuchsia",
+    src = "//src/cerise/drivers/display:display.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "gop_display_so.fuchsia",
+    src = "//src/cerise/drivers/gop_display:gop_display.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "nvme_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/block/drivers/nvme:nvme.so",
+    tags = ["manual"],
+)
+
+fuchsia_stripped(
+    name = "ahci_so.fuchsia",
+    src = "//src/upstream/fuchsia/src/devices/block/drivers/ahci:ahci.so",
+    tags = ["manual"],
+)

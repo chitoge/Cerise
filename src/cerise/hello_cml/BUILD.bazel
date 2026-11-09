@@ -1,0 +1,99 @@
+# Cerise demonstrator: proves the real cmc-native .cml -> .cm pipeline plus
+# structured-config .cvf DELIVERY end to end at artifact level.
+# `cerise_component` compiles meta/hello_cml.cml to
+# meta/hello_cml.cm and turns the `config_values` below into meta/hello_cml.cvf via
+# cmc + configc (the same vendored tools structured_config.bzl already drives).
+#
+# The on-target proof boots this component in a product and observes
+# CERISE-CONFIG-OK on serial. Its ComponentInfo carries the bootfs placements
+# needed to include it in a product bundle.
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("//bazel:fuchsia_platform.bzl", "fuchsia_stripped")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_30_RUSTC_FLAGS")
+load("//build:structured_config.bzl", "fuchsia_structured_config_rust_lib")
+load("//build:component.bzl", "cerise_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["meta/hello_cml.cml"])
+
+# The generated structured-config CLIENT library: cmc lowers the `config: {}` schema
+# in the .cml, configc's `rust` subcommand emits `hello_cml_config::Config` with a
+# take_from_startup_handle() that FIDL-decodes the delivered config VMO. Same macro
+# fshost/netstack3 use — the schema-derived read side of the pipeline.
+fuchsia_structured_config_rust_lib(
+    name = "hello_cml_config",
+    manifest = "meta/hello_cml.cml",
+    crate_name = "hello_cml_config",
+    config_package_path = "meta/hello_cml.cvf",
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
+)
+
+# The ELF component binary (dynamically linked Fuchsia binary, //platforms:x64-fuchsia
+# via fuchsia_stripped). Reads its own config at runtime and emits CERISE-CONFIG-OK
+# when the delivered values match the build-time expectation.
+rust_binary(
+    name = "hello_cml_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "hello_cml",
+    edition = "2021",
+    compile_data = ["//src/cerise/sysroot:fuchsia_link_sysroot"],
+    rustc_flags = FUCHSIA_API_LEVEL_30_RUSTC_FLAGS + [
+        "-Clink-arg=--sysroot=$(location //src/cerise/sysroot:fuchsia_link_sysroot)",
+        "-Clink-arg=-lc++",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":hello_cml_config",
+        "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        "//src/upstream/fuchsia/src/lib/fuchsia:fuchsia",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        # Structured ops logging via LogSink (init'd by #[fuchsia::main]); markers stay
+        # on serial via zx_debug_write.
+        "@crates//:log",
+    ],
+)
+
+fuchsia_stripped(
+    name = "hello_cml_bin_stripped.fuchsia",
+    src = ":hello_cml_bin",
+)
+
+# The component: compile meta/hello_cml.cml -> meta/hello_cml.cm, deliver the
+# structured-config values -> meta/hello_cml.cvf, and package the bootfs placements
+# as a ComponentInfo. `config_values` here is the SINGLE authoritative source of the
+# delivered values (rather than values hardcoded in Rust); it flows dict -> JSON5 ->
+# configc -> .cvf -> config VMO, untouched.
+cerise_component(
+    name = "hello_cml",
+    manifest = "meta/hello_cml.cml",
+    binary = ":hello_cml_bin_stripped.fuchsia",
+    config_values = {
+        "greeting": "hello-cerise",
+        "max_len": 64,
+    },
+    visibility = ["//visibility:public"],
+)
+
+# Artifact-level proof of structured-config DELIVERY: a HOST test (no boot) that
+# real-decodes the produced .cm and .cvf as persistent FIDL and asserts the schema
+# and the delivered values. This is what proves the delivery pipeline end to end.
+rust_test(
+    name = "decode_test",
+    srcs = ["tests/decode_test.rs"],
+    edition = "2021",
+    data = [
+        ":hello_cml_cvf",
+        ":hello_cml_manifest",
+    ],
+    env = {
+        "HELLO_CM": "$(rootpath :hello_cml_manifest)",
+        "HELLO_CVF": "$(rootpath :hello_cml_cvf)",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.data:fidl_fuchsia_data",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+    ],
+)

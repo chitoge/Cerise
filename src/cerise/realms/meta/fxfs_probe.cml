@@ -1,0 +1,11 @@
+// fxfs_probe leaf — hand-driven Fxfs format+mount+write+remount+read proof. Uses the
+// aggregate block.volume Service + crypt_fxfs's Crypt protocols.
+{
+    program: { runner: "elf", binary: "bin/fxfs_probe" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.block.volume.Service" },
+        { protocol: "fuchsia.fxfs.Crypt" },
+        { protocol: "fuchsia.fxfs.CryptManagement" },
+    ],
+}

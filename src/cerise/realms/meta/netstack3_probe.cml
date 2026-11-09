@@ -1,0 +1,16 @@
+// netstack3_probe leaf — discovery/HTTP-echo probe (bin/netstack3_probe). Uses the
+// dev directory + netstack3's Installer/socket.Provider.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/netstack3_probe",
+    },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { directory: "dev", rights: ["r*"], path: "/dev" },
+        { protocol: "fuchsia.net.interfaces.admin.Installer" },
+        { protocol: "fuchsia.posix.socket.Provider" },
+        { protocol: "fuchsia.posix.socket.packet.Provider" },
+        { protocol: "fuchsia.net.interfaces.State" },
+    ],
+}

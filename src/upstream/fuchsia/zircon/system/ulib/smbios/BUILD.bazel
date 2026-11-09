@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "smbios",
+    srcs = ["smbios.cc"],
+    hdrs = ["include/lib/smbios/smbios.h"],
+    includes = ["include"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/zircon/system/ulib/fbl:fbl",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+        "//src/upstream/fuchsia/zircon/system/public:public",
+    ],
+)

@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["include/lib/cksum.h"])
+
+filegroup(
+    name = "crc32_source",
+    srcs = [
+        "crc32.c",
+        "crc32.h",
+        "zutil.h",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)
+
+cc_library(
+    name = "cksum",
+    srcs = [
+        "adler32.c",
+        "crc16.c",
+        "crc32.c",
+        "crc32.h",
+        "zutil.h",
+    ],
+    hdrs = [
+        "include/lib/cksum.h",
+    ],
+    deps = [
+        "//zircon/system/public:public",
+    ],
+    includes = [
+        "include",
+    ],
+)

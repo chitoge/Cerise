@@ -1,0 +1,64 @@
+{
+	"asmopts": [],
+	"copts": [
+		"--target=aarch64-unknown-elf",
+		"-ffreestanding",
+		"-fno-builtin",
+		"-fno-stack-protector",
+		"-mgeneral-regs-only",
+		"-mstrict-align",
+		"-fdata-sections",
+		"-ffunction-sections",
+		"-fPIE",
+		"-fvisibility=hidden",
+		"-mcmodel=small",
+		"-fasynchronous-unwind-tables",
+		"-ffixed-x18",
+		"-fsanitize=shadow-call-stack",
+		"-nostdlibinc"
+	],
+	"cpu": "arm64",
+	"cxxopts": [
+		"-fnew-alignment=8",
+		"-fno-exceptions",
+		"-fno-rtti",
+		"-nostdinc++"
+	],
+	"defines": [
+		"LK",
+		"ZIRCON_TOOLCHAIN",
+		"_KERNEL",
+		"DEBUG_PRINT_LEVEL=2",
+		"LK_DEBUGLEVEL=2"
+	],
+	"environment": "kernel",
+	"feature_docs": {
+		"abi.arm64.kernel": "arm64 kernel ABI: small code model, SCS instrumentation, fixed-x18.",
+		"cpu.arm64.common": "Common arm64 freestanding code-generation constraints.",
+		"debug.kernel_level_2": "Current kernel debug-level defines used by the x64 boot graph.",
+		"env.kernel": "Kernel environment definitions shared by kernel component rules.",
+		"lang.kernel_cxx": "C++ restrictions expected by Zircon freestanding code.",
+		"link.freestanding": "Freestanding link baseline: no host startup files or default libraries.",
+		"stdlib.c_headers": "Hermetic C headers provided by the Zircon toolchain environment.",
+		"stdlib.cxx_headers": "Hermetic libc++ headers provided by the vendored LLVM overlay."
+	},
+	"features": [
+		"cpu.arm64.common",
+		"abi.arm64.kernel",
+		"env.kernel",
+		"lang.kernel_cxx",
+		"stdlib.c_headers",
+		"stdlib.cxx_headers",
+		"debug.kernel_level_2",
+		"link.freestanding"
+	],
+	"linkopts": [
+		"-nostdlib",
+		"-nodefaultlibs",
+		"-nostartfiles"
+	],
+	"name": "zircon.arm64.kernel",
+	"stdlib_include_dirs": [
+		"@llvm-project//libcxx:libcxx_headers_include_search_directory"
+	]
+}

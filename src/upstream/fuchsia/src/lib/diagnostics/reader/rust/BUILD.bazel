@@ -1,0 +1,48 @@
+# Authored locally for Cerise (Phase 1 logging: Archivist import).
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+# diagnostics_reader: the client-side reader over fuchsia.diagnostics
+# (ArchiveAccessor/BatchIterator). This is what a future ArchiveAccessor query
+# consumer (Phase 3) uses to read logs + inspect from Archivist.
+rust_library(
+    name = "diagnostics_reader",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "diagnostics_reader",
+    edition = "2024",
+    # Compiled at HEAD: this crate matches fuchsia.diagnostics/FormattedContent
+    # (Cbor/Fxt are @available(added=HEAD)) exhaustively, and the vendored
+    # fuchsia.diagnostics FIDL binding is itself compiled at fuchsia:HEAD, so the
+    # crate's own #[cfg(fuchsia_api_level_at_least = "HEAD")] match arms must be
+    # enabled to cover those variants.
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    aliases = {
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors": "selectors",
+    },
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.diagnostics:fidl_fuchsia_diagnostics",
+        "//src/upstream/fuchsia/src/lib/diagnostics/data/rust:diagnostics_data",
+        "//src/upstream/fuchsia/src/lib/diagnostics/hierarchy/rust:diagnostics_hierarchy",
+        "//src/upstream/fuchsia/src/lib/diagnostics/log/message/rust:diagnostics_message",
+        "//src/upstream/fuchsia/src/lib/diagnostics/selectors:diagnostics_selectors",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async:fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-component:fuchsia-component",
+        "@crates//:anyhow",
+        "@crates//:async-stream",
+        "@crates//:ciborium",
+        "@crates//:futures",
+        "@crates//:pin-project",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/sdk/rust/zx:zx",
+        ],
+        "//conditions:default": [],
+    }),
+)

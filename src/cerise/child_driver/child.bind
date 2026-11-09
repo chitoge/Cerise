@@ -1,0 +1,6 @@
+// Driver-host bring-up, Step 2 child driver bind rules. driver-index compiles these to
+// child.bindbc and matches them against the bind property the parent driver attaches
+// to the child node (fdf::MakeProperty2("cerise.test.DEVICE", "cerise-di-match")).
+using cerise.test;
+
+cerise.test.DEVICE == "cerise-di-match";

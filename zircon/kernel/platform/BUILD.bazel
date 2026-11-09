@@ -1,0 +1,90 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "platform",
+    srcs = [
+        "efi-private.h",
+        "debug.cc",
+        "efi.cc",
+        "efi_bootbyte.cc",
+        "efi_crashlog.cc",
+        "halt_helper.cc",
+        "mapped_crashlog.cc",
+        "mexec.cc",
+        "power.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//src/lib/zbitl:zbitl",
+        "//zircon/kernel/platform/pc",
+        "//zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//zircon/system/ulib/ram-crashlog:ram-crashlog",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+# ARM64 platform library: same arch-agnostic sources as :platform but without
+# the //zircon/kernel/platform/pc x86-only dep.
+cc_library(
+    name = "arm64_platform",
+    srcs = [
+        "efi-private.h",
+        "debug.cc",
+        "efi.cc",
+        "efi_bootbyte.cc",
+        "efi_crashlog.cc",
+        "halt_helper.cc",
+        "mapped_crashlog.cc",
+        "mexec.cc",
+        "power.cc",
+    ],
+    alwayslink = True,
+    deps = [
+        "//src/lib/zbitl:zbitl",
+        "//zircon/system/ulib/mmio-ptr:mmio-ptr",
+        "//zircon/system/ulib/ram-crashlog:ram-crashlog-kernel",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "bringup_sources",
+    srcs = [
+        "debug.cc",
+        "efi.cc",
+        "efi_bootbyte.cc",
+        "efi_crashlog.cc",
+        "halt_helper.cc",
+        "mapped_crashlog.cc",
+        "mexec.cc",
+    ],
+)
+
+filegroup(
+    name = "power_source",
+    srcs = ["power.cc"],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(
+        ["**/*"],
+        allow_empty = True,
+        exclude = [
+            "pc/**",
+            "generic-arm/**",
+            "generic-riscv64/**",
+        ],
+    ) + [
+        "//zircon/kernel/platform/pc:source_snapshot",
+    ],
+)

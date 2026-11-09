@@ -1,0 +1,79 @@
+// root_dfv2acpi_shutdown — component_manager root for qemu-x64-shutdown: the
+// minimal vehicle that proves a REAL orderly shutdown + poweroff. It is the lean driver
+// base (elf_runner + cerise_logsink + driver_index + driver_manager) PLUS two components:
+//
+//   * shutdown_shim — the builtin shim serving fuchsia.hardware.power.statecontrol.Admin
+//     and fuchsia.system.state.SystemStateTransition, using fuchsia.sys2.SystemController.
+//   * shutdown_trigger — an ELF component that, once driver_manager is up (gated by
+//     reading `dev`), calls Admin.Poweroff().
+//
+// The chain: trigger -> Admin.Poweroff -> shim records Poweroff + calls
+// SystemController.Shutdown -> component_manager tears the topology down in reverse
+// dependency order. driver_manager `use`s SystemStateTransition FROM the shim, so it is a
+// dependent of the shim and is stopped BEFORE it; on its graceful Stop it reads Poweroff,
+// holds PowerResource + MexecResource, and issues zx_system_powerctl(SHUTDOWN) => QEMU q35
+// ACPI poweroff (clean guest exit). NEW realm; no frozen decode_diff golden. This root is
+// intentionally excluded from route_check (like the other spike roots). See
+{
+    include: ["root_driver_base.shard.cml"],
+    children: [
+        {
+            name: "elf_runner",
+            url: "fuchsia-boot:///elf_runner#meta/elf_runner.cm",
+            startup: "eager",
+        },
+        {
+            name: "cerise_logsink",
+            url: "fuchsia-boot:///cerise_logsink#meta/cerise_logsink.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_manager_rust",
+            url: "fuchsia-boot:///driver_manager_rust_dfv2platbus#meta/driver_manager_rust_dfv2acpi_shutdown.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            name: "driver_index",
+            url: "fuchsia-boot:///driver_index#meta/driver_index.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+        {
+            // Builtin runner component (no ELF binary): uses the builtin_shutdown_shim
+            // runner from parent; resolved by the default boot resolver.
+            name: "shutdown_shim",
+            url: "fuchsia-boot:///shutdown_shim#meta/shutdown_shim.cm",
+            startup: "eager",
+        },
+        {
+            name: "shutdown_trigger",
+            url: "fuchsia-boot:///shutdown_trigger#meta/shutdown_trigger.cm",
+            startup: "eager",
+            environment: "#elf-env",
+        },
+    ],
+
+    offer: [
+        // the second resource the powerctl guard requires.
+        { protocol: "fuchsia.kernel.MexecResource", from: "parent", to: "#driver_manager_rust" },
+        // termination state (Poweroff) selection — served by the shim. This offer is
+        // the load-bearing ordering edge: driver_manager becomes a dependent of the shim,
+        // so it is stopped (and powers off) before the shim is torn down.
+        { protocol: "fuchsia.system.state.SystemStateTransition", from: "#shutdown_shim", to: "#driver_manager_rust" },
+
+        // The builtin shim runner + the SystemController it drives.
+        { runner: "builtin_shutdown_shim", from: "parent", to: "#shutdown_shim" },
+        { protocol: "fuchsia.sys2.SystemController", from: "parent", to: "#shutdown_shim" },
+
+        // Readiness gate + ordering edge for the trigger, and the public poweroff entry.
+        {
+            directory: "dev",
+            from: "#driver_manager_rust",
+            to: "#shutdown_trigger",
+            rights: ["r*"],
+        },
+        { protocol: "fuchsia.hardware.power.statecontrol.Admin", from: "#shutdown_shim", to: "#shutdown_trigger" },
+    ],
+}

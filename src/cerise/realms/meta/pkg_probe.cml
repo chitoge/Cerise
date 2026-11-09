@@ -1,0 +1,26 @@
+// pkg_probe leaf (packages foundation) — the on-target package proof for the
+// x64-pkg product. Plays the fshost_probe role (gate on the fxfs_provisioner's "provisioned"
+// readiness directory, then open "fshost-fs" to Lazy-start fshost) AND then ingests the demo
+// package's blobs into fshost's fxfs "blob" volume via fuchsia.fxfs/BlobCreator and resolves
+// the package with the vendored package_directory crate. See //src/cerise/pkg_probe/src/main.rs.
+//
+// A NEW .cml (not in the decode_diff golden set). It reaches
+// fuchsia.fxfs/BlobCreator + BlobReader + the hash-named blob dir through the "fshost-fs"
+// directory capability (/fshost-fs/blob/{svc,root}); no separate protocol route is needed
+// because fshost serves them inside its exposed blob subtree.
+{
+    program: { runner: "elf", binary: "bin/pkg_probe" },
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        // rw*: connecting to BlobCreator (a write path) + reading blobs back live under this
+        // one directory capability's subtree (/fshost-fs/blob/{svc,root}).
+        { directory: "fshost-fs", rights: ["rw*"], path: "/fshost-fs" },
+        // Gate: read "/provisioned/ready" before opening "/fshost-fs" (which Lazy-starts
+        // fshost), so the provisioner has released the disk first. Offered by the x64-pkg realm.
+        { directory: "provisioned", rights: ["r*"], path: "/provisioned" },
+        // pkg_hello's framework Binder. After ingesting the demo package,
+        // pkg_probe connects to this to Lazy-start pkg_hello — driving the resolve (via
+        // #pkg_resolver) and launch-from-disk-blobs chain. Offered by the x64-pkg realm.
+        { protocol: "fuchsia.component.Binder" },
+    ],
+}

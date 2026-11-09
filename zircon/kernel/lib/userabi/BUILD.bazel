@@ -1,0 +1,167 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# ─── x64 real vDSO headers (pre-generated from the x64 vDSO binary) ───
+# Headers were generated with gen-rodso-code.sh / gen-sysret-offsets.sh using
+# llvm-nm and llvm-readelf against the x64 vDSO (//build/vdso:libzircon).
+
+cc_library(
+    name = "x64_vdso_kernel_headers",
+    hdrs = [
+        "x64-vdso-headers/vdso-code.h",
+        "x64-vdso-headers/sysret-offsets.h",
+    ],
+    strip_include_prefix = "/zircon/kernel/lib/userabi/x64-vdso-headers",
+)
+
+cc_library(
+    name = "userabi",
+    srcs = [
+        "elf.cc",
+        "elf.h",
+        "resource.cc",
+        "userboot.cc",
+        "vdso.cc",
+    ],
+    copts = ["-DVDSO_MAX_PAGE_SIZE=4096"],
+    alwayslink = True,
+    deps = [
+        ":x64_vdso_kernel_headers",
+        "//abi:zx_syscall_headers",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+# ─── arm64 real vDSO headers (pre-generated from the arm64 vDSO binary) ───
+# Headers were generated with gen-rodso-code.sh / gen-sysret-offsets.sh using
+# aarch64-linux-gnu-nm and aarch64-linux-gnu-readelf against the arm64 vDSO.
+
+cc_library(
+    name = "arm64_vdso_kernel_headers",
+    hdrs = [
+        "arm64-vdso-headers/vdso-code.h",
+        "arm64-vdso-headers/sysret-offsets.h",
+    ],
+    strip_include_prefix = "/zircon/kernel/lib/userabi/arm64-vdso-headers",
+)
+
+cc_library(
+    name = "userabi_arm64",
+    srcs = [
+        "elf.cc",
+        "elf.h",
+        "resource.cc",
+        "userboot.cc",
+        "vdso.cc",
+    ],
+    copts = ["-DVDSO_MAX_PAGE_SIZE=4096"],
+    alwayslink = True,
+    deps = [
+        ":arm64_vdso_kernel_headers",
+        "//abi:zx_syscall_headers",
+        "//zircon/kernel/dev/timer/arm_generic:headers",
+        "//zircon/system/ulib/region-alloc:region-alloc",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["include/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "vdso_source",
+    srcs = ["vdso.cc"],
+)
+
+filegroup(
+    name = "userboot_sources",
+    srcs = [
+        "elf.cc",
+        "resource.cc",
+        "userboot.cc",
+    ],
+)
+
+filegroup(
+    name = "vdso_elf_cxx_sources",
+    srcs = [
+        "vdso/syscall-wrappers.cc",
+        "vdso/zx_cache_flush.cc",
+        "vdso/zx_channel_call.cc",
+        "vdso/zx_clock_get_boot.cc",
+        "vdso/zx_clock_get_details_mapped.cc",
+        "vdso/zx_clock_get_monotonic.cc",
+        "vdso/zx_clock_read_mapped.cc",
+        "vdso/zx_cprng_draw.cc",
+        "vdso/zx_deadline_after.cc",
+        "vdso/zx_exception_get_string.cc",
+        "vdso/zx_handle_check_valid.cc",
+        "vdso/zx_status_get_string.cc",
+        "vdso/zx_system_get_dcache_line_size.cc",
+        "vdso/zx_system_get_features.cc",
+        "vdso/zx_system_get_num_cpus.cc",
+        "vdso/zx_system_get_page_size.cc",
+        "vdso/zx_system_get_physmem.cc",
+        "vdso/zx_system_get_version_string.cc",
+        "vdso/zx_thread_start.cc",
+        "vdso/zx_ticks_get.cc",
+        "vdso/zx_ticks_get_boot.cc",
+        "vdso/zx_ticks_per_second.cc",
+    ],
+)
+
+filegroup(
+    name = "vdso_elf_asm_sources",
+    srcs = [
+        "vdso/data.S",
+        "vdso/syscalls-x86.S",
+        "vdso/zx_futex_wake_handle_close_thread_exit-x86.S",
+        "vdso/zx_vmar_unmap_handle_close_thread_exit-x86.S",
+    ],
+)
+
+filegroup(
+    name = "vdso_elf_asm_sources_arm64",
+    srcs = [
+        "vdso/data.S",
+        "vdso/syscalls-arm64.S",
+        "vdso/zx_futex_wake_handle_close_thread_exit-arm64.S",
+        "vdso/zx_vmar_unmap_handle_close_thread_exit-arm64.S",
+    ],
+)
+
+filegroup(
+    name = "vdso_elf_linker_scripts",
+    srcs = ["vdso/alternates.ld"],
+)
+
+filegroup(
+    name = "vdso_generation_scripts",
+    srcs = [
+        "gen-rodso-code.sh",
+        "gen-sysret-offsets.sh",
+        "gen-vdso-valid-sysret.sh",
+    ],
+)
+
+filegroup(
+    name = "userboot_payload_sources",
+    srcs = [
+        "userboot/bootfs.cc",
+        "userboot/loader-service.cc",
+        "userboot/option.cc",
+        "userboot/start.cc",
+        "userboot/userboot-elf.cc",
+        "userboot/util.cc",
+        "userboot/zbi.cc",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

@@ -1,0 +1,268 @@
+load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+# step 1: minimal cc toolchain for the x86_64-unknown-fuchsia target.
+#
+# rules_rust requires a target-configured cc toolchain for every rust_* target
+# (it builds an allocator FFI library for the target), so compiling Rust for the
+# upstream Fuchsia std target needs a fuchsia-targeting clang. This composes one
+# from the shared hermetic clang tool_map plus a fuchsia args set; it carries NO
+# Fuchsia sysroot yet (no musl headers/libs, no libzircon/libfdio), so only
+# compile-only (rlib) and sysroot-free C compiles resolve here. As sysroot support expands,
+# the musl/libzircon/libfdio sysroot is layered on so this toolchain can LINK
+# Fuchsia binaries. Deliberately omits the @llvm//toolchain/args/linux header
+# search paths (those are os:linux-constrained and wrong for this target).
+# --target on COMPILE actions only. Do NOT put it on link_actions: that group
+# includes cpp_link_static_library, which runs llvm-ar directly (not the clang
+# driver), and ar rejects --target. Clang-driven executable/shared linking gets
+# its own target flag when real binaries are linked.
+cc_args(
+    name = "fuchsia_target_triple",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+    ],
+    # -fPIC: Fuchsia binaries are PIE/PIC, and shared libs (libc.so/libzircon.so)
+    # require PIC objects (non-PIC gives R_X86_64_PC32 relocation errors).
+    args = [
+        "--target=x86_64-unknown-fuchsia",
+        "-fPIC",
+        # The llvm-libc namespace (Fuchsia uses __fuchsia_libc). Must be defined
+        # globally so all fuchsia C++ — the libc body and everything sharing its
+        # LIBC_NAMESPACE symbols (vmar.h in zxio/fdio) — agree on one namespace;
+        # <src/__support/common.h> also #errors if it is undefined.
+        "-DLIBC_NAMESPACE=__fuchsia_libc",
+        # SDK/public-packaging build mode (we build the standalone libc, not the
+        # in-tree test harness). Also re-enables musl's __zircon_*_self decls in
+        # zircon_impl.h, which are gated on
+        # `!defined(LIBC_NAMESPACE) || defined(LIBC_COPT_PUBLIC_PACKAGING)`.
+        "-DLIBC_COPT_PUBLIC_PACKAGING=1",
+    ],
+)
+
+# The target Fuchsia API level. Drives <zircon/availability.h>'s @available #if
+# guards in C/C++ source (fdio/zxio select fuchsia.io method variants by level).
+# MUST match the FIDL bindings' --available level (//build/fidl uses 30).
+cc_args(
+    name = "fuchsia_api_level",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-ffuchsia-api-level=30"],
+)
+
+# The fuchsia C-library headers as SYSTEM headers for C++ compiles, ordered
+# AFTER libc++ (cxxstdlib) so libc++'s <cctype>/<cmath>/... wrappers are found
+# before musl's C headers (clang searches -isystem in order; libc++ must precede
+# the C library). This is the sysroot header surface; consumers must NOT also
+# pass these as -I (which would be searched before libc++). Applied to C++
+# compiles only — C compiles use the libraries' own -I.
+cc_args(
+    name = "fuchsia_c_system_headers",
+    # All compiles (C and C++). For C++ it's ordered after libc++ (cxxstdlib);
+    # for C there's no libc++ so ordering is moot — but C files (e.g. the libc
+    # body's .c) still need the sysroot headers.
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    # One -isystem at the assembled sysroot include dir. The {placeholder} +
+    # format resolves the copy_to_directory artifact's sandbox path correctly
+    # (raw relative paths don't resolve under remote execution).
+    args = [
+        "-isystem",
+        "{fuchsia_sysroot_include}",
+    ],
+    data = ["//src/cerise/sysroot:fuchsia_sysroot_include"],
+    format = {"fuchsia_sysroot_include": "//src/cerise/sysroot:fuchsia_sysroot_include"},
+)
+
+# Fuchsia C++ is C++23: libc++ requires C++23 to compile its own sources
+# (std::expected, resize_and_overwrite, etc.), and libc++ is the first Fuchsia
+# C++ library we build. C++23 is backward-compatible with C++20/C++17 user code.
+# Placed in the toolchain args after the legacy default_compile_flags (-std=c++17)
+# so the last -std wins.
+cc_args(
+    name = "fuchsia_cxx_std_args",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = ["-std=c++23"],
+)
+
+# Modelled as a feature so it expands AFTER the legacy default_compile_flags
+# feature's -std=c++17 (clang honors the last -std). A plain toolchain arg loses
+# to the legacy feature.
+cc_feature(
+    name = "fuchsia_cxx_std",
+    args = [":fuchsia_cxx_std_args"],
+    feature_name = "fuchsia_cxx23",
+)
+
+# Size-focused optimization. The Fuchsia platform
+# transition forces compilation_mode=opt, whose legacy default_compile_flags
+# feature emits -O2. -O2 barely shrank our template-heavy driver code (pci_probe
+# .text -O0 ~50 MB -> -O2 44.7 MB) while -Oz crushed it (14.2 MB; stripped 61.5
+# -> 22.6 MB). Guest RAM is the operative ZBI limit (not disk), so we optimize
+# for SIZE. Modelled as a feature — like fuchsia_cxx_std — so -Oz expands AFTER
+# the legacy -O2 and wins (clang honors the last -O). Compile actions only.
+cc_args(
+    name = "fuchsia_opt_size_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-Oz"],
+)
+
+cc_feature(
+    name = "fuchsia_opt_size",
+    args = [":fuchsia_opt_size_args"],
+    feature_name = "fuchsia_opt_size",
+)
+
+# (debugging): symbolization-grade debug info on the UNSTRIPPED
+# store copy of every Fuchsia-target cc binary/shared library. Under
+# compilation_mode=opt clang emits NO debug info unless asked, so the unstripped
+# .so's llvm-symbolizer sees resolves to `<no symbols>`. `-gline-tables-only` adds
+# .debug_line (+ minimal .debug_info/.debug_str/.debug_abbrev) — function name +
+# file:line for every frame — WITHOUT the full-type DWARF a `-g2` would emit, the
+# cc analogue of the rust `-Cdebuginfo=1` chosen in the fuchsia transition. Compile
+# actions only. This does NOT change codegen (debug info never does), so the
+# allocated sections of the staged bootfs ELF are unchanged; fuchsia_stripped
+# --strip-all removes .debug_*/.symtab, leaving the staged copy byte-identical
+# except its rotated 20-byte build-id note (LLD hashes .debug_* into the id). The
+# fuchsia cc toolchain is target-scoped (os:fuchsia), so HOST tools are untouched.
+cc_args(
+    name = "fuchsia_debug_line_tables",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-gline-tables-only"],
+)
+
+# Garbage collection and identical-code folding mirror the Zircon kernel/
+# phys toolchains (toolchain/zircon_toolchain.bzl link.user). -ffunction-sections
+# /-fdata-sections put each function/datum in its own section so the linker can
+# drop unreferenced ones (--gc-sections); --icf=safe folds identical functions
+# (safe = never folds address-taken functions, so function-pointer identity and
+# the dynamic symbol surface the DFv2 loader/interposition rely on are preserved).
+# These compound with -Oz on the -O0 whole-archived FIDL/framework closure.
+cc_args(
+    name = "fuchsia_gc_sections_compile",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
+)
+
+# gc-sections + ICF on the clang-driven LINK actions (executable + shared lib).
+# NOT cpp_link_static_library (llvm-ar). --build-id already lives in
+# fuchsia_link_args; these are the size levers.
+cc_args(
+    name = "fuchsia_gc_sections_link",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_link_executable",
+        "@rules_cc//cc/toolchains/actions:cpp_link_dynamic_library",
+        "@rules_cc//cc/toolchains/actions:cpp_link_nodeps_dynamic_library",
+    ],
+    args = [
+        "-Wl,--gc-sections",
+        "-Wl,--icf=safe",
+    ],
+)
+
+# Clang-driven LINK actions (executable + dynamic library) get the target triple
+# + lld. NOT cpp_link_static_library (that runs llvm-ar, which rejects --target).
+cc_args(
+    name = "fuchsia_link_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_link_executable",
+        "@rules_cc//cc/toolchains/actions:cpp_link_dynamic_library",
+        "@rules_cc//cc/toolchains/actions:cpp_link_nodeps_dynamic_library",
+    ],
+    args = [
+        "--target=x86_64-unknown-fuchsia",
+        "-fuse-ld=lld",
+        # emit a GNU build-id note on every dynamically-linked
+        # Fuchsia userspace binary and shared library, matching what kernel/phys
+        # already do (build/kernel/kernel_link.bzl, build/phys/phys_rules.bzl).
+        # This is the key every symbol tool uses: the .build-id store
+        # (cerise_debug_symbols), llvm-symbolizer, gdb's debug-file-directory, and
+        # debuginfod all locate the unstripped ELF by this note. LLD emits none by
+        # default. Toolchain policy, one place — do
+        # NOT sprinkle per-target copts. The note is an allocated SHT_NOTE, so
+        # `fuchsia_stripped` (--strip-all) preserves it in the staged bootfs ELF.
+        "-Wl,--build-id=sha1",
+    ],
+)
+
+# NOTE: the link sysroot (libc.so/crt1/...) is built BY this toolchain, so it cannot
+# be a toolchain link arg (cycle). std binaries pass --sysroot per-target via
+# rustc_flags + data instead (see //examples/hello-rust-std). The header sysroot
+# (fuchsia_c_system_headers) is cycle-free because headers need no compilation.
+cc_toolchain(
+    name = "fuchsia_cc_toolchain_impl",
+    args = [
+        ":fuchsia_target_triple",
+        ":fuchsia_link_args",
+        # gc-sections/ICF (compile + link). Plain args (order-independent,
+        # unlike -O/-std which are last-wins and modelled as features below).
+        ":fuchsia_gc_sections_compile",
+        ":fuchsia_gc_sections_link",
+        # line-tables debug info for the unstripped store copy (compile
+        # only; strip-all removes it from the staged bootfs ELF).
+        ":fuchsia_debug_line_tables",
+        "@zr_llvm_toolchain_minimal_linux_amd64//:compile_resource_dir",
+        "@llvm//toolchain/args:no_absolute_paths_for_builtins",
+        "@llvm//toolchain/args:hermetic_compile_flags",
+        # libc++ headers for the target (C++ startup/ldso uses <tuple> etc.).
+        "@llvm//toolchain/args:cxxstdlib_headers_include_search_paths",
+        # The fuchsia C-library headers as system headers, ordered AFTER libc++.
+        ":fuchsia_c_system_headers",
+        ":fuchsia_api_level",
+    ],
+    # Legacy builtin features supply the action configs (notably the archiver
+    # flags for cpp_link_static_library — without them llvm-ar runs with no
+    # args). Mirrors the exec toolchain; compile-flag specifics for the real
+    # libc build are refined.
+    known_features = [
+        "@llvm//toolchain/features/legacy:all_legacy_builtin_features",
+        "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+        ":fuchsia_cxx_std",
+        ":fuchsia_opt_size",
+    ],
+    # fuchsia_cxx_std / fuchsia_opt_size after the legacy features so -std=c++23
+    # wins over the legacy -std=c++17 and -Oz wins over the legacy opt-mode -O2.
+    enabled_features = [
+        "@llvm//toolchain/features/legacy:all_legacy_builtin_features",
+        "@llvm//toolchain/features/legacy:experimental_replace_legacy_action_config_features",
+        ":fuchsia_cxx_std",
+        ":fuchsia_opt_size",
+    ],
+    tool_map = "//toolchain:exec_x86_64_tool_map",
+    supports_header_parsing = True,
+    supports_param_files = True,
+    compiler = "clang",
+)
+
+# Registered in MODULE.bazel. x86_64 and aarch64 exec variants (remote workers
+# are x86_64; the local build host is aarch64).
+toolchain(
+    name = "fuchsia_x86_64_cc_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:fuchsia",
+    ],
+    toolchain = ":fuchsia_cc_toolchain_impl",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "fuchsia_x86_64_cc_toolchain_aarch64_exec",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:fuchsia",
+    ],
+    toolchain = ":fuchsia_cc_toolchain_impl",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

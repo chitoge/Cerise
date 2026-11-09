@@ -1,0 +1,57 @@
+# Bazel integration for this imported target.
+load("//build/fidl:fidl.bzl", "fidl_cpp", "fidl_library", "fidl_rust")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+fidl_library(
+    name = "fuchsia.inspect",
+    srcs = glob(["*.fidl"], allow_empty = True),
+    # Compiled at HEAD so the binding exposes HEAD-only surface Archivist needs
+    # (InspectSink.Escrow/FetchEscrow, EscrowToken). All removed=/replaced=
+    # annotations here are at levels <=25, so HEAD is purely additive over the
+    # level-30 default and existing consumers are unaffected.
+    available = "fuchsia:HEAD",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem",
+        "//src/upstream/fuchsia/zircon/vdso:zx",
+    ],
+)
+
+fidl_cpp(
+    name = "fuchsia.inspect_cpp",
+    library = ":fuchsia.inspect",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp:natural",
+        "//src/upstream/fuchsia/sdk/lib/fidl/cpp/wire:wire",
+        "//src/upstream/fuchsia/zircon/system/ulib/zx:headers",
+    ],
+)
+
+fidl_rust(
+    name = "fuchsia.inspect_rs",
+    library = ":fuchsia.inspect",
+    tags = ["manual"],
+)
+
+rust_library(
+    name = "fidl_fuchsia_inspect",
+    srcs = [":fuchsia.inspect_rs"],
+    crate_name = "fidl_fuchsia_inspect",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.mem:fidl_fuchsia_mem",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "@crates//:bitflags",
+        "@crates//:futures",
+        "//src/upstream/fuchsia/sdk/rust/zx-status:zx-status",
+        "//src/upstream/fuchsia/sdk/rust/zx-types:zx-types",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/upstream/fuchsia/sdk/rust/zx:zx"],
+        "//conditions:default": [],
+    }),
+)

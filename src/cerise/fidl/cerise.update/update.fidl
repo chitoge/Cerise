@@ -1,0 +1,153 @@
+// Cerise host-image staging protocol.
+//
+// The stager deliberately has no reboot or shutdown method. A host lifecycle
+// coordinator first asks it to download and authenticate an image, then quiesces
+// the rest of the system, then asks it to write the already-prepared image. Only
+// that coordinator owns the final reboot decision.
+library cerise.update;
+
+/// Observable progress for the current or most recent operation.
+type Phase = flexible enum : uint32 {
+    IDLE = 1;
+    DOWNLOADING = 2;
+    VERIFIED = 3;
+    LOCATING_DEVICE = 4;
+    WRITING_SLOT = 5;
+    VERIFYING_SLOT = 6;
+    COMMITTING_ACTIVATION = 7;
+    STAGED = 8;
+    FAILED = 9;
+};
+
+/// Stable error classes. Detailed diagnostics are retained in `Status.detail`.
+type StageError = flexible enum : uint32 {
+    BUSY = 1;
+    INVALID_ARGUMENT = 2;
+    NOT_PREPARED = 3;
+    ARTIFACT_REJECTED = 4;
+    BLOCK_UNAVAILABLE = 5;
+    DEVICE_AMBIGUOUS = 6;
+    DEVICE_MISMATCH = 7;
+    IO = 8;
+    INTERNAL = 9;
+};
+
+/// An authenticated image held in memory and ready for the quiesced write phase.
+type Prepared = table {
+    1: operation_id string:128;
+    2: version uint32;
+    3: sha256 string:64;
+    4: size uint64;
+    5: source_base_url string:512;
+    6: source_manifest_path string:256;
+    7: source_image_path string:256;
+};
+
+/// The durable boot target selected by the completed write.
+type Staged = table {
+    1: operation_id string:128;
+    2: version uint32;
+    3: sha256 string:64;
+    4: size uint64;
+    /// The opaque aggregated-Service name is provenance for this boot only.
+    5: block_instance string:128;
+    6: disk_guid array<uint8, 16>;
+    7: esp_guid array<uint8, 16>;
+    8: slot uint8;
+};
+
+type Status = table {
+    1: phase Phase;
+    2: operation_id string:128;
+    3: detail string:2048;
+    4: prepared Prepared;
+    5: staged Staged;
+    6: error StageError;
+    /// Version embedded in the kernel image which reached userspace and whose
+    /// running slot has been success-committed on this boot.
+    7: running_version uint32;
+    /// SHA-256 of the exact active-slot file read from the ESP during this boot's
+    /// success-commit session. This, not version metadata alone, identifies the
+    /// kernel image that reached the stager.
+    8: running_sha256 string:64;
+    /// Exact byte length of the active-slot file hashed for `running_sha256`.
+    9: running_size uint64;
+};
+
+type PrepareRequest = table {
+    /// Caller-chosen idempotency key. A retry with the same key returns the
+    /// already-prepared result instead of downloading a second copy.
+    1: operation_id string:128;
+    /// Explicit candidate source. `base_url` is required by the on-demand API;
+    /// the stager accepts only bounded `http://<IPv4>:<port>` endpoints.
+    2: source Source;
+};
+
+type Source = table {
+    1: base_url string:512;
+    /// Optional absolute HTTP paths; safe defaults are `/manifest.json` and `/zbi`.
+    2: manifest_path string:256;
+    3: image_path string:256;
+};
+
+/// Network location of a signed manifest used only to attest the image which
+/// is already running. No image bytes are downloaded by this path.
+type RunningManifestSource = table {
+    1: base_url string:512;
+    /// Optional absolute HTTP path; the safe default is `/manifest.json`.
+    2: manifest_path string:256;
+};
+
+type VerifyRunningRequest = table {
+    1: source RunningManifestSource;
+};
+
+/// Signed identity of the active-slot bytes acknowledged on this boot.
+type VerifiedRunning = table {
+    1: version uint32;
+    2: sha256 string:64;
+    3: size uint64;
+    /// SHA-256 of the exact signed manifest bytes fetched and verified.
+    4: manifest_sha256 string:64;
+    /// SHA-256 of the exact Ed25519 public-key bytes used for verification.
+    5: public_key_sha256 string:64;
+};
+
+type StageRequest = table {
+    1: operation_id string:128;
+    /// Optional persistent GPT identities. If omitted, the stager requires one
+    /// and only one ESP across every published whole-disk block instance.
+    2: expected_disk_guid array<uint8, 16>;
+    3: expected_esp_guid array<uint8, 16>;
+};
+
+/// Downloads/verifies before quiesce and writes only after an explicit second call.
+@discoverable
+closed protocol Stager {
+    strict Prepare(PrepareRequest) -> (struct {
+        prepared Prepared;
+    }) error StageError;
+
+    /// Writes, flushes and readback-verifies the inactive slot, then changes the
+    /// A/B activation record as the final disk mutation. It never reboots.
+    strict StagePrepared(StageRequest) -> (struct {
+        staged Staged;
+    }) error StageError;
+
+    /// Releases an in-memory prepared image without touching the disk.
+    strict DiscardPrepared(struct {
+        operation_id string:128;
+    }) -> () error StageError;
+
+    /// Fetches and verifies a signed manifest against the exact active-slot
+    /// version, digest, and size observed on this boot. This is read-only with
+    /// respect to update operation state and the ESP; it neither prepares nor
+    /// stages an image.
+    strict VerifyRunning(VerifyRunningRequest) -> (struct {
+        running VerifiedRunning;
+    }) error StageError;
+
+    strict GetStatus() -> (struct {
+        status Status;
+    });
+};

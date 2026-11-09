@@ -1,0 +1,24 @@
+// e1000 leaf-driver — DFv2-native e1000/e1000e-family NIC driver. It publishes a
+// fuchsia.hardware.network.driver.Service (NetworkDeviceImpl) exactly like virtio_net,
+// so the network-device driver binds to its child and exposes it to netstack3. The
+// capability + expose are REQUIRED to route that service to the child (without them
+// component_manager reports "service fuchsia.hardware.network.driver.Service was not
+// available" and network-device's GetInfo peer-closes). The golden e1000.cm was
+// regenerated for this deliberate realm change.
+{
+    program: {
+        runner: "driver",
+        binary: "driver/e1000.so",
+        bind: "meta/bind/e1000_bind.bindbc",
+    },
+    capabilities: [
+        { service: "fuchsia.hardware.network.driver.Service" },
+    ],
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        { service: "fuchsia.hardware.network.driver.Service", from: "self" },
+    ],
+}

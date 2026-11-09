@@ -1,0 +1,59 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Checked-in static file; kept here so bundles/
+# products keep the config/build_info/minimum_utc_stamp bootfs dest.
+exports_files(["config_build_info/minimum_utc_stamp"])
+
+# The minimal standalone producer for config/component_manager
+# (fuchsia.component.internal.Config) — the one bootfs artifact cmc cannot emit.
+rust_binary(
+    name = "cm_config",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/fidl/fuchsia.component.internal:fidl_fuchsia_component_internal",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+    ],
+)
+
+# Produce the config/component_manager blob (host action).
+genrule(
+    name = "config_component_manager",
+    outs = ["config/component_manager"],
+    cmd = "$(execpath :cm_config) $(location config/component_manager)",
+    tools = [":cm_config"],
+    tags = ["manual"],
+)
+
+# Two gates on the produced config/component_manager (see tests/config_equiv.rs
+# module doc for the full split): (1) byte-equality against a checked-in golden —
+# a pure future-regression freeze, not a correctness proof; (2) decoding the
+# security_policy with the vendored cm_config/cm_rust/moniker crates (the exact
+# code component_manager runs at boot) and asserting the policy content directly
+# — the machine-verified check for runtime-enforcement policy.
+rust_test(
+    name = "config_equiv_test",
+    srcs = ["tests/config_equiv.rs"],
+    edition = "2021",
+    data = [
+        ":config/component_manager",
+        "goldens/component_manager",
+    ],
+    env = {
+        "MINE": "$(rootpath :config/component_manager)",
+        "GT": "$(rootpath goldens/component_manager)",
+    },
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/fidl/fuchsia.component.internal:fidl_fuchsia_component_internal",
+        "//src/upstream/fuchsia/src/sys/lib/cm_config:cm_config",
+        "//src/upstream/fuchsia/src/sys/lib/cm_rust:cm_rust",
+        "//src/upstream/fuchsia/src/sys/lib/moniker:moniker",
+        "//src/upstream/fuchsia/src/lib/versioning/version-history/rust/data:version_history_data",
+    ],
+)

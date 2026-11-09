@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "cml_macro",
+    srcs = [
+        "src/common.rs",
+        "src/derive_checked_vec.rs",
+        "src/derive_one_or_many.rs",
+        "src/derive_reference.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "cml_macro",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "@crates//:maplit",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)

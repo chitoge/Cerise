@@ -1,0 +1,17 @@
+# Bazel integration for this imported target. fit-promise (fpromise):
+# the promise/executor library used by async-cpp's executor. Header-light C++.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fit-promise",
+    srcs = glob(["*.cc"], allow_empty = True),
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fit:fit",
+        "//src/upstream/fuchsia/sdk/lib/stdcompat:stdcompat",
+    ],
+)

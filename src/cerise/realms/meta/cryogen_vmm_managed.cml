@@ -1,0 +1,89 @@
+// Managed VM worker.
+//
+// The launch VMO is the sole VM/image/device/resource authority. Structured
+// config only binds that VMO to the component instance; the worker has no
+// inventory-aggregation aliases and no host-facing listener configuration.
+{
+    program: {
+        runner: "elf",
+        binary: "bin/cryogen_vmm_managed",
+        // Capture Rust panic text (stderr) and stdout into the LogSink route
+        // below, instead of discarding it. In the cf-sz5-vm-host realm this
+        // routes to Archivist (parent offers LogSink from #archivist to
+        // #vm_gateway, which reoffers it to its #workers collection) — NOT to
+        // cerise_logsink. Archivist's production config
+        // (archivist_production_cvf, src/cerise/archivist/BUILD.bazel) sets
+        // allow_serial_logs to a selector naming exactly this component's
+        // collection ("vm_gateway/workers\\:*"), so Archivist's
+        // serial-forwarding task (launch_serial, gated on
+        // `!config.allow_serial_logs.is_empty()` in
+        // src/upstream/fuchsia/src/diagnostics/archivist/src/archivist.rs:119)
+        // spawns and re-emits this worker's ingested LogSink records — including
+        // this panic text — to the kernel debuglog via zx_debug_write
+        // (src/upstream/fuchsia/src/diagnostics/archivist/src/logs/serial.rs:127).
+        // See that BUILD.bazel target's comment for why the selector has to be
+        // written that way (dynamic per-vm_id monikers, escaped collection ':').
+        forward_stdout_to: "log",
+        forward_stderr_to: "log",
+    },
+
+    config: {
+        launch_spec_version: {
+            type: "uint16",
+            mutability: [ "parent" ],
+        },
+        launch_spec_digest: {
+            type: "string",
+            max_size: 64,
+            mutability: [ "parent" ],
+        },
+    },
+
+    use: [
+        { protocol: "fuchsia.logger.LogSink" },
+        { protocol: "fuchsia.kernel.HypervisorResource" },
+        { protocol: "fuchsia.kernel.VmexResource" },
+        {
+            service: "fuchsia.hardware.block.volume.Service",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.posix.socket.Provider",
+            availability: "optional",
+        },
+        {
+            protocol: "cerise.network.HostConfiguration",
+            availability: "optional",
+        },
+    ],
+
+    capabilities: [
+        { protocol: "cerise.vm.Status" },
+        { protocol: "cerise.vm.Control" },
+        { protocol: "cerise.vm.Vmi" },
+        { protocol: "cerise.vm.DataPlane" },
+    ],
+
+    expose: [
+        {
+            protocol: "cerise.vm.Status",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.Control",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.Vmi",
+            from: "self",
+        },
+        {
+            protocol: "cerise.vm.DataPlane",
+            from: "self",
+        },
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "framework",
+        },
+    ],
+}

@@ -1,0 +1,45 @@
+# Bazel integration for this imported target.
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//build:fuchsia_rust_api_level.bzl", "FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "cm_types",
+    srcs = ["src/lib.rs"],
+    crate_name = "cm_types",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    tags = ["manual"],
+    deps = [
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.component.decl:fidl_fuchsia_component_decl",
+        "//src/upstream/fuchsia/sdk/fidl/fuchsia.io:fidl_fuchsia_io",
+        "//src/upstream/fuchsia/src/lib/fidl/rust/fidl:fidl",
+        "//src/upstream/fuchsia/src/storage/lib/vfs/rust/name:name",
+        "@crates//:flyweights",
+        "@crates//:serde",
+        "@crates//:thiserror",
+        "@crates//:url",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/upstream/fuchsia/src/lib/fuchsia-runtime:fuchsia-runtime",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# Host-runnable unit tests (rung 1, zero new external crates). rustc_flags is
+# repeated here: rust_test's `crate` attribute inherits srcs/deps/edition from
+# the referenced crate but NOT rustc_flags (see rules_rust rust.bzl
+# _rust_test_impl), so the fuchsia_api_level cfg gate must be set explicitly to
+# match the library or #[cfg(fuchsia_api_level_at_least = ...)] code diverges.
+rust_test(
+    name = "cm_types_test",
+    crate = ":cm_types",
+    edition = "2024",
+    rustc_flags = FUCHSIA_API_LEVEL_HEAD_RUSTC_FLAGS,
+    deps = [
+        "@crates//:assert_matches",
+        "@crates//:serde_json",
+    ],
+)

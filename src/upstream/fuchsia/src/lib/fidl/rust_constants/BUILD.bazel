@@ -1,0 +1,12 @@
+# Authored locally for Cerise. fidl_constants: shared FIDL
+# wire constants (max recursion, max handles, etc.) used by fidl_next sub-crates.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rust_constants",
+    srcs = ["src/lib.rs"],
+    crate_name = "fidl_constants",
+    edition = "2024",
+)

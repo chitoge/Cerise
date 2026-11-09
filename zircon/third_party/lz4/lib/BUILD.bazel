@@ -1,0 +1,46 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lz4",
+    srcs = [
+        "lz4.c",
+        "lz4frame.c",
+        "lz4hc.c",
+        "xxhash.c",
+    ],
+    hdrs = glob(["*.h"], allow_empty = True),
+    # lz4hc.c does `#include "lz4.c"` to access internal static-inline functions.
+    textual_hdrs = ["lz4.c"],
+    includes = ["."],
+    defines = [
+        "LZ4_HEAPMODE=0",
+        "LZ4HC_HEAPMODE=0",
+        "XXH_NAMESPACE=LZ4_",
+        "LZ4LIB_VISIBILITY=",
+        "LZ4_DLL_IMPORT=1",
+    ],
+    copts = ["-D__declspec(x)="],
+    alwayslink = True,
+)
+
+filegroup(
+    name = "headers",
+    srcs = glob(["*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "lz4.c",
+        "lz4frame.c",
+        "lz4hc.c",
+        "xxhash.c",
+    ],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

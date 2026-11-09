@@ -1,0 +1,30 @@
+# Authored locally for Cerise. windowed-stats: real
+# netstack3 dependency. Test-only deps excluded. Replaces the upstream GN BUILD.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "windowed-stats",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "windowed_stats",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    deps = [
+        "//src/upstream/fuchsia/sdk/rust/zx",
+        "//src/upstream/fuchsia/src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/upstream/fuchsia/src/lib/fuchsia-async",
+        "//src/upstream/fuchsia/src/lib/fuchsia-sync",
+        "@crates//:anyhow",
+        "@crates//:byteorder",
+        "@crates//:futures",
+        "@crates//:itertools",
+        "@crates//:log",
+        "@crates//:num",
+        "@crates//:static_assertions",
+        "@crates//:thiserror",
+    ],
+    proc_macro_deps = [
+        "@crates//:derivative",
+    ],
+)

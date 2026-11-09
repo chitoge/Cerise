@@ -1,0 +1,16 @@
+# Authored locally for Cerise. fidlgen_rust: the FIDL IR ->
+# Rust binding generator (Go host tool). Invoked per fidl_library target to
+# produce the generated .rs source that the FIDL Rust runtime builds against.
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "fidlgen_rust",
+    srcs = ["main.go"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/upstream/fuchsia/tools/fidl/fidlgen_rust/codegen:codegen",
+        "//src/upstream/fuchsia/tools/fidl/lib/fidlgen:fidlgen",
+    ],
+)

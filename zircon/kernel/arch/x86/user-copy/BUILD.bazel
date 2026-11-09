@@ -1,0 +1,82 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "user_copy_headers",
+    hdrs = glob(["include/**/*.h"], allow_empty = True),
+    includes = ["include"],
+)
+
+cc_library(
+    name = "user_copy_movsq",
+    srcs = ["user-copy.S"],
+    copts = ["-DFUNCTION_NAME=_x86_copy_to_or_from_user_movsq"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "user_copy_movsq_smap",
+    srcs = ["user-copy.S"],
+    copts = ["-DFUNCTION_NAME=_x86_copy_to_or_from_user_movsq_smap", "-DSMAP"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "user_copy_movsb",
+    srcs = ["user-copy.S"],
+    copts = ["-DFUNCTION_NAME=_x86_copy_to_or_from_user_movsb", "-DMOVSB"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "user_copy_movsb_smap",
+    srcs = ["user-copy.S"],
+    copts = ["-DFUNCTION_NAME=_x86_copy_to_or_from_user_movsb_smap", "-DMOVSB", "-DSMAP"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+# The code-patching stub that user-copy.cc calls.  physboot replaces its body
+# with one of the four alternatives above (see user-copy-stub.S).
+cc_library(
+    name = "user_copy_stub",
+    srcs = ["user-copy-stub.S"],
+    alwayslink = True,
+    deps = ["//:kernel_cc_headers"],
+)
+
+cc_library(
+    name = "user_copy",
+    srcs = ["user-copy.cc"],
+    alwayslink = True,
+    deps = [
+        ":user_copy_stub",
+        ":user_copy_movsb",
+        ":user_copy_movsb_smap",
+        ":user_copy_movsq",
+        ":user_copy_movsq_smap",
+        "//zircon/kernel/lib/boot-options:boot_options",
+        "//zircon/kernel/lib/crypto",
+        "//zircon/kernel/vm:headers",
+        "//:kernel_cc_headers",
+    ],
+)
+
+filegroup(
+    name = "user_copy_source",
+    srcs = ["user-copy.cc"],
+)
+
+filegroup(
+    name = "user_copy_asm_source",
+    srcs = ["user-copy.S"],
+)
+
+filegroup(
+    name = "source_snapshot",
+    srcs = glob(["**/*"], allow_empty = True),
+)

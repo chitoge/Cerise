@@ -1,0 +1,126 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Cerise libc sysroot header assembly.
+# Fuchsia's libc is a musl + llvm-libc hybrid; this assembles the curated header
+# blend: musl is primary, plus the llvm-libc shared headers musl references.
+# musl's standard headers win (they come via the musl libc_headers dep); this
+# only adds llvm-libc shared headers that the upstream @llvm-project//libc target
+# does not expose. See llvm-libc-shared/README.md for provenance.
+
+# The vendored llvm-libc shared macro header(s) musl pulls (e.g. via features.h).
+cc_library(
+    name = "llvm_libc_shared_headers",
+    hdrs = ["llvm-libc-shared/__llvm-libc-common.h"],
+    includes = ["llvm-libc-shared"],
+)
+
+# Cerise sysroot-provided zircon headers absent from the pinned vendored
+# subtree (delivered via the generated sysroot upstream): <zircon/status.h>.
+# Faithful reproductions of stable public API headers; replace if the
+# vendored/generated originals are wired. See zircon-shim/zircon/*.h.
+cc_library(
+    name = "zircon_shim_headers",
+    hdrs = glob(["zircon-shim/**/*.h"], allow_empty = True),
+    includes = ["zircon-shim"],
+    deps = ["//src/upstream/fuchsia/zircon/system/public:public"],
+)
+
+# The assembled libc sysroot header surface: musl + llvm-libc shared + zircon shim.
+cc_library(
+    name = "libc_sysroot_headers",
+    deps = [
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_headers",
+        ":llvm_libc_shared_headers",
+        ":zircon_shim_headers",
+    ],
+)
+
+# Plain filegroups for the toolchain's fuchsia_c_system_headers cc_args data.
+filegroup(
+    name = "llvm_libc_shared_header_files",
+    srcs = glob(["llvm-libc-shared/**/*.h"], allow_empty = True),
+)
+
+filegroup(
+    name = "zircon_shim_header_files",
+    srcs = glob(["zircon-shim/**/*.h"], allow_empty = True),
+)
+
+# The assembled fuchsia C-library sysroot include directory:
+# merges the C headers (musl, sdk/lib/c include+gen, llvm-libc, zircon public,
+# zircon-internal, the zircon shim) into ONE directory via copy_to_directory, so
+# a single -isystem resolves them all (the proper sysroot, modeled on the llvm
+# toolchain's copy_to_directory include search dirs). root_paths strips each
+# source include prefix so headers land at the sysroot-include root.
+load("@bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+
+copy_to_directory(
+    name = "fuchsia_sysroot_include",
+    srcs = [
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:public_header_files",
+        "//src/upstream/fuchsia/sdk/lib/c:include_files",
+        "//src/upstream/fuchsia/third_party/llvm-libc:header_files",
+        "//src/upstream/fuchsia/third_party/llvm-libc:support_header_files",
+        "//src/upstream/fuchsia/zircon/system/public:header_files",
+        "//src/upstream/fuchsia/zircon/system/ulib/zircon-internal:header_files",
+        ":zircon_shim_header_files",
+        ":llvm_libc_compat_files",
+    ],
+    allow_overwrites = True,
+    root_paths = [
+        "src/upstream/fuchsia/zircon/third_party/ulib/musl/include",
+        "src/upstream/fuchsia/sdk/lib/c/include/gen",
+        "src/upstream/fuchsia/sdk/lib/c/include",
+        "src/upstream/fuchsia/third_party/llvm-libc/src/include",
+        # llvm-libc internals: keep the "src/__support/..." prefix (sdk/lib/c
+        # headers include <src/__support/macros/config.h> etc.).
+        "src/upstream/fuchsia/third_party/llvm-libc",
+        # Compat shims keep the same "src/__support/..." prefix.
+        "src/cerise/sysroot/llvm-libc-compat",
+        "src/upstream/fuchsia/zircon/system/public",
+        "src/upstream/fuchsia/zircon/system/ulib/zircon-internal/include",
+        "src/cerise/sysroot/zircon-shim",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# llvm-libc compat shims for macros removed in the repo's newer @llvm-project but
+# still used by Fuchsia's sdk/lib/c (e.g. macro-utils.h's LLVM_LIBC_STRINGIFY).
+filegroup(
+    name = "llvm_libc_compat_files",
+    srcs = glob(["llvm-libc-compat/**/*.h"], allow_empty = True),
+)
+
+# the Rust-std link sysroot (Scrt1.o + libc.so + libzircon.so + libfdio.so),
+# all built for //platforms:x64-fuchsia. clang --sysroot points here so rustc's
+# fuchsia target spec (`Scrt1.o -lc -lzircon -lfdio`) resolves.
+load("//bazel:fuchsia_platform.bzl", "fuchsia_link_sysroot")
+
+fuchsia_link_sysroot(
+    name = "fuchsia_link_sysroot",
+    crt1 = "//src/upstream/fuchsia/sdk/lib/c:crt1",
+    shared_libs = [
+        "//src/upstream/fuchsia/zircon/third_party/ulib/musl:libc_so",
+        "//src/cerise/sysroot/libzircon:libzircon",
+        # the REAL shared fdio (fdio+zxio+FIDL statically absorbed;
+        # DT_NEEDED libc.so/libzircon.so/libc++.so.1) replaces the ENOSYS link
+        # stub — -lfdio now resolves the full POSIX interposition surface and
+        # records DT_NEEDED libfdio.so, which binds to the staged real library
+        # at runtime. The fdio-stub target remains ONLY as the link-time
+        # dynamic_dep of libfdf.so (cc_shared_library needs CcSharedLibraryInfo,
+        # which a cc_binary(-shared) cannot provide); same SONAME either way.
+        "//src/upstream/fuchsia/sdk/lib/fdio:libfdio.so",
+        # C++ runtime libraries (built from LLVM source for Fuchsia/musl).
+        "//src/cerise/runtime:libc++.so",
+        # libm stub: math functions live in musl's libc.so on Fuchsia; this stub
+        # satisfies -lm at link time. Symbols resolve to libc.so at runtime.
+        "//src/cerise/sysroot/libm-stub:libm.so",
+    ],
+    static_libs = [
+        # libclang_rt.builtins.a: compiler-rt arithmetic builtins for x86_64-fuchsia.
+        # Placed at lib/clang/22/lib/x86_64-unknown-fuchsia/ so clang -resource-dir finds it.
+        "@llvm-project//compiler-rt:builtins",
+    ],
+)
